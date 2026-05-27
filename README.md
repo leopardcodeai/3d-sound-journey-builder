@@ -3,7 +3,7 @@
 > **An AI vibecoded experiment** — this entire application was built through agentic coding from start to finish, using **Chinese AI models** (primarily **Qwen3.6 Plus**) with minimal human intervention and zero project structure management tools. No scaffolding, no architecture planning — just raw AI-to-code, one agentic conversation at a time.
 
 [![Tests](https://img.shields.io/badge/tests-104%2F104%20✓-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder/actions)
-[![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3dsoundapp.vercel.app)
+[![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![AI Built](https://img.shields.io/badge/vibecoded-AI-purple)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 
 ---
@@ -123,7 +123,7 @@ npm test
 npm run preview
 ```
 
-Deployed at **[3dsoundapp.vercel.app](https://3dsoundapp.vercel.app)**
+Deployed at **[3d-sound-journey-builder.vercel.app](https://3d-sound-journey-builder.vercel.app)**
 
 ---
 
