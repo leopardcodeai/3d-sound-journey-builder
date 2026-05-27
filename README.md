@@ -1,6 +1,6 @@
-# 🏴‍☠️ Pirate Healings — 3D Sound Journey Builder
+# 🎧 3D Sound Journey Builder
 
-> **An AI vibecoded experiment** — this entire application was built through agentic coding from start to finish, using **Chinese AI models** (primarily **Qwen3.6 Plus**) with minimal human intervention and zero project structure management tools. No scaffolding, no architecture planning — just raw AI-to-code, one agentic conversation at a time.
+> vibecoded ❤️ by **LeopardCode.AI** — built through agentic coding with Chinese AI models (Qwen3.6 Plus), zero project structure tools, one conversation at a time.
 
 [![Tests](https://img.shields.io/badge/tests-104%2F104%20✓-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder/actions)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
@@ -10,7 +10,7 @@
 
 ## 🎧 What it does
 
-Pirate Healings is an interactive **spatial sound experience builder** running entirely in the browser. Place instruments, nature sounds, and ambient textures on a 2D/3D canvas — each with its own position in space, volume, height, and animation path. Design multi-minute sound journeys with keyframe-based spatial animation, then export and share.
+An interactive **spatial sound experience builder** running entirely in the browser. Place instruments, nature sounds, and ambient textures on a 2D/3D canvas — each with its own position in space, volume, height, and animation path. Design multi-minute sound journeys with keyframe-based spatial animation, then export and share.
 
 Every sound source renders as it would be experienced **inside your head**: HRTF spatialization with personalized head/shoulder/pinna modeling, posture physics (standing, lying-back, lateral), and real-time AirPods head tracking via WebBLE.
 
