@@ -6,6 +6,8 @@
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![AI Built](https://img.shields.io/badge/vibecoded-AI-purple)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 
+> Built and maintained by **[LeopardCode.AI](https://leopardcode.ai)** ([github.com/leopardcodeai](https://github.com/leopardcodeai))
+
 ---
 
 ## 🎧 What it does
