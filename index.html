@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pirate Healings" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="theme-color" content="#060608" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Pirate Healings — Sound Journey Builder</title>
+  </head>
+  <body>
+
+    <!-- Header Bar -->
+    <header class="header-bar">
+      <div class="logo-area">
+        <div class="logo-icon">🔊</div>
+        <div class="logo-text">
+          <h1>Pirate Healings</h1>
+          <p>Sound Journey Builder</p>
+        </div>
+      </div>
+      <div class="header-master">
+        <span class="master-label">Vol</span>
+        <input type="range" id="header-master-volume" min="0" max="1" step="0.01" value="0.8">
+        <span class="master-percent" id="header-master-vol-val">80%</span>
+      </div>
+      <div class="header-status" id="audio-status">
+        <span class="status-dot offline"></span>
+        <span class="status-text" data-i18n="audioInactive">Audio Inactive</span>
+      </div>
+    </header>
+
+    <!-- Floating top-right controls -->
+    <div class="top-controls">
+      <button id="reset-view-btn" class="toolbar-btn" title="Reset View">🏠</button>
+      <button id="orient-north-btn" class="toolbar-btn" title="Face Front">🧭</button>
+      <button id="toggle-3d-btn" class="toolbar-btn" title="2D/3D">2D</button>
+      <button id="settings-btn" class="toolbar-btn" title="Settings">⚙️</button>
+    </div>
+
+    <!-- Settings Dropdown -->
+    <div class="settings-dropdown" id="settings-dropdown" style="display:none;">
+      <div class="settings-content">
+        <div class="sidebar-section">
+          <h2 class="section-title" data-i18n="listenerPose">Listener Pose</h2>
+          <div class="control-group">
+            <label for="listener-posture" data-i18n="posture">Posture</label>
+            <select id="listener-posture" class="select-input">
+              <option value="standing" data-i18n="standing">🧍 Standing</option>
+              <option value="lying-back" data-i18n="lyingBack">🛏️ Lying (Back)</option>
+              <option value="lying-side" data-i18n="lyingSide">🛌 Lying (Side)</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="head-tilt" data-i18n="headTilt">Head Tilt</label>
+            <div class="slider-wrapper">
+              <input type="range" id="head-tilt" min="-90" max="90" step="1" value="0">
+              <span class="slider-value" id="head-tilt-val">0°</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label for="shoulder-strength" data-i18n="shoulderReflection">Shoulder Reflection</label>
+            <div class="slider-wrapper">
+              <input type="range" id="shoulder-strength" min="0" max="1" step="0.05" value="0.5">
+              <span class="slider-value" id="shoulder-strength-val">50%</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label for="pinna-strength" data-i18n="earFilter">Ear Filter</label>
+            <div class="slider-wrapper">
+              <input type="range" id="pinna-strength" min="0" max="1" step="0.05" value="0.5">
+              <span class="slider-value" id="pinna-strength-val">50%</span>
+            </div>
+          </div>
+          <p class="field-help" style="margin-top:8px;opacity:0.7;">Position & anatomy → 🧍 Posture toolbar button</p>
+          <div class="control-group">
+            <label for="head-tracker-toggle" data-i18n="headTracking">Head Tracking (AirPods Spatial)</label>
+            <button id="head-tracker-btn" class="btn btn-secondary btn-sm" data-i18n="enableHeadTracking">🎧 Enable Head Tracking</button>
+            <p class="field-help" id="head-tracker-status">Not available</p>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <h2 class="section-title" data-i18n="language">Language</h2>
+          <select id="lang-select" class="select-input">
+            <option value="en">🇺🇸 English</option>
+            <option value="de">🇩🇪 Deutsch</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen Soundscape Canvas -->
+    <canvas id="soundscape-canvas" width="500" height="500"></canvas>
+
+    <div id="z-indicator" class="z-height-indicator" style="display:none;">Z: 0.0m</div>
+
+    <!-- Canvas Instructions Overlay -->
+    <div class="canvas-instructions" id="canvas-instructions">
+      <p>Drag nodes &middot; Farther = quieter &middot; Shift+scroll to pan</p>
+    </div>
+
+    <!-- Primary Toolbar: Sound Categories -->
+    <div class="toolbar toolbar-primary" id="toolbar-primary" role="toolbar" aria-label="Sound categories">
+      <button class="toolbar-btn active" data-flyout="instruments" title="Instruments" aria-label="Instruments" aria-expanded="true">
+        <span class="toolbar-icon" aria-hidden="true">🎹</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="healing" title="Sound Healing" aria-label="Sound Healing" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🔔</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="nature" title="Nature" aria-label="Nature" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🌿</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="environment" title="Environment" aria-label="Environment" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🏠</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="brainwaves" title="Brain Waves" aria-label="Brain Waves" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🧠</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="music" title="Music" aria-label="Music" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🎵</span>
+      </button>
+    </div>
+
+    <!-- Secondary Toolbar: Settings & Actions -->
+    <div class="toolbar toolbar-secondary" id="toolbar-secondary" role="toolbar" aria-label="Settings and actions">
+      <button class="toolbar-btn" data-flyout="receivers" title="Audio Receivers" aria-label="Audio Receivers" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">📡</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="posture" title="Posture & Position" aria-label="Posture and position" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🧍</span>
+      </button>
+      <div class="toolbar-divider" aria-hidden="true"></div>
+      <button class="toolbar-btn" data-flyout="presets" title="Pre Sets" aria-label="Pre Sets" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">⚡</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="scenes" title="Scenes" aria-label="Scenes" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">💾</span>
+      </button>
+      <button class="toolbar-btn" data-flyout="master" title="Master Control" aria-label="Master Control" aria-expanded="false">
+        <span class="toolbar-icon" aria-hidden="true">🎚️</span>
+      </button>
+    </div>
+
+    <!-- Category Flyouts -->
+    <div class="flyout" id="flyout-instruments">
+      <div class="flyout-header"><span class="flyout-title">🎹 Instruments</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-instruments"></div>
+    </div>
+    <div class="flyout" id="flyout-healing">
+      <div class="flyout-header"><span class="flyout-title">🔔 Sound Healing</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-healing"></div>
+    </div>
+    <div class="flyout" id="flyout-nature">
+      <div class="flyout-header"><span class="flyout-title">🌿 Nature</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-nature"></div>
+    </div>
+    <div class="flyout" id="flyout-environment">
+      <div class="flyout-header"><span class="flyout-title">🏠 Environment</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-environment"></div>
+    </div>
+    <div class="flyout" id="flyout-brainwaves">
+      <div class="flyout-header"><span class="flyout-title">🧠 Brain Waves</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-brainwaves"></div>
+    </div>
+    <div class="flyout" id="flyout-music">
+      <div class="flyout-header"><span class="flyout-title">🎵 Music</span><button class="flyout-close">&times;</button></div>
+      <div class="preset-list" id="preset-list-music"></div>
+      <div class="custom-upload-area">
+        <input type="file" id="file-upload" accept="audio/*" class="file-input">
+        <label for="file-upload" class="file-upload-label">📂 Custom Audio (.mp3/.wav)</label>
+        <div class="custom-upload-form" id="custom-upload-form" style="display:none;">
+          <input type="text" id="custom-name-input" class="input" placeholder="Sound name" maxlength="24">
+          <div class="emoji-picker" id="emoji-picker">
+            <button class="emoji-option">🎵</button><button class="emoji-option">🎶</button><button class="emoji-option">🎧</button><button class="emoji-option">🔊</button><button class="emoji-option">🎹</button><button class="emoji-option">🎸</button><button class="emoji-option">🎷</button><button class="emoji-option">🥁</button><button class="emoji-option">🎤</button><button class="emoji-option">🔔</button><button class="emoji-option">✨</button><button class="emoji-option">🌀</button><button class="emoji-option">💎</button><button class="emoji-option">🔥</button><button class="emoji-option">🌊</button><button class="emoji-option">🌈</button>
+          </div>
+          <div class="upload-form-actions">
+            <button id="custom-upload-confirm" class="btn btn-primary btn-sm">Add Sound</button>
+            <button id="custom-upload-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flyout: Audio Receivers -->
+    <div class="flyout panel-receivers" id="flyout-receivers">
+      <div class="flyout-header">
+        <span class="flyout-title">Audio Receivers</span>
+        <button class="flyout-close">&times;</button>
+      </div>
+      <p class="section-help">Configure how you hear the sound.</p>
+
+      <div class="control-group">
+        <label>Output Mode</label>
+        <select id="speaker-config" class="select-input">
+          <option value="stereo-headphones">🎧 Stereo Headphones (3D HRTF)</option>
+          <option value="stereo-speakers">🔉 Stereo Speakers</option>
+          <option value="surround-5.1">🔊 5.1 Surround</option>
+          <option value="custom">🔧 Custom Speakers</option>
+        </select>
+        <p class="field-help" id="speaker-config-desc">Binaural 3D audio with HRTF — optimal with headphones.</p>
+      </div>
+
+      <div id="custom-speaker-controls" style="display:none;">
+        <div class="receiver-actions">
+          <button id="add-speaker-btn" class="btn btn-secondary btn-sm">+ Add Speaker</button>
+          <button id="edit-speakers-btn" class="btn btn-secondary btn-sm">✋ Edit Speakers</button>
+        </div>
+        <p class="field-help">Toggle Edit Speakers to drag them on the field. Add to place new ones.</p>
+        <div class="custom-speaker-list" id="custom-speaker-list"></div>
+      </div>
+
+    </div>
+
+    <!-- Flyout: Posture & Position -->
+    <div class="flyout panel-posture" id="flyout-posture">
+      <div class="flyout-header">
+        <span class="flyout-title">Posture & Position</span>
+        <button class="flyout-close">&times;</button>
+      </div>
+      <p class="section-help">Adjust listener posture and position.</p>
+
+      <div class="control-group">
+        <label>Posture</label>
+        <div class="posture-buttons">
+          <button class="posture-btn active" data-posture="standing" title="Standing">🧍</button>
+          <button class="posture-btn" data-posture="lying-back" title="Lying on Back">🛌</button>
+          <button class="posture-btn" data-posture="lying-side" title="Lying on Side">↔️</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Head Tilt</label>
+        <div class="slider-wrapper">
+          <input type="range" id="posture-head-tilt" min="-90" max="90" step="1" value="0">
+          <span class="slider-value" id="posture-head-tilt-val">0°</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Shoulder Width</label>
+        <div class="slider-wrapper">
+          <input type="range" id="posture-shoulder-width" min="0.5" max="2.0" step="0.05" value="1.0">
+          <span class="slider-value" id="posture-shoulder-width-val">1.0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Pinna Size</label>
+        <div class="slider-wrapper">
+          <input type="range" id="posture-pinna-size" min="0.5" max="1.5" step="0.05" value="1.0">
+          <span class="slider-value" id="posture-pinna-size-val">1.0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Listener Position X</label>
+        <div class="slider-wrapper">
+          <input type="range" id="posture-listener-x" min="-10" max="10" step="0.5" value="0">
+          <span class="slider-value" id="posture-listener-x-val">0.0</span>
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Listener Height Y</label>
+        <div class="slider-wrapper">
+          <input type="range" id="posture-listener-y" min="-10" max="10" step="0.5" value="0">
+          <span class="slider-value" id="posture-listener-y-val">0.0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flyout: Pre Sets -->
+    <div class="flyout panel-presets" id="flyout-presets">
+      <div class="flyout-header">
+        <span class="flyout-title">Pre Sets</span>
+        <button class="flyout-close">&times;</button>
+      </div>
+      <p class="section-help">Pre-configured sound scenes & journeys.</p>
+      <div class="activity-presets">
+        <button class="activity-btn" data-preset="focus">🧠 Focus</button>
+        <button class="activity-btn" data-preset="meditate">🧘 Meditation</button>
+        <button class="activity-btn" data-preset="sleep">😴 Sleep</button>
+        <button class="activity-btn" data-preset="relax">🌿 Relax</button>
+        <button class="activity-btn" data-preset="energy">⚡ Energy</button>
+      </div>
+      <div class="section-help journey-label">Sound Journeys</div>
+      <button class="activity-btn" data-preset="jungle">🌴 Jungle Journey</button>
+      <button class="activity-btn" data-preset="underwater">🌊 Underwater Deep</button>
+      <button class="activity-btn" data-preset="space">🚀 Cosmic Voyage</button>
+      <button class="activity-btn" data-preset="storm">⛈️ Storm Passage</button>
+      <button class="activity-btn" data-preset="dawn">🌅 Dawn Awakening</button>
+    </div>
+
+    <!-- Flyout: Scenes -->
+    <div class="flyout panel-scenes" id="flyout-scenes">
+      <div class="flyout-header">
+        <span class="flyout-title">Scenes</span>
+        <button class="flyout-close">&times;</button>
+      </div>
+      <div class="scene-actions">
+        <button id="save-scene-btn" class="btn btn-secondary btn-sm">💾 Save</button>
+        <button id="share-scene-btn" class="btn btn-secondary btn-sm">🔗 Share</button>
+      </div>
+      <div class="scene-templates">
+        <button class="scene-template-btn" data-template="forest">🌲 Forest</button>
+        <button class="scene-template-btn" data-template="ocean">🌊 Ocean</button>
+        <button class="scene-template-btn" data-template="cafe">☕ Café</button>
+      </div>
+      <div class="scene-list" id="scene-list"></div>
+    </div>
+
+    <!-- Flyout: Master Control -->
+    <div class="flyout panel-master" id="flyout-master">
+      <div class="flyout-header">
+        <span class="flyout-title">Master Control</span>
+        <button class="flyout-close">&times;</button>
+      </div>
+      <div class="control-group">
+        <label for="master-volume">Master Volume</label>
+        <div class="slider-wrapper">
+          <input type="range" id="master-volume" min="0" max="1" step="0.01" value="0.8">
+          <span class="slider-value" id="master-volume-val">80%</span>
+        </div>
+      </div>
+      <div class="master-actions">
+        <button id="master-mute-btn" class="btn btn-primary">🔇 Mute</button>
+        <button id="new-session-btn" class="btn btn-secondary">✨ New</button>
+        <button id="clear-all-btn" class="btn btn-danger">🗑️ Clear All</button>
+      </div>
+    </div>
+
+    <!-- Right Floating Panel: Sound Properties -->
+    <div class="floating-panel panel-right panel-hidden" id="panel-right">
+      <div class="panel-handle"></div>
+      <button class="panel-close-btn" id="panel-right-close" aria-label="Close panel">&times;</button>
+      <h2 class="section-title" data-i18n="properties">Properties</h2>
+
+      <div class="details-empty-state" id="details-empty-state">
+        <div class="empty-icon">🎛️</div>
+        <p data-i18n="selectNode">Select a sound node on the field to adjust its settings.</p>
+      </div>
+
+      <div class="selected-details-panel" id="selected-details-panel" style="display: none;">
+        <div class="selected-node-header">
+          <div class="node-meta">
+            <span class="node-tag" id="node-type-label">Preset</span>
+            <h3 id="node-name">Sound Source</h3>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="node-volume" data-i18n="volume">Volume</label>
+          <div class="slider-wrapper">
+            <input type="range" id="node-volume" min="0" max="1.5" step="0.01" value="0.5">
+            <span class="slider-value" id="node-volume-val">50%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="node-height" data-i18n="height">Height above Listener (Z-axis)</label>
+          <div class="slider-wrapper">
+            <input type="range" id="node-height" min="-10" max="10" step="0.1" value="0">
+            <span class="slider-value" id="node-height-val">0.0m</span>
+          </div>
+          <p class="field-help" data-i18n="heightHelp">Simulates height positioning (3D sound field)</p>
+        </div>
+
+        <div class="coords-display-section">
+          <h4 data-i18n="position">Position in Space</h4>
+          <div class="coords-grid" id="node-coords"></div>
+        </div>
+
+        <div class="control-group">
+          <label>Ramp Up</label>
+          <div class="slider-wrapper">
+            <input type="range" id="node-rampup" min="0" max="30" step="0.5" value="0">
+            <span class="slider-value" id="node-rampup-val">0s</span>
+          </div>
+        </div>
+        <div class="control-group">
+          <label>Ramp Down</label>
+          <div class="slider-wrapper">
+            <input type="range" id="node-rampdown" min="0" max="30" step="0.5" value="0">
+            <span class="slider-value" id="node-rampdown-val">0s</span>
+          </div>
+        </div>
+        <div class="control-group">
+          <label>Repeat Every</label>
+          <div class="slider-wrapper">
+            <input type="range" id="node-repeat" min="0" max="120" step="5" value="0">
+            <span class="slider-value" id="node-repeat-val">off</span>
+          </div>
+        </div>
+
+        <div class="automation-section">
+          <h4 data-i18n="automation">Automated Movement</h4>
+          <div class="automation-buttons">
+            <button id="auto-orbit-btn" class="btn btn-secondary" data-i18n="orbit">🔄 Orbit</button>
+            <button id="auto-pingpong-btn" class="btn btn-secondary" data-i18n="pingpong">↔️ Ping Pong</button>
+            <button id="auto-drift-btn" class="btn btn-secondary" data-i18n="drift">🌊 Drift</button>
+            <button id="auto-breathe-btn" class="btn btn-secondary" data-i18n="breathe">🫁 Breathe</button>
+          </div>
+        </div>
+
+        <div class="timer-section">
+          <h4 data-i18n="timer">Timer</h4>
+          <div class="timer-preset-buttons">
+            <button class="timer-preset-btn" data-minutes="15">15 min</button>
+            <button class="timer-preset-btn" data-minutes="30">30 min</button>
+            <button class="timer-preset-btn" data-minutes="60">1 hr</button>
+            <button class="timer-preset-btn" data-minutes="120">2 hr</button>
+          </div>
+          <div class="timer-display" id="timer-display">--:--</div>
+          <button id="timer-cancel-btn" class="btn btn-secondary" style="display:none;" data-i18n="cancelTimer">Cancel Timer</button>
+        </div>
+
+        <div class="action-buttons">
+          <button id="node-play-toggle" class="btn btn-primary"><span>⏸</span> Pause</button>
+          <button id="node-delete" class="btn btn-danger" data-i18n="delete">❌ Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Welcome Modal Overlay -->
+    <div class="welcome-overlay" id="welcome-modal" role="dialog" aria-modal="true" aria-label="Welcome to the 3D Soundfield">
+      <div class="modal-content">
+        <div class="modal-icon">🎧</div>
+        <h2 data-i18n="welcome">Welcome to the 3D Soundfield</h2>
+        <p data-i18n="welcomeDesc">This interactive lab uses the Web Audio API to render a true 3D sound environment directly through your stereo speakers or headphones.</p>
+        <p class="highlight-text" data-i18n="headphonesRecommended">Headphones strongly recommended for the best 3D effect!</p>
+        <button class="btn btn-pulse" id="start-btn" data-i18n="startSoundscape">Start Soundscape</button>
+        <button class="btn btn-secondary" id="start-fresh-btn" data-i18n="startFresh">Start Fresh</button>
+        <p class="modal-signature">vibecoded with &hearts; by Captain Leopard</p>
+      </div>
+    </div>
+
+    <!-- Timeline Footer Bar -->
+    <div class="timeline-footer" id="timeline-footer">
+      <button class="timeline-toggle-btn" id="timeline-toggle-btn" aria-label="Toggle timeline" title="Open Timeline">
+        <span>⏱</span> Timeline
+      </button>
+    </div>
+    <div class="timeline-panel" id="timeline-panel">
+      <canvas id="timeline-canvas"></canvas>
+    </div>
+
+    <!-- Mobile Tab Bar -->
+    <nav class="mobile-tabs">
+      <button class="mobile-tab active" data-panel="sounds">
+        <span class="tab-icon">🎵</span> <span data-i18n="soundsTab">Sounds</span>
+      </button>
+      <button class="mobile-tab" data-panel="canvas">
+        <span class="tab-icon">🗺️</span> <span data-i18n="canvasTab">Field</span>
+      </button>
+      <button class="mobile-tab" data-panel="details">
+        <span class="tab-icon">🎛️</span> <span data-i18n="detailsTab">Details</span>
+      </button>
+    </nav>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
