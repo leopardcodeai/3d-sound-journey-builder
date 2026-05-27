@@ -1,6 +1,6 @@
 # 🎧 3D Sound Journey Builder
 
-> vibecoded ❤️ by **LeopardCode.AI** — built through agentic coding with Chinese AI models (Qwen3.6 Plus), zero project structure tools, one conversation at a time.
+> vibecoded with ❤️ by **LeopardCode.AI** — built through agentic coding with Chinese AI models (Qwen3.6 Plus), zero project structure tools, one conversation at a time.
 
 [![Tests](https://img.shields.io/badge/tests-104%2F104%20✓-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder/actions)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
