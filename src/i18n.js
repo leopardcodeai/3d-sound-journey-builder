@@ -1,6 +1,6 @@
 const STRINGS = {
   en: {
-    appTitle: 'Pirate Healings',
+    appTitle: '3D Sound Journey Builder',
     appSubtitle: 'Sound Journey Builder',
     masterControl: 'Master Control',
     masterVolume: 'Master Volume',
@@ -147,7 +147,7 @@ const STRINGS = {
   },
 
   de: {
-    appTitle: 'Pirate Healings',
+    appTitle: '3D Sound Journey Builder',
     appSubtitle: 'Sound Journey Builder',
     masterControl: 'Master Steuerung',
     masterVolume: 'Gesamtlautstärke',
