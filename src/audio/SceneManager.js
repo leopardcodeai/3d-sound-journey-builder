@@ -1,11 +1,13 @@
 /**
- * SceneManager - Save/Load/Share soundscape configurations
- * Uses localStorage for persistence and URL hash for sharing.
+ * SceneManager - Save/Load/Share soundscape configurations and sound journeys
+ * (timeline keyframes + clip timings). Uses localStorage for persistence and
+ * URL hash for sharing.
  */
 export class SceneManager {
-  constructor(audioEngine, canvasGrid) {
+  constructor(audioEngine, canvasGrid, timeline = null) {
     this.audioEngine = audioEngine;
     this.canvasGrid = canvasGrid;
+    this.timeline = timeline;
     this.scenes = this.loadScenes(); // Map of name -> scene data
   }
   
@@ -29,7 +31,8 @@ export class SceneManager {
       posture: this.audioEngine.posture,
       headTilt: this.audioEngine.headTilt,
       sources,
-      automations
+      automations,
+      timeline: this._captureTimeline()
     };
     this.scenes.set(name, scene);
     this.persistScenes();
@@ -60,7 +63,45 @@ export class SceneManager {
     for (const [id, auto] of Object.entries(scene.automations)) {
       this.canvasGrid.setAutomation(id, auto.type, true, auto);
     }
+    // Restore the journey (timeline keyframes + clip timings)
+    this._restoreTimeline(scene.timeline);
     return true;
+  }
+
+  // Snapshot the timeline state (journey) of the current scene
+  _captureTimeline() {
+    if (!this.timeline) return null;
+    const timings = {};
+    for (const [id, t] of this.timeline.sourceTimings.entries()) {
+      if (this.audioEngine.sources.has(id)) timings[id] = { ...t };
+    }
+    const keyframes = {};
+    for (const [id, kfs] of this.timeline.keyframes.entries()) {
+      if (this.audioEngine.sources.has(id)) keyframes[id] = kfs.map(kf => ({ ...kf }));
+    }
+    return {
+      totalDuration: this.timeline.totalDuration,
+      timings,
+      keyframes
+    };
+  }
+
+  _restoreTimeline(data) {
+    if (!this.timeline) return;
+    this.timeline.pause();
+    this.timeline.playheadTime = 0;
+    this.timeline.sourceTimings.clear();
+    this.timeline.keyframes.clear();
+    if (data) {
+      if (data.totalDuration) this.timeline.setTotalDuration(data.totalDuration);
+      for (const [id, t] of Object.entries(data.timings || {})) {
+        this.timeline.sourceTimings.set(id, { ...t });
+      }
+      for (const [id, kfs] of Object.entries(data.keyframes || {})) {
+        this.timeline.setKeyframes(id, kfs);
+      }
+    }
+    if (this.timeline.visible) this.timeline._render();
   }
   
   // Delete a scene

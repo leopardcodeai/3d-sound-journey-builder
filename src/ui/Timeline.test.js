@@ -126,12 +126,12 @@ describe('Timeline', () => {
   });
 
   describe('timing', () => {
-    it('should ensure timing entry exists', () => {
+    it('should ensure timing entry exists spanning the whole journey', () => {
       timeline.ensureTiming('src1');
       expect(timeline.sourceTimings.has('src1')).toBe(true);
       const t = timeline.sourceTimings.get('src1');
       expect(t.startTime).toBe(0);
-      expect(t.duration).toBe(60);
+      expect(t.duration).toBe(timeline.totalDuration);
     });
 
     it('should not overwrite existing timing', () => {
@@ -154,6 +154,106 @@ describe('Timeline', () => {
 
     it('should apply ease-out', () => {
       expect(timeline._ease(0.5, 'ease-out')).toBe(0.75);
+    });
+  });
+
+  describe('removeKeyframe', () => {
+    it('should remove a keyframe by index and drop empty lists', () => {
+      timeline.setKeyframes('src1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
+        { time: 60, x: 3, y: 2, z: 1, volume: 0.6 },
+      ]);
+      timeline.removeKeyframe('src1', 0);
+      expect(timeline.keyframes.get('src1').length).toBe(1);
+      expect(timeline.keyframes.get('src1')[0].time).toBe(60);
+      timeline.removeKeyframe('src1', 0);
+      expect(timeline.keyframes.has('src1')).toBe(false);
+    });
+
+    it('should ignore invalid indices', () => {
+      timeline.setKeyframes('src1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }]);
+      timeline.removeKeyframe('src1', 5);
+      timeline.removeKeyframe('missing', 0);
+      expect(timeline.keyframes.get('src1').length).toBe(1);
+    });
+  });
+
+  describe('setTotalDuration', () => {
+    it('should clamp playhead and clip timings into the new range', () => {
+      timeline.sourceTimings.set('src1', { startTime: 200, duration: 400 });
+      timeline.playheadTime = 500;
+      timeline.setTotalDuration(300);
+      expect(timeline.totalDuration).toBe(300);
+      expect(timeline.playheadTime).toBe(300);
+      const t = timeline.sourceTimings.get('src1');
+      expect(t.startTime).toBe(200);
+      expect(t.duration).toBe(100);
+    });
+  });
+
+  describe('keyframe playback (_applyKeyframes)', () => {
+    function addSource(id, overrides = {}) {
+      const src = {
+        id, type: 'birds', name: id,
+        x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true,
+        gainNode: { gain: { setTargetAtTime: vi.fn() } },
+        ...overrides,
+      };
+      audioEngine.sources.set(id, src);
+      return src;
+    }
+
+    it('applies a single keyframe position', () => {
+      addSource('src1');
+      timeline.setKeyframes('src1', [{ time: 0, x: 2, y: 3, z: 1, volume: 0.4 }]);
+      timeline.playheadTime = 10;
+      timeline._applyKeyframes();
+      expect(audioEngine.updateSourcePosition).toHaveBeenCalledWith('src1', 2, 3, 1);
+    });
+
+    it('drives the gain from interpolated keyframe volume', () => {
+      const src = addSource('src1');
+      timeline.sourceTimings.set('src1', { startTime: 0, duration: 600 });
+      timeline.setKeyframes('src1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.0 },
+        { time: 10, x: 0, y: 0, z: 0, volume: 1.0 },
+      ]);
+      timeline.playheadTime = 5;
+      timeline._applyKeyframes();
+      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toBeCloseTo(0.5);
+    });
+
+    it('mutes sources outside their clip window', () => {
+      const src = addSource('src1');
+      timeline.sourceTimings.set('src1', { startTime: 100, duration: 50 });
+      timeline.playheadTime = 0;
+      timeline._applyKeyframes();
+      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(calls[calls.length - 1][0]).toBe(0);
+    });
+
+    it('uses the source volume when no keyframes define one', () => {
+      const src = addSource('src1', { volume: 0.7 });
+      timeline.sourceTimings.set('src1', { startTime: 0, duration: 600 });
+      timeline.playheadTime = 10;
+      timeline._applyKeyframes();
+      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(calls[calls.length - 1][0]).toBeCloseTo(0.7);
+    });
+
+    it('marks keyframed sources as timeline-controlled only while playing', () => {
+      const src = addSource('src1');
+      timeline.setKeyframes('src1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
+        { time: 10, x: 1, y: 1, z: 0, volume: 0.5 },
+      ]);
+      timeline.isPlaying = true;
+      timeline._applyKeyframes();
+      expect(src._timelineControlled).toBe(true);
+      timeline.pause();
+      expect(src._timelineControlled).toBe(false);
     });
   });
 });

@@ -1027,6 +1027,14 @@ input[type="range"]::-moz-range-thumb:hover { box-shadow: 0 0 12px rgba(0, 102, 
 }
 .tl-pro-current { color: var(--text); font-weight: 500 }
 
+.tl-pro-duration {
+  margin-left: 8px;
+  background: rgba(255,255,255,0.06); color: var(--text-secondary);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-sm);
+  font-size: 11px; padding: 2px 6px; outline: none; cursor: pointer;
+}
+.tl-pro-duration:hover { background: rgba(255,255,255,0.10); color: var(--text) }
+
 .tl-pro-zoom {
   display: flex; align-items: center; gap: 6px;
 }
@@ -1129,6 +1137,11 @@ input[type="range"]::-moz-range-thumb:hover { box-shadow: 0 0 12px rgba(0, 102, 
   width: 6px; height: 6px; background: #fff;
   border-radius: 50%; border: 1.5px solid rgba(0, 102, 204, 0.8);
   box-shadow: 0 0 4px rgba(0, 102, 204, 0.5);
+  pointer-events: auto; cursor: pointer;
+}
+.tl-pro-kf:hover {
+  transform: translateY(-50%) scale(1.5);
+  box-shadow: 0 0 8px rgba(0, 102, 204, 0.9);
 }
 
 .tl-pro-block-edge {

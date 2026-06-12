@@ -103,6 +103,12 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
         canvasGrid.automations.clear();
         canvasGrid.selectedNodeId = null;
 
+        // Clear the previous journey before applying the preset's
+        timeline.pause();
+        timeline.playheadTime = 0;
+        timeline.keyframes.clear();
+        timeline.sourceTimings.clear();
+
         audioEngine.setMasterVolume(preset.masterVolume);
         if (preset.posture) {
           audioEngine.applyPosturePreset(preset.posture);
@@ -115,7 +121,7 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
         }
 
         if (preset.totalDuration) {
-          timeline.totalDuration = preset.totalDuration;
+          timeline.setTotalDuration(preset.totalDuration);
         }
 
         const neededTypes = [...new Set(preset.sources.map(s => s.type).filter(type => SOUND_URLS[type] && !audioEngine.buffers.has(type)))];
@@ -178,6 +184,8 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
       canvasGrid.selectedNodeId = null;
 
       // Clear timeline state
+      timeline.pause();
+      timeline.playheadTime = 0;
       timeline.keyframes.clear();
       timeline.sourceTimings.clear();
 
@@ -209,7 +217,7 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
       }
 
       if (template.totalDuration) {
-        timeline.totalDuration = template.totalDuration;
+        timeline.setTotalDuration(template.totalDuration);
       }
 
       if (!timeline.visible && template.sources.length > 1) {

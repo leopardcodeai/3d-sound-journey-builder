@@ -177,6 +177,81 @@ describe('SceneManager', () => {
     });
   });
 
+  describe('journey persistence (timeline)', () => {
+    function createMockTimeline() {
+      return {
+        totalDuration: 600,
+        playheadTime: 0,
+        visible: false,
+        sourceTimings: new Map(),
+        keyframes: new Map(),
+        pause: vi.fn(),
+        setTotalDuration(v) { this.totalDuration = v; },
+        setKeyframes(id, kfs) { this.keyframes.set(id, kfs.map(kf => ({ ...kf }))); },
+        _render: vi.fn(),
+      };
+    }
+
+    it('saves and restores keyframes, clip timings and duration', () => {
+      const timeline = createMockTimeline();
+      const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
+
+      timeline.totalDuration = 300;
+      timeline.sourceTimings.set('src1', { startTime: 30, duration: 120 });
+      timeline.keyframes.set('src1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.2, easing: 'linear' },
+        { time: 60, x: 3, y: 2, z: 1, volume: 0.6, easing: 'ease-in' },
+      ]);
+
+      manager.saveScene('Journey');
+
+      // Mutate live state, then load the saved journey back
+      timeline.totalDuration = 600;
+      timeline.sourceTimings.clear();
+      timeline.keyframes.clear();
+
+      manager.loadScene('Journey');
+
+      expect(timeline.pause).toHaveBeenCalled();
+      expect(timeline.totalDuration).toBe(300);
+      expect(timeline.sourceTimings.get('src1')).toEqual({ startTime: 30, duration: 120 });
+      expect(timeline.keyframes.get('src1')).toHaveLength(2);
+      expect(timeline.keyframes.get('src1')[1]).toMatchObject({ time: 60, x: 3, volume: 0.6 });
+    });
+
+    it('drops timeline entries for sources that no longer exist', () => {
+      const timeline = createMockTimeline();
+      const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
+
+      timeline.keyframes.set('ghost', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }]);
+      const scene = manager.saveScene('No Ghosts');
+
+      expect(scene.timeline.keyframes).not.toHaveProperty('ghost');
+    });
+
+    it('clears the journey when loading a scene without timeline data', () => {
+      const timeline = createMockTimeline();
+      const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
+
+      manager.scenes.set('Legacy', {
+        name: 'Legacy', masterVolume: 0.5, posture: 'standing', headTilt: 0,
+        sources: [], automations: {},
+      });
+
+      timeline.keyframes.set('src1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }]);
+      manager.loadScene('Legacy');
+
+      expect(timeline.keyframes.size).toBe(0);
+      expect(timeline.sourceTimings.size).toBe(0);
+    });
+
+    it('works without a timeline reference (backwards compatible)', () => {
+      const scene = sceneManager.saveScene('No Timeline');
+      expect(scene.timeline).toBeNull();
+      expect(sceneManager.loadScene('No Timeline')).toBe(true);
+    });
+  });
+
   describe('persistScenes / loadScenes roundtrip', () => {
     it('saves and reloads scenes correctly', () => {
       sceneManager.saveScene('Roundtrip Scene');

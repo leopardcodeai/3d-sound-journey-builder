@@ -652,6 +652,7 @@ export class CanvasGrid {
     if (type === 'breathe') {
       entry.baseX = node.x;
       entry.baseY = node.y;
+      entry.baseVol = node.volume;
     } else if (type === 'drift') {
       entry.driftTarget = null;
       entry.driftTimeout = 0;
@@ -759,7 +760,10 @@ export class CanvasGrid {
         this.automations.delete(id);
         continue;
       }
-      
+
+      // While a timeline journey is playing, its keyframes own this source
+      if (node._timelineControlled) continue;
+
       if (auto.type === 'orbit') {
         // Orbit listener in circular path
         auto.angle += auto.speed;
@@ -813,9 +817,12 @@ export class CanvasGrid {
           Math.max(-10, Math.min(10, x)),
           Math.max(-10, Math.min(10, y))
         );
-        // Modulate volume too for breathing effect
+        // Modulate volume too for breathing effect — modulate around the captured
+        // base volume; updateSourceVolume mutates node.volume, so using node.volume
+        // here would compound the modulation into silence
+        if (auto.baseVol === undefined) auto.baseVol = node.volume;
         const volMod = 0.5 + 0.5 * Math.sin(auto.angle * 2);
-        this.audioEngine.updateSourceVolume(id, node.volume * (0.7 + 0.3 * volMod));
+        this.audioEngine.updateSourceVolume(id, auto.baseVol * (0.7 + 0.3 * volMod));
         if (this.selectedNodeId === id && this.callbacks.onNodeMoved) {
           this.callbacks.onNodeMoved(node);
         }

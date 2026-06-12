@@ -168,7 +168,7 @@ controlPanel.timeline = timeline;
 canvasCallbacks.getTimeline = () => controlPanel?.timeline;
 
 // 5. Initialize Scene Manager
-const sceneManager = new SceneManager(audioEngine, canvasGrid);
+const sceneManager = new SceneManager(audioEngine, canvasGrid, timeline);
 
 // Check for shared scene in URL
 sceneManager.importFromURL();
