@@ -13,19 +13,19 @@ describe('i18n', () => {
   describe('t()', () => {
     it('should return correct English string for default language', () => {
       setLanguage('en');
-      expect(t('appTitle')).toBe('Pirate Healings');
+      expect(t('appTitle')).toBe('3D Sound Journey Builder');
     });
 
     it('should return correct German string after setLanguage("de")', () => {
       setLanguage('de');
-      expect(t('appTitle')).toBe('Pirate Healings');
+      expect(t('appTitle')).toBe('3D Sound Journey Builder');
       expect(t('masterControl')).toBe('Master Steuerung');
       expect(t('mute')).toBe('Stumm');
     });
 
     it('should fall back to English for missing keys in German', () => {
       setLanguage('de');
-      expect(t('appTitle')).toBe('Pirate Healings');
+      expect(t('appTitle')).toBe('3D Sound Journey Builder');
     });
 
     it('should return the key itself for completely missing keys', () => {
