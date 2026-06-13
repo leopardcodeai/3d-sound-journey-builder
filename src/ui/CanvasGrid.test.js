@@ -8,6 +8,7 @@ function createMockCanvas() {
       fillRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(),
       stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), save: vi.fn(),
       restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(), setTransform: vi.fn(),
+      setLineDash: vi.fn(),
       createRadialGradient: () => ({ addColorStop: vi.fn() }),
       createLinearGradient: () => ({ addColorStop: vi.fn() }),
     }),
@@ -70,5 +71,30 @@ describe('CanvasGrid coordinate transforms', () => {
     expect(grid.getNodeRadius(0)).toBe(16);
     expect(grid.getNodeRadius(10)).toBe(24);
     expect(grid.getNodeRadius(-10)).toBe(8);
+  });
+});
+
+describe('CanvasGrid _drawKeyframePath', () => {
+  let canvas, engine, grid;
+
+  beforeEach(() => {
+    canvas = createMockCanvas();
+    engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 800, innerHeight: 600, addEventListener: vi.fn(), devicePixelRatio: 1 });
+    grid = new CanvasGrid(canvas, engine);
+    grid.w = 800;
+    grid.h = 600;
+    grid.unitScale = 25;
+  });
+
+  it('does not throw when timeline is absent', () => {
+    // timeline is undefined by default — must not throw
+    expect(() => grid._drawKeyframePath()).not.toThrow();
+  });
+
+  it('does not throw when timeline has no keyframes for the selected node', () => {
+    grid.selectedNodeId = 'node-1';
+    grid.timeline = { keyframes: new Map() };
+    expect(() => grid._drawKeyframePath()).not.toThrow();
   });
 });

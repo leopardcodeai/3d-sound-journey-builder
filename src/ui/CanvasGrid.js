@@ -910,6 +910,7 @@ export class CanvasGrid {
     
     this.drawGrid();
     this.drawTrails();
+    this._drawKeyframePath();
     this.drawListener();
     this.drawEmitters();
     this.drawSpeakers();
@@ -2033,5 +2034,76 @@ export class CanvasGrid {
         this.ctx.globalAlpha = 1;
       }
     }
+  }
+
+  /**
+   * Draw the keyframe movement path for the currently selected node.
+   * Renders a dashed polyline through each keyframe position plus a dot
+   * per keyframe, using the node's theme colour at reduced opacity so it
+   * sits subtly behind the emitter node without cluttering the view.
+   */
+  _drawKeyframePath() {
+    // Guard: needs timeline, a selection, and at least 2 keyframes
+    if (!this.timeline) return;
+    if (!this.selectedNodeId) return;
+
+    const kfs = this.timeline.keyframes && this.timeline.keyframes.get
+      ? this.timeline.keyframes.get(this.selectedNodeId)
+      : null;
+    if (!kfs || kfs.length < 2) return;
+
+    // Determine the colour from the selected source's type
+    const src = this.audioEngine.sources && this.audioEngine.sources.get
+      ? this.audioEngine.sources.get(this.selectedNodeId)
+      : null;
+    const type = src ? src.type : null;
+    const color = (type && this.themeColors[type]) ? this.themeColors[type] : '#ffffff';
+
+    const ctx = this.ctx;
+    ctx.save();
+
+    // --- Dashed polyline ---
+    ctx.beginPath();
+    ctx.setLineDash([5, 6]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = this._withAlpha(color, 0.35);
+
+    for (let i = 0; i < kfs.length; i++) {
+      const kf = kfs[i];
+      const pos = this.audioToCanvasCoords(kf.x, kf.y);
+      // Apply the same z-based vertical offset used when drawing nodes
+      const screenY = pos.y - (kf.z || 0) * 0.8;
+
+      if (i === 0) {
+        ctx.moveTo(pos.x, screenY);
+      } else {
+        ctx.lineTo(pos.x, screenY);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // --- Dots at each keyframe position ---
+    for (let i = 0; i < kfs.length; i++) {
+      const kf = kfs[i];
+      const pos = this.audioToCanvasCoords(kf.x, kf.y);
+      const screenY = pos.y - (kf.z || 0) * 0.8;
+
+      const isFirst = i === 0;
+      const dotRadius = isFirst ? 4.5 : 3;
+      const dotAlpha = isFirst ? 0.7 : 0.55;
+
+      ctx.beginPath();
+      ctx.arc(pos.x, screenY, dotRadius, 0, Math.PI * 2);
+      ctx.fillStyle = this._withAlpha(color, dotAlpha);
+      ctx.fill();
+
+      // Thin border ring for contrast
+      ctx.strokeStyle = this._withAlpha(color, dotAlpha * 0.5);
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 }

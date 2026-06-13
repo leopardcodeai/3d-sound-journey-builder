@@ -162,7 +162,9 @@ audioEngine._speakerConfig = speakerConfig;
 
 // Timeline
 const timeline = new Timeline(document.getElementById('timeline-panel'), audioEngine, canvasGrid);
+timeline.undoManager = undoManager;
 controlPanel.timeline = timeline;
+canvasGrid.timeline = timeline;
 
 // Inject timeline reference into callbacks (created after canvasCallbacks)
 canvasCallbacks.getTimeline = () => controlPanel?.timeline;

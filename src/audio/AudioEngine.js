@@ -709,7 +709,7 @@ export class SpatialAudioEngine {
   /**
    * Pause/Play a source (recreating the BufferSource since they are single-use)
    */
-  toggleSource(id) {
+  toggleSource(id, offset = 0) {
     const src = this.sources.get(id);
     if (!src) return;
 
@@ -769,10 +769,12 @@ export class SpatialAudioEngine {
       src.isPlaying = false;
     } else {
       const newSourceNode = this.ctx.createBufferSource();
-      newSourceNode.buffer = this.buffers.get(src.type);
+      const buf = this.buffers.get(src.type);
+      newSourceNode.buffer = buf;
       newSourceNode.loop = true;
       newSourceNode.connect(src.shoulderFilter); // Reconnect to shoulder filter
-      newSourceNode.start(0);
+      const startOffset = buf && buf.duration ? offset % buf.duration : 0;
+      newSourceNode.start(0, startOffset);
       
       src.sourceNode = newSourceNode;
       src.isPlaying = true;

@@ -215,3 +215,53 @@ export function createVolumeCommand(audioEngine, nodeId, oldVolume, newVolume) {
     }
   );
 }
+
+export function createClipTimingCommand(timeline, id, oldTiming, newTiming) {
+  return new Command(
+    'ClipTiming',
+    () => {
+      timeline.sourceTimings.set(id, { ...newTiming });
+      if (timeline.visible) timeline._render();
+    },
+    () => {
+      timeline.sourceTimings.set(id, { ...oldTiming });
+      if (timeline.visible) timeline._render();
+    }
+  );
+}
+
+export function createAddKeyframeCommand(timeline, id, keyframe, index) {
+  return new Command(
+    'AddKeyframe',
+    () => {
+      if (!timeline.keyframes.has(id)) timeline.keyframes.set(id, []);
+      timeline.keyframes.get(id).splice(index, 0, keyframe);
+      if (timeline.visible) timeline._render();
+    },
+    () => {
+      const kfs = timeline.keyframes.get(id);
+      if (!kfs) return;
+      kfs.splice(index, 1);
+      if (kfs.length === 0) timeline.keyframes.delete(id);
+      if (timeline.visible) timeline._render();
+    }
+  );
+}
+
+export function createRemoveKeyframeCommand(timeline, id, keyframe, index) {
+  return new Command(
+    'RemoveKeyframe',
+    () => {
+      const kfs = timeline.keyframes.get(id);
+      if (!kfs) return;
+      kfs.splice(index, 1);
+      if (kfs.length === 0) timeline.keyframes.delete(id);
+      if (timeline.visible) timeline._render();
+    },
+    () => {
+      if (!timeline.keyframes.has(id)) timeline.keyframes.set(id, []);
+      timeline.keyframes.get(id).splice(index, 0, keyframe);
+      if (timeline.visible) timeline._render();
+    }
+  );
+}

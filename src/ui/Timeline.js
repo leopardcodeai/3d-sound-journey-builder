@@ -1,3 +1,5 @@
+import { createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand } from '../core/UndoManager.js';
+
 /**
  * Timeline Pro — Professional multitrack timeline for designing spatial sound journeys.
  * Features: Keyframe-based spatial animation, glass UI, play/loop/scrub,
@@ -8,6 +10,7 @@ export class Timeline {
     this.container = container;
     this.audioEngine = audioEngine;
     this.canvasGrid = canvasGrid;
+    this.undoManager = null;
     this.visible = false;
     this.isPlaying = false;
     this.isLooping = true;
@@ -139,11 +142,34 @@ export class Timeline {
       if (!id) return;
       const kfEl = e.target.closest('.tl-pro-kf');
       if (kfEl) {
-        this.removeKeyframe(id, parseInt(kfEl.dataset.kfIndex, 10));
+        const index = parseInt(kfEl.dataset.kfIndex, 10);
+        if (this.undoManager) {
+          const kf = this.keyframes.get(id)?.[index];
+          if (kf) this.undoManager.execute(createRemoveKeyframeCommand(this, id, kf, index));
+        } else {
+          this.removeKeyframe(id, index);
+        }
       } else if (e.target.closest('.tl-pro-track-lane')) {
         const rect = this.viewport.getBoundingClientRect();
         const time = (e.clientX - rect.left - this._headerW - this.scrollX) / this.pixelsPerSecond;
-        this.addKeyframe(id, Math.round(Math.max(0, Math.min(this.totalDuration, time)) * 10) / 10);
+        const clampedTime = Math.round(Math.max(0, Math.min(this.totalDuration, time)) * 10) / 10;
+        if (this.undoManager) {
+          const kfs = this.keyframes.get(id) || [];
+          const src = this.audioEngine.sources.get(id);
+          if (src) {
+            const kf = {
+              time: clampedTime,
+              x: src.x, y: src.y, z: src.z,
+              volume: src.volume,
+              easing: 'linear'
+            };
+            const insertIdx = kfs.findIndex(k => k.time > kf.time);
+            const index = insertIdx === -1 ? kfs.length : insertIdx;
+            this.undoManager.execute(createAddKeyframeCommand(this, id, kf, index));
+          }
+        } else {
+          this.addKeyframe(id, clampedTime);
+        }
       }
       this._render();
     });
@@ -174,7 +200,15 @@ export class Timeline {
 
     window.addEventListener('mouseup', () => {
       if (this._drag) {
+        const d = this._drag;
         this._drag = null;
+        const current = this.sourceTimings.get(d.id);
+        if (current && (current.startTime !== d.orig.startTime || current.duration !== d.orig.duration) && this.undoManager) {
+          const newTiming = { ...current };
+          const oldTiming = { ...d.orig };
+          this.sourceTimings.set(d.id, oldTiming);
+          this.undoManager.execute(createClipTimingCommand(this, d.id, oldTiming, newTiming));
+        }
         this._applyKeyframes();
         this._render();
       }
@@ -432,7 +466,7 @@ export class Timeline {
       }
 
       if (active && !src.isPlaying) {
-        this.audioEngine.toggleSource(id);
+        this.audioEngine.toggleSource(id, Math.max(0, now - t.startTime));
       }
 
       const targetVol = active ? (kfVolume !== undefined ? kfVolume : src.volume) : 0;
@@ -588,7 +622,7 @@ export class Timeline {
         kfs.forEach((kf, ki) => {
           const kfX = kf.time * pps + sx;
           if (kfX >= left && kfX <= left + width) {
-            keyframeDots += `<div class="tl-pro-kf" data-kf-index="${ki}" style="left:${kfX - left}px" title="${kf.time.toFixed(1)}s: (${kf.x.toFixed(1)}, ${kf.y.toFixed(1)}) — double-click to remove" />`;
+            keyframeDots += `<div class="tl-pro-kf" data-kf-index="${ki}" style="left:${kfX - left}px" title="${kf.time.toFixed(1)}s: (${kf.x.toFixed(1)}, ${kf.y.toFixed(1)}) — double-click to remove"></div>`;
           }
         });
 

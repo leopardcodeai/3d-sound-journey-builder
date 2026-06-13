@@ -123,6 +123,29 @@ describe('Timeline', () => {
       expect(kfs[0].time).toBe(30);
       expect(kfs[1].time).toBe(60);
     });
+
+    it('renders each source\'s keyframe dots only in its own track', () => {
+      audioEngine.sources.set('src1', { type: 'birds', name: 'A', x: 0, y: 0, z: 0, volume: 0.5 });
+      audioEngine.sources.set('src2', { type: 'campfire', name: 'B', x: 0, y: 0, z: 0, volume: 0.5 });
+      timeline.setKeyframes('src1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
+        { time: 60, x: 1, y: 1, z: 0, volume: 0.5 },
+      ]);
+      timeline.setKeyframes('src2', [
+        { time: 30, x: 0, y: 0, z: 0, volume: 0.5 },
+        { time: 90, x: 1, y: 1, z: 0, volume: 0.5 },
+        { time: 150, x: 2, y: 2, z: 0, volume: 0.5 },
+      ]);
+      timeline.visible = true;
+      timeline._render();
+
+      const track1 = container.querySelector('.tl-pro-track[data-id="src1"]');
+      const track2 = container.querySelector('.tl-pro-track[data-id="src2"]');
+      // Malformed (self-closing) dot divs would nest later tracks inside earlier
+      // ones, inflating these counts. Each track must hold only its own dots.
+      expect(track1.querySelectorAll('.tl-pro-kf').length).toBe(2);
+      expect(track2.querySelectorAll('.tl-pro-kf').length).toBe(3);
+    });
   });
 
   describe('timing', () => {
@@ -241,6 +264,15 @@ describe('Timeline', () => {
       timeline._applyKeyframes();
       const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
       expect(calls[calls.length - 1][0]).toBeCloseTo(0.7);
+    });
+
+    it('passes elapsed clip time as offset when activating a mid-journey source', () => {
+      const src = addSource('src2', { isPlaying: false });
+      // Clip starts at t=30, duration 60; playhead is at t=45 (15s into the clip)
+      timeline.sourceTimings.set('src2', { startTime: 30, duration: 60 });
+      timeline.playheadTime = 45;
+      timeline._applyKeyframes();
+      expect(audioEngine.toggleSource).toHaveBeenCalledWith('src2', 15);
     });
 
     it('marks keyframed sources as timeline-controlled only while playing', () => {

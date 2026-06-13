@@ -94,6 +94,7 @@ function createMockAudioBuffer(channels = 1, length = 44100, sampleRate = 44100)
     numberOfChannels: channels,
     length,
     sampleRate,
+    duration: length / sampleRate,
     getChannelData: () => new Float32Array(length),
   };
 }
@@ -277,6 +278,58 @@ describe('SpatialAudioEngine', () => {
       engine.destroy();
       expect(engine.isInitialized).toBe(false);
       expect(engine.sources.size).toBe(0);
+    });
+  });
+
+  describe('toggleSource offset', () => {
+    beforeEach(() => {
+      engine.init();
+      // buffer duration = 44100/44100 = 1 second
+      const buf = createMockAudioBuffer(1, 44100, 44100);
+      engine.addAudioBuffer('snd', buf);
+    });
+
+    it('starts with offset=0 by default (start called with (0, 0))', () => {
+      engine.addSource('s1', 'snd', 'S', 0, 0, 0, 0.5);
+      const src = engine.sources.get('s1');
+      // addSource leaves isPlaying=true; toggle off first
+      engine.toggleSource('s1');
+      expect(src.isPlaying).toBe(false);
+
+      // Toggle back on without offset
+      engine.toggleSource('s1');
+      expect(src.isPlaying).toBe(true);
+      expect(src.sourceNode.start).toHaveBeenCalledWith(0, 0);
+    });
+
+    it('applies offset modulo buffer duration on activation', () => {
+      engine.addSource('s2', 'snd', 'S', 0, 0, 0, 0.5);
+      const src = engine.sources.get('s2');
+      engine.toggleSource('s2');
+      expect(src.isPlaying).toBe(false);
+
+      // buf.duration = 1s; offset 1.7 -> 1.7 % 1 = 0.7
+      engine.toggleSource('s2', 1.7);
+      expect(src.isPlaying).toBe(true);
+      expect(src.sourceNode.start).toHaveBeenCalledWith(0, expect.closeTo(0.7, 5));
+    });
+
+    it('does not pass offset to brainwave sources', () => {
+      engine.init();
+      const bwBuf = createMockAudioBuffer(1, 44100, 44100);
+      engine.addAudioBuffer('bw_alpha', bwBuf);
+      // Manually insert a brainwave source so toggleSource hits that branch
+      engine.sources.set('bw1', {
+        id: 'bw1', type: 'bw_alpha', isPlaying: false,
+        _bwFreq: 10, volume: 0.5,
+        _leftGain: engine.ctx.createGain(),
+        _rightGain: engine.ctx.createGain(),
+        _merger: engine.ctx.createChannelMerger(),
+        gainNode: engine.ctx.createGain(),
+        shoulderFilter: engine.ctx.createBiquadFilter(),
+      });
+      // Should not throw; brainwave branch ignores offset
+      expect(() => engine.toggleSource('bw1', 5)).not.toThrow();
     });
   });
 });
