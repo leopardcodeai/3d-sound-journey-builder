@@ -292,6 +292,13 @@ input[type="range"]::-moz-range-thumb:hover { box-shadow: 0 0 12px rgba(0, 102, 
 .panel-right:not(.panel-hidden) { transform: translateX(0) }
 .panel-right.panel-hidden { transform: translateX(120%); opacity: 0; pointer-events: none }
 
+/* When the timeline dock is open, lift the properties panel above it so the two
+   floating windows never overlap (timeline: bottom 16px + 180px height + gap).
+   Desktop only — on smaller screens the panel is a bottom sheet over its own tab. */
+@media (min-width:835px) {
+  body.timeline-open .panel-right { bottom: 212px }
+}
+
 /* Panel handle */
 .panel-handle { width: 32px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; margin: 0 auto 8px; cursor: grab; display: none }
 

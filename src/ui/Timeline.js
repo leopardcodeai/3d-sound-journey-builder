@@ -554,10 +554,18 @@ export class Timeline {
     } else {
       this.pause();
     }
+    this._reflectVisibility();
   }
 
-  show() { this.visible = true; this.container.style.display = 'block'; this._render(); }
-  hide() { this.visible = false; this.container.style.display = 'none'; this.pause(); }
+  show() { this.visible = true; this.container.style.display = 'block'; this._render(); this._reflectVisibility(); }
+  hide() { this.visible = false; this.container.style.display = 'none'; this.pause(); this._reflectVisibility(); }
+
+  // Mirror visibility to <body> so other floating panels can dodge the timeline dock
+  _reflectVisibility() {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.toggle('timeline-open', this.visible);
+    }
+  }
 
   _render() {
     if (!this.visible) return;

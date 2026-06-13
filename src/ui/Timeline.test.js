@@ -62,6 +62,14 @@ describe('Timeline', () => {
       timeline.toggle();
       expect(timeline.isPlaying).toBe(false);
     });
+
+    it('reflects visibility onto <body> so other panels can dodge the dock', () => {
+      document.body.classList.remove('timeline-open');
+      timeline.show();
+      expect(document.body.classList.contains('timeline-open')).toBe(true);
+      timeline.hide();
+      expect(document.body.classList.contains('timeline-open')).toBe(false);
+    });
   });
 
   describe('play/pause/stop', () => {

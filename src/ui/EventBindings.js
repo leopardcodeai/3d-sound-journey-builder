@@ -158,6 +158,18 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
           timeline._render();
         }
 
+        // Gate the sources to the journey at t=0 so what you hear matches the
+        // playhead — without this every source plays at full volume immediately.
+        timeline.playheadTime = 0;
+        timeline._applyKeyframes();
+        timeline._updatePlayhead();
+
+        // A keyframed preset is a journey — start the transport so the playhead
+        // moves with the sound instead of sitting paused while audio plays.
+        if (preset.keyframes && Object.keys(preset.keyframes).length > 0) {
+          timeline.play();
+        }
+
         controlPanel.showSelectedDetails(null);
       } catch(e) {
         console.error('Preset load error:', e);
@@ -226,6 +238,11 @@ export function bindEvents(elements, audioEngine, canvasGrid, controlPanel, time
       } else if (timeline.visible) {
         timeline._render();
       }
+
+      // Gate the sources to the journey at t=0 so what you hear matches the playhead
+      timeline.playheadTime = 0;
+      timeline._applyKeyframes();
+      timeline._updatePlayhead();
 
       controlPanel.showSelectedDetails(null);
     });
