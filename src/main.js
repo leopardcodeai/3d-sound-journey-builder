@@ -284,3 +284,8 @@ async function loadDefaultSoundscape() {
 bindEvents(elements, audioEngine, canvasGrid, controlPanel, timeline, sceneManager, soundscapeTimer, headTracker, speakerConfig, initAudioEngine);
 
 initKeyboardShortcuts({ canvasGrid, audioEngine, controlPanel, undoManager });
+
+// Dev-only handle for tooling (e.g. scripts/shoot.mjs); stripped from production builds.
+if (import.meta.env.DEV) {
+  window.__app = { canvasGrid, audioEngine, timeline, sceneManager, controlPanel };
+}
