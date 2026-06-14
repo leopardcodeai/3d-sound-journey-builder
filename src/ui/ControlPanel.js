@@ -4,6 +4,7 @@
  */
 import { t } from '../i18n.js';
 import { initControlPanelEvents } from './ControlPanelEvents.js';
+import { SOUND_URLS } from '../data/SoundUrls.js';
 
 export class ControlPanel {
   /**
@@ -135,12 +136,13 @@ export class ControlPanel {
         card.draggable = true;
         card.dataset.type = p.type;
         const name = typeof p.name === 'function' ? p.name() : p.name;
-        card.innerHTML = `<div class="preset-icon">${p.emoji}</div><div class="preset-info"><div class="preset-name">${name}</div><div class="preset-desc">${p.desc}</div></div><button class="add-preset-btn">+</button>`;
+        card.innerHTML = `<div class="preset-icon">${p.emoji}</div><div class="preset-info"><div class="preset-name">${name}</div><div class="preset-desc">${p.desc}</div></div><button class="preview-preset-btn" title="Audition">▶</button><button class="add-preset-btn" title="Add to journey">+</button>`;
 
         card.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', p.type); card.classList.add('dragging'); });
         card.addEventListener('dragend', () => card.classList.remove('dragging'));
-        card.addEventListener('click', (e) => { if (e.target.closest('.add-preset-btn')) return; this.addPresetToRandomPosition(p.type); });
+        card.addEventListener('click', (e) => { if (e.target.closest('.add-preset-btn') || e.target.closest('.preview-preset-btn')) return; this.addPresetToRandomPosition(p.type); });
         card.querySelector('.add-preset-btn').addEventListener('click', (e) => { e.stopPropagation(); this.addPresetToRandomPosition(p.type); });
+        card.querySelector('.preview-preset-btn').addEventListener('click', (e) => { e.stopPropagation(); this.auditionPreset(p.type, e.currentTarget); });
         container.appendChild(card);
       });
     }
@@ -164,6 +166,26 @@ export class ControlPanel {
       if (src) {
         this.showSelectedDetails(src);
       }
+    }
+  }
+
+  /**
+   * Audition a sound from the library without adding it to the journey.
+   * @param {string} type - sound type
+   * @param {HTMLElement} [btn] - the preview button, for transient UI feedback
+   */
+  async auditionPreset(type, btn) {
+    if (btn) {
+      btn.textContent = '◼';
+      btn.classList.add('previewing');
+    }
+    try {
+      await this.audioEngine.previewSound(type, SOUND_URLS[type]);
+    } catch (e) {
+      console.warn('Audition failed for', type, e);
+    }
+    if (btn) {
+      setTimeout(() => { btn.textContent = '▶'; btn.classList.remove('previewing'); }, 4000);
     }
   }
 

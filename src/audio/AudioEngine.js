@@ -783,6 +783,54 @@ export class SpatialAudioEngine {
   }
 
   /**
+   * Audition a sound without adding it to the journey — a short, centered
+   * one-shot preview through the master bus. Used by the library flyouts.
+   * @param {string} type - sound type (sample or 'instr_'-backed instrument)
+   * @param {string} [url] - optional sample URL for lazy preload
+   * @returns {Promise<boolean>}
+   */
+  async previewSound(type, url) {
+    if (!this.isInitialized) this.init();
+    if (this.ctx && this.ctx.state === 'suspended') { try { await this.ctx.resume(); } catch(e) {} }
+
+    let buffer = this.buffers.get(type) || this.buffers.get('instr_' + type);
+    if (!buffer && url) {
+      await this.preloadSound(type, url);
+      buffer = this.buffers.get(type);
+    }
+    if (!buffer || !this.ctx) return false;
+
+    this.stopPreview();
+
+    const node = this.ctx.createBufferSource();
+    node.buffer = buffer;
+    node.loop = false;
+
+    const g = this.ctx.createGain();
+    const now = this.ctx.currentTime;
+    const dur = Math.min(4, buffer.duration || 4);
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.9, now + 0.12);
+    g.gain.setValueAtTime(0.9, now + Math.max(0.2, dur - 0.5));
+    g.gain.linearRampToValueAtTime(0.0001, now + dur);
+
+    node.connect(g);
+    g.connect(this.masterGain);
+    node.start(0, 0, dur);
+
+    this._previewNode = node;
+    node.onended = () => { if (this._previewNode === node) this._previewNode = null; };
+    return true;
+  }
+
+  stopPreview() {
+    if (this._previewNode) {
+      try { this._previewNode.stop(); } catch(e) {}
+      this._previewNode = null;
+    }
+  }
+
+  /**
    * Stop and remove a source from the soundscape
    */
   removeSource(id) {
