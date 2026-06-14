@@ -228,6 +228,16 @@ async function initAudioEngine(loadDefaults = true) {
 
   if (loadDefaults) await loadDefaultSoundscape();
 
+  // The journey is the app: open the timeline and let it run on launch.
+  if (loadDefaults && timeline) {
+    timeline.show();
+    document.getElementById('timeline-toggle-btn')?.classList.add('active');
+    timeline.playheadTime = 0;
+    timeline._applyKeyframes();
+    timeline.play();
+  }
+
+  document.body.classList.remove('pre-start');
   if (elements.welcomeModal) elements.welcomeModal.classList.add('hidden');
 
   const instr = document.getElementById('canvas-instructions');

@@ -869,14 +869,16 @@ export class CanvasGrid {
    */
   draw() {
     if (this._isPaused) return;
-    // Atmospheric background with fog gradient
-    this.ctx.fillStyle = '#060608';
+    // Clear, then lay a translucent warm wash so the leopard backdrop (a layer
+    // behind the canvas element) reads through as ambient wallpaper.
+    this.ctx.clearRect(0, 0, this.w, this.h);
+    this.ctx.fillStyle = 'rgba(26, 22, 20, 0.78)';
     this.ctx.fillRect(0, 0, this.w, this.h);
 
     // Subtle fog gradient from bottom
     const fogGrad = this.ctx.createLinearGradient(0, this.h * 0.6, 0, this.h);
-    fogGrad.addColorStop(0, 'rgba(20, 20, 40, 0)');
-    fogGrad.addColorStop(1, 'rgba(20, 20, 40, 0.3)');
+    fogGrad.addColorStop(0, 'rgba(40, 28, 20, 0)');
+    fogGrad.addColorStop(1, 'rgba(40, 28, 20, 0.32)');
     this.ctx.fillStyle = fogGrad;
     this.ctx.fillRect(0, 0, this.w, this.h);
 
@@ -884,8 +886,8 @@ export class CanvasGrid {
     const cx = this.w / 2;
     const cy = this.h / 2;
     const centerGlow = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, this.unitScale * 3);
-    centerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
-    centerGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    centerGlow.addColorStop(0, 'rgba(255, 210, 170, 0.05)');
+    centerGlow.addColorStop(1, 'rgba(255, 210, 170, 0)');
     this.ctx.fillStyle = centerGlow;
     this.ctx.fillRect(0, 0, this.w, this.h);
 
@@ -1173,8 +1175,8 @@ export class CanvasGrid {
    */
   _drawSchematicStanding(levels, tiltRad, outputMode) {
     const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(0, 153, 255, 0.8)' : 'rgba(0, 204, 102, 0.8)';
-    const secondaryColor = isHeadphones ? 'rgba(0, 102, 204, 0.5)' : 'rgba(0, 153, 51, 0.5)';
+    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
+    const secondaryColor = isHeadphones ? 'rgba(242, 111, 59, 0.5)' : 'rgba(0, 153, 51, 0.5)';
     
     this.ctx.save();
     this.ctx.rotate(tiltRad);
@@ -1297,7 +1299,7 @@ export class CanvasGrid {
    */
   _drawSchematicLyingBack(levels, tiltRad, outputMode) {
     const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(0, 153, 255, 0.8)' : 'rgba(0, 204, 102, 0.8)';
+    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
     const earGlowL = levels.left > 0.03;
     const earGlowR = levels.right > 0.03;
     
@@ -1338,11 +1340,11 @@ export class CanvasGrid {
       this.ctx.arc(44, 0, 14, Math.PI * 0.3, -Math.PI * 0.3, true);
       this.ctx.stroke();
       
-      this.ctx.fillStyle = earGlowL ? 'rgba(0,153,255,0.3)' : 'rgba(255,255,255,0.08)';
+      this.ctx.fillStyle = earGlowL ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
       this.ctx.beginPath();
       this.ctx.arc(40, -10, 3, 0, Math.PI * 2);
       this.ctx.fill();
-      this.ctx.fillStyle = earGlowR ? 'rgba(0,153,255,0.3)' : 'rgba(255,255,255,0.08)';
+      this.ctx.fillStyle = earGlowR ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
       this.ctx.beginPath();
       this.ctx.arc(40, 10, 3, 0, Math.PI * 2);
       this.ctx.fill();
@@ -1377,7 +1379,7 @@ export class CanvasGrid {
    */
   _drawSchematicLyingSide(levels, tiltRad, outputMode) {
     const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(0, 153, 255, 0.8)' : 'rgba(0, 204, 102, 0.8)';
+    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
     const earGlow = levels.left > 0.03;
     
     this.ctx.save();
@@ -1417,7 +1419,7 @@ export class CanvasGrid {
       this.ctx.arc(0, -42, 14, -Math.PI * 0.7, Math.PI * 0.7, false);
       this.ctx.stroke();
       
-      this.ctx.fillStyle = earGlow ? 'rgba(0,153,255,0.3)' : 'rgba(255,255,255,0.08)';
+      this.ctx.fillStyle = earGlow ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
       this.ctx.beginPath();
       this.ctx.arc(0, -54, 3.5, 0, Math.PI * 2);
       this.ctx.fill();
@@ -1490,7 +1492,7 @@ export class CanvasGrid {
     for (const ear of ears) {
       const levelValue = levels[ear.levelKey] || 0;
       ctx.fillStyle = tint.earFill;
-      ctx.strokeStyle = levelValue > 0.03 ? 'rgba(0, 102, 204, 0.6)' : tint.outline;
+      ctx.strokeStyle = levelValue > 0.03 ? 'rgba(242, 111, 59, 0.6)' : tint.outline;
       ctx.beginPath();
       ctx.ellipse(ear.x, ear.y, ear.rx, ear.ry, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -1507,9 +1509,9 @@ export class CanvasGrid {
     // Audio visualizer
     const maxLevel = Math.max(levels.left, levels.right);
     if (maxLevel > 0.02) {
-      ctx.strokeStyle = 'rgba(0, 102, 204, 0.5)';
+      ctx.strokeStyle = 'rgba(242, 111, 59, 0.5)';
       ctx.lineWidth = 1.5;
-      ctx.shadowColor = 'rgba(0, 102, 204, 0.4)';
+      ctx.shadowColor = 'rgba(242, 111, 59, 0.4)';
       ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(0, 0, visualizer.radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * maxLevel);
@@ -1519,9 +1521,9 @@ export class CanvasGrid {
       // Glow
       const pulseR = visualizer.radius + maxLevel * 5;
       const glowGrad = ctx.createRadialGradient(0, 0, visualizer.radius - 2, 0, 0, pulseR);
-      glowGrad.addColorStop(0, 'rgba(0, 102, 204, 0)');
-      glowGrad.addColorStop(0.7, `rgba(0, 102, 204, ${maxLevel * 0.15})`);
-      glowGrad.addColorStop(1, 'rgba(0, 102, 204, 0)');
+      glowGrad.addColorStop(0, 'rgba(242, 111, 59, 0)');
+      glowGrad.addColorStop(0.7, `rgba(242, 111, 59, ${maxLevel * 0.15})`);
+      glowGrad.addColorStop(1, 'rgba(242, 111, 59, 0)');
       ctx.fillStyle = glowGrad;
       ctx.beginPath();
       ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
@@ -1533,7 +1535,7 @@ export class CanvasGrid {
       const levelValue = levels[bar.levelKey] || 0;
       if (levelValue > 0.03) {
         const barH = Math.min(levelValue * bar.maxHeight, bar.maxHeight);
-        ctx.fillStyle = levelValue > 0.3 ? 'rgba(0, 102, 204, 0.8)' : 'rgba(255,255,255,0.12)';
+        ctx.fillStyle = levelValue > 0.3 ? 'rgba(242, 111, 59, 0.8)' : 'rgba(255,255,255,0.12)';
         ctx.fillRect(bar.x, bar.y - barH / 2, bar.width, Math.max(barH, 1));
       }
     }
@@ -1891,7 +1893,7 @@ export class CanvasGrid {
       if (isSelected || isHovered) {
         const glowRadius = radius + (isSelected ? 10 : 6);
         const glowOpacity = isSelected ? 0.3 : 0.15;
-        const glowColor = isSelected ? 'rgba(0, 102, 204' : this._withAlpha(color, 0).replace(/, 0\)$/, '');
+        const glowColor = isSelected ? 'rgba(242, 111, 59' : this._withAlpha(color, 0).replace(/, 0\)$/, '');
         const glowGrad = this.ctx.createRadialGradient(pos.x, nodeY, radius, pos.x, nodeY, glowRadius + 5);
         glowGrad.addColorStop(0, `${glowColor}, 0)`);
         glowGrad.addColorStop(0.5, `${glowColor}, ${glowOpacity})`);
@@ -1906,9 +1908,9 @@ export class CanvasGrid {
       if (isSelected) {
         const pulseTime = Date.now() * 0.003;
         const pulseRadius = radius + 8 + Math.sin(pulseTime) * 3;
-        this.ctx.strokeStyle = `rgba(0, 102, 204, ${0.2 + Math.sin(pulseTime) * 0.1})`;
+        this.ctx.strokeStyle = `rgba(242, 111, 59, ${0.2 + Math.sin(pulseTime) * 0.1})`;
         this.ctx.lineWidth = 1.5;
-        this.ctx.shadowColor = 'rgba(0, 102, 204, 0.3)';
+        this.ctx.shadowColor = 'rgba(242, 111, 59, 0.3)';
         this.ctx.shadowBlur = 10;
         this.ctx.beginPath();
         this.ctx.arc(pos.x, nodeY, pulseRadius, 0, Math.PI * 2);
@@ -1918,7 +1920,7 @@ export class CanvasGrid {
       
       // 6. Node circle
       this.ctx.fillStyle = '#1c1c1e';
-      this.ctx.strokeStyle = isSelected ? 'rgba(0, 102, 204, 0.8)' : (isHovered ? 'rgba(255, 255, 255, 0.5)' : color);
+      this.ctx.strokeStyle = isSelected ? 'rgba(242, 111, 59, 0.8)' : (isHovered ? 'rgba(255, 255, 255, 0.5)' : color);
       this.ctx.lineWidth = isSelected ? 2 : 1;
       this.ctx.beginPath();
       this.ctx.arc(pos.x, nodeY, radius, 0, Math.PI * 2);
@@ -1984,21 +1986,21 @@ export class CanvasGrid {
       const isEditMode = this.editLayer === 'speakers';
       const isDragging = this._draggedSpeakerIdx === i;
 
-      this.ctx.fillStyle = isDragging ? 'rgba(0, 102, 204, 0.30)' : 'rgba(0, 102, 204, 0.12)';
-      this.ctx.strokeStyle = isEditMode ? '#2997ff' : '#0066cc';
+      this.ctx.fillStyle = isDragging ? 'rgba(242, 111, 59, 0.30)' : 'rgba(242, 111, 59, 0.12)';
+      this.ctx.strokeStyle = isEditMode ? '#ff8b59' : '#f26f3b';
       this.ctx.lineWidth = isEditMode ? 2 : 1.5;
       this.ctx.beginPath();
       this.ctx.roundRect(pos.x - 12, pos.y - 9, 24, 18, 5);
       this.ctx.fill();
       this.ctx.stroke();
 
-      this.ctx.fillStyle = isEditMode ? '#2997ff' : '#0066cc';
+      this.ctx.fillStyle = isEditMode ? '#ff8b59' : '#f26f3b';
       this.ctx.font = '9px -apple-system, sans-serif';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(sp.label, pos.x, pos.y + 4);
 
       if (sp.angle !== undefined) {
-        this.ctx.strokeStyle = 'rgba(0, 102, 204, 0.15)';
+        this.ctx.strokeStyle = 'rgba(242, 111, 59, 0.15)';
         this.ctx.setLineDash([2, 3]);
         this.ctx.beginPath();
         this.ctx.moveTo(pos.x, pos.y);

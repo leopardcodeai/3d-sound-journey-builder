@@ -72,6 +72,24 @@ describe('Timeline', () => {
     });
   });
 
+  describe('infinity / once mode', () => {
+    it('starts in infinity mode', () => {
+      expect(timeline.isLooping).toBe(true);
+      const btn = container.querySelector('.tl-pro-loop');
+      expect(btn.textContent).toBe('∞');
+      expect(btn.classList.contains('active')).toBe(true);
+    });
+
+    it('setLooping(false) switches the button to once mode', () => {
+      timeline.setLooping(false);
+      const btn = container.querySelector('.tl-pro-loop');
+      expect(timeline.isLooping).toBe(false);
+      expect(btn.textContent).toBe('↦');
+      expect(btn.classList.contains('active')).toBe(false);
+      expect(btn.title).toMatch(/once/i);
+    });
+  });
+
   describe('play/pause/stop', () => {
     it('should toggle play state', () => {
       timeline.togglePlay();

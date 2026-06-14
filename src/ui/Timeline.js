@@ -41,7 +41,7 @@ export class Timeline {
       <div class="tl-pro-controls">
         <button class="tl-pro-btn tl-pro-play" title="Play/Pause">▶</button>
         <button class="tl-pro-btn tl-pro-stop" title="Stop">⏹</button>
-        <button class="tl-pro-btn tl-pro-loop active" title="Loop">🔁</button>
+        <button class="tl-pro-btn tl-pro-loop active" title="Infinity — loop forever">∞</button>
         <div class="tl-pro-time">
           <span class="tl-pro-current">00:00</span>
           <span class="tl-pro-separator"> / </span>
@@ -99,8 +99,7 @@ export class Timeline {
     this.header.querySelector('.tl-pro-play').addEventListener('click', () => this.togglePlay());
     this.header.querySelector('.tl-pro-stop').addEventListener('click', () => this.stop());
     this.header.querySelector('.tl-pro-loop').addEventListener('click', (e) => {
-      this.isLooping = !this.isLooping;
-      e.currentTarget.classList.toggle('active', this.isLooping);
+      this.setLooping(!this.isLooping);
     });
 
     // Journey duration
@@ -294,12 +293,62 @@ export class Timeline {
     this.isPlaying ? this.pause() : this.play();
   }
 
+  /**
+   * Switch between infinity (loop forever) and once (run to the end, then fade
+   * out and pause). The button reflects the active mode.
+   */
+  setLooping(on) {
+    this.isLooping = on;
+    const btn = this.header.querySelector('.tl-pro-loop');
+    if (btn) {
+      btn.classList.toggle('active', on);
+      btn.textContent = on ? '∞' : '↦';
+      btn.title = on ? 'Infinity — loop forever' : 'Once — play through, then fade out';
+    }
+  }
+
   play() {
     if (this.isPlaying) return;
+    this._restoreMaster();
     this.isPlaying = true;
     this._lastFrameTime = performance.now();
     this.header.querySelector('.tl-pro-play').textContent = '⏸';
     this._loop();
+  }
+
+  // Undo an end-of-journey fade so the next play starts at full volume
+  _restoreMaster() {
+    if (this._masterBeforeFade === undefined) return;
+    const mg = this.audioEngine.masterGain;
+    const ctx = this.audioEngine.ctx;
+    if (mg && ctx) {
+      mg.gain.cancelScheduledValues(ctx.currentTime);
+      mg.gain.setValueAtTime(this._masterBeforeFade, ctx.currentTime);
+    }
+    this._masterBeforeFade = undefined;
+  }
+
+  /**
+   * End of a one-shot journey: gently fade the master out, then pause and
+   * rewind, leaving the journey ready to replay.
+   */
+  _finishOnce() {
+    const mg = this.audioEngine.masterGain;
+    const ctx = this.audioEngine.ctx;
+    const FADE = 2.5;
+    if (mg && ctx) {
+      this._masterBeforeFade = mg.gain.value;
+      mg.gain.cancelScheduledValues(ctx.currentTime);
+      mg.gain.setValueAtTime(mg.gain.value, ctx.currentTime);
+      mg.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + FADE);
+    }
+    this._endFadeTimer = setTimeout(() => {
+      this.pause();
+      this.playheadTime = 0;
+      this._updatePlayhead();
+      this._applyKeyframes();
+      this._restoreMaster();
+    }, FADE * 1000 + 100);
   }
 
   pause() {
@@ -308,6 +357,11 @@ export class Timeline {
     if (this._animationFrame) {
       cancelAnimationFrame(this._animationFrame);
       this._animationFrame = null;
+    }
+    if (this._endFadeTimer) {
+      clearTimeout(this._endFadeTimer);
+      this._endFadeTimer = null;
+      this._restoreMaster();
     }
     // Hand position control back to canvas automations
     for (const src of this.audioEngine.sources.values()) {
@@ -362,7 +416,11 @@ export class Timeline {
       if (this.isLooping) {
         this.playheadTime = 0;
       } else {
-        this.stop();
+        this.playheadTime = this.totalDuration;
+        this._updatePlayhead();
+        this.isPlaying = false;
+        this.header.querySelector('.tl-pro-play').textContent = '▶';
+        this._finishOnce();
         return;
       }
     }
