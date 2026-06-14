@@ -1788,8 +1788,35 @@ export class CanvasGrid {
   /**
    * Draw sound sources with glow effects and soft wave ripples
    */
+  /**
+   * Order sources back-to-front so nearer nodes overlap farther ones
+   * (painter's algorithm). Depth uses the projected screen-Y: in 3D this
+   * matches the iso transform's vertical mapping, in 2D it's just lower = nearer.
+   */
+  _depthSortedSources() {
+    const entries = [...this.audioEngine.sources.entries()];
+    const cx = this.w / 2;
+    const cy = this.h / 2;
+    let b = 0;
+    let d = 1;
+    if (this.viewMode === '3d') {
+      const yawRad = this.camYaw * Math.PI / 180;
+      const pitchRad = this.camPitch * Math.PI / 180;
+      const zoom = this.camZoom;
+      b = zoom * Math.sin(yawRad) * 0.35;
+      d = zoom * (0.7 + 0.3 * Math.cos(pitchRad));
+    }
+    return entries
+      .map(entry => {
+        const pos = this.audioToCanvasCoords(entry[1].x, entry[1].y);
+        return { entry, depth: b * (pos.x - cx) + d * (pos.y - cy) };
+      })
+      .sort((a, z) => a.depth - z.depth)
+      .map(o => o.entry);
+  }
+
   drawEmitters() {
-    for (const [id, src] of this.audioEngine.sources.entries()) {
+    for (const [id, src] of this._depthSortedSources()) {
       const pos = this.audioToCanvasCoords(src.x, src.y);
       const color = this.themeColors[src.type] || this.themeColors.custom;
       const isSelected = this.selectedNodeId === id;
