@@ -41,7 +41,7 @@ playing.
 | Area | Detail |
 |---|---|
 | **Spatial audio** | HRTF panner per source, shoulder and outer-ear filters that track elevation, three listener postures, head tracking through device orientation |
-| **Sound library** | About forty entries in seven categories: recorded ambience, sound-healing instruments, offline-rendered instruments, procedural frequency tools, generative layers, and your own files |
+| **Sound library** | Sixty-two entries in seven categories: recorded ambience, sound-healing instruments, offline-rendered instruments, procedural frequency tools, generative layers, and your own files |
 | **Synthesised healing set** | The bowl strike, the gong and the seven chakra bowls are generated, not recorded. Each bowl sounds within ten cents of the frequency on its label, and a test measures it |
 | **Frequency tools** | Binaural, isochronic and monaural beats, pure and solfeggio tones, white, pink and brown noise, a breathing pacer, a 7.83 Hz pulse. Each carries an evidence label |
 | **Per-source inserts** | Low-pass, high-pass, playback speed, tremolo, reverb send, fade in, fade out, repeat cycle |
