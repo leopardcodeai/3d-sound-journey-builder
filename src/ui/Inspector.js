@@ -12,7 +12,16 @@ import { getSound, soundName, SOLFEGGIO, bandForBeat } from '../data/SoundLibrar
 import { icon } from './Icons.js';
 import { syncRangeFills } from './sliders.js';
 import { t } from '../i18n.js';
-import { createVolumeCommand, createParamCommand, createAutomationCommand, createDeleteCommand } from '../core/UndoManager.js';
+import { Command, createVolumeCommand, createParamCommand, createAutomationCommand, createDeleteCommand } from '../core/UndoManager.js';
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/** Binaural entries and the isochronic entry that carries the same band. */
+const ISOCHRONIC_FOR = {
+  bw_theta: 'iso_theta',
+  bw_alpha: 'iso_alpha',
+  bw_gamma: 'iso_gamma',
+};
 
 const TABS = [
   { id: 'sound', labelKey: 'tabSound', icon: 'volume' },
@@ -38,6 +47,7 @@ export class Inspector {
     this.tab = 'sound';
     this.nodeId = null;
     this._commitStart = null;
+    this._commitKey = null;
 
     this._build();
     this._bind();
@@ -112,7 +122,11 @@ export class Inspector {
     // single undo entry. Keyboard users get the same through focusin.
     const rememberStart = (e) => {
       const input = e.target.closest && e.target.closest('input[type="range"]');
-      if (input) this._commitStart = this._readValue(input.dataset.key);
+      if (!input) return;
+      // The key travels with the value: a commit must only use a start value
+      // that was captured from the same control.
+      this._commitKey = input.dataset.key;
+      this._commitStart = this._readValue(this._commitKey);
     };
     this.paneEl.addEventListener('pointerdown', rememberStart);
     this.paneEl.addEventListener('focusin', rememberStart);
@@ -122,7 +136,13 @@ export class Inspector {
       const kf = e.target.closest('.insp-add-kf');
       if (kf && this.timeline) { this.timeline.addKeyframeAt(this.nodeId, this.timeline.playheadTime); this._renderPane(); return; }
       const solf = e.target.closest('.solf-btn');
-      if (solf) { this._apply('freq', parseFloat(solf.dataset.freq), true); this._renderPane(); return; }
+      if (solf) {
+        this._clearStart();
+        this._remember('freq', this._readValue('freq'));
+        this._apply('freq', parseFloat(solf.dataset.freq), true);
+        this._renderPane();
+        return;
+      }
       if (e.target.closest('.insp-to-iso')) this._convertToIsochronic();
     });
   }
@@ -132,6 +152,7 @@ export class Inspector {
   // ------------------------------------------------------------------
 
   show(node) {
+    if (!node || node.id !== this.nodeId) { this._clearStart(); this._lastValues = {}; }
     this.nodeId = node ? node.id : null;
     const has = !!node;
     this.emptyEl.hidden = has;
@@ -292,6 +313,22 @@ export class Inspector {
   // Control handling
   // ------------------------------------------------------------------
 
+  /** The captured start value, but only when it came from this same control. */
+  _startFor(key) {
+    return this._commitKey === key && this._commitStart !== null ? this._commitStart : null;
+  }
+
+  _clearStart() {
+    this._commitStart = null;
+    this._commitKey = null;
+  }
+
+  /** Last committed value per key, so a preset button still has something to undo to. */
+  _remember(key, value) {
+    if (!this._lastValues) this._lastValues = {};
+    this._lastValues[key] = value;
+  }
+
   _readValue(key) {
     const node = this._node();
     if (!node) return 0;
@@ -325,10 +362,10 @@ export class Inspector {
 
     switch (key) {
       case 'volume':
-        engine.updateSourceVolume(node.id, value);
-        if (commit && this.undoManager && this._commitStart !== null) {
-          this.undoManager.execute(createVolumeCommand(engine, node.id, this._commitStart, value));
-          this._commitStart = null;
+        engine.updateSourceVolume(node.id, clamp(value, 0, 1.5));
+        if (commit && this.undoManager && this._startFor('volume') !== null) {
+          this.undoManager.execute(createVolumeCommand(engine, node.id, this._startFor('volume'), value));
+          this._clearStart();
         }
         return;
       case 'height':
@@ -375,12 +412,22 @@ export class Inspector {
         engine.setSourceRamp(node.id, node.rampUp || 0, node.rampDown || 0, value);
         return;
       default: {
-        if (commit && this.undoManager && this._commitStart !== null && this._commitStart !== value) {
-          this.undoManager.execute(createParamCommand(engine, node.id, key, this._commitStart, value));
-          this._commitStart = null;
+        const start = this._startFor(key);
+        if (commit && this.undoManager && start !== null && start !== value) {
+          this.undoManager.execute(createParamCommand(engine, node.id, key, start, value));
+          this._clearStart();
         } else {
           engine.setSourceParam(node.id, key, value);
+          // A direct commit with no matching gesture (a preset chip, say) still
+          // records a step, using the value the control held a moment ago.
+          if (commit && this.undoManager && start === null) {
+            const previous = this._lastValues && this._lastValues[key];
+            if (previous !== undefined && previous !== value) {
+              this.undoManager.execute(createParamCommand(engine, node.id, key, previous, value));
+            }
+          }
         }
+        this._remember(key, value);
       }
     }
   }
@@ -408,15 +455,33 @@ export class Inspector {
     const { id, name, x, y, z, volume } = node;
     const beat = node.params.beat;
     const carrier = node.params.carrier || 220;
-    this.audioEngine.removeSource(id);
-    const next = this.audioEngine.addSource(id, node.type, name, x, y, z, volume, {
-      gen: 'isochronic',
-      params: { beat, freq: carrier, duty: 0.5 },
-    });
-    if (next) {
-      this.canvasGrid.selectedNodeId = id;
-      this.show(next);
-      if (this.timeline && this.timeline.visible) this.timeline._render();
+    // Keep the beat rate, take the matching isochronic entry when one exists so
+    // the card, colour and evidence note match what is now playing.
+    const type = ISOCHRONIC_FOR[node.type] || node.type;
+    const before = {
+      id, type: node.type, name, x, y, z, volume,
+      gen: node.gen, params: { ...node.params }, inserts: { ...node.inserts },
+    };
+    const after = {
+      id, type, name, x: x || 0, y: y || -2.5, z: z || 0, volume,
+      gen: 'isochronic', params: { beat, freq: carrier, duty: 0.5 }, inserts: { ...node.inserts },
+    };
+    const swap = (to) => {
+      this.audioEngine.removeSource(id);
+      const next = this.audioEngine.addSource(id, to.type, to.name, to.x, to.y, to.z, to.volume, {
+        gen: to.gen, params: to.params, inserts: to.inserts,
+        spatial: to.gen === 'binaural' ? false : true,
+      });
+      if (next) {
+        this.canvasGrid.selectedNodeId = id;
+        this.show(next);
+        if (this.timeline && this.timeline.visible) this.timeline._render();
+      }
+    };
+    if (this.undoManager) {
+      this.undoManager.execute(new Command('SwitchGenerator', () => swap(after), () => swap(before)));
+    } else {
+      swap(after);
     }
   }
 

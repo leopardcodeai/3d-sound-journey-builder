@@ -319,3 +319,62 @@ describe('Timeline', () => {
     });
   });
 });
+
+describe('Timeline drag safety', () => {
+  let container, audioEngine, canvasGrid, timeline;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    audioEngine = createMockAudioEngine();
+    canvasGrid = createMockCanvasGrid();
+    timeline = new Timeline(container, audioEngine, canvasGrid);
+    addSource(audioEngine, 's1');
+    timeline.setKeyframes('s1', [
+      { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
+      { time: 60, x: 1, y: 1, z: 0, volume: 0.5 },
+    ]);
+    timeline.show();
+    timeline.pixelsPerSecond = 4;
+    timeline._render();
+  });
+
+  it('ends a drag when the pointer reports the button is no longer down', () => {
+    const kf = container.querySelector('.tl-kf[data-kf-index="1"]');
+    kf.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 20, pointerId: 1, button: 0 }));
+    expect(timeline._drag).toBeTruthy();
+    // A move that arrives with no button held means the release happened
+    // somewhere we never saw.
+    window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 20, pointerId: 1, buttons: 0 }));
+    expect(timeline._drag).toBeNull();
+  });
+
+  it('ends a drag on pointercancel', () => {
+    const kf = container.querySelector('.tl-kf[data-kf-index="1"]');
+    kf.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 20, pointerId: 1, button: 0 }));
+    window.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 1 }));
+    expect(timeline._drag).toBeNull();
+  });
+
+  it('ends a drag when the window loses focus', () => {
+    const kf = container.querySelector('.tl-kf[data-kf-index="1"]');
+    kf.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 20, pointerId: 1, button: 0 }));
+    window.dispatchEvent(new Event('blur'));
+    expect(timeline._drag).toBeNull();
+  });
+
+  it('keeps dragging while the button is held', () => {
+    const kf = container.querySelector('.tl-kf[data-kf-index="1"]');
+    kf.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 20, pointerId: 1, button: 0 }));
+    window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 140, clientY: 20, pointerId: 1, buttons: 1 }));
+    expect(timeline._drag).toBeTruthy();
+    expect(timeline.keyframes.get('s1')[1].time).not.toBe(60);
+  });
+
+  it('escapes a source id so it cannot break out of the track attribute', () => {
+    addSource(audioEngine, 'x"><img src=y onerror=alert(1)>');
+    timeline._render();
+    expect(container.querySelector('.tl-tracks img')).toBeNull();
+    expect(container.querySelectorAll('.tl-track').length).toBe(2);
+  });
+});

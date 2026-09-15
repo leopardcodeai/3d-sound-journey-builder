@@ -113,3 +113,43 @@ describe('FocusView', () => {
     expect(root.querySelector('.focus-layer img')).toBeNull();
   });
 });
+
+describe('FocusView session state', () => {
+  let root, engine, view;
+
+  beforeEach(() => {
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    engine = createEngine();
+    view = new FocusView(root, engine, {});
+  });
+
+  it('clears the fade flag when a new mode starts', async () => {
+    await view.applyMode('sleep');
+    view._fadeStarted = true;          // as if a wind-down had begun
+    await view.applyMode('calm');
+    expect(view._fadeStarted).toBe(false);
+    // applyMode starts the session, so elapsed is at the very beginning
+    // rather than exactly zero.
+    expect(view.elapsed).toBeLessThan(0.5);
+  });
+
+  it('clears the fade flag and restores the level when paused mid-fade', async () => {
+    await view.applyMode('sleep');
+    view.start();
+    view._fadeStarted = true;
+    view.pause();
+    expect(view._fadeStarted).toBe(false);
+    expect(engine.masterGain.gain.cancelScheduledValues).toHaveBeenCalled();
+  });
+
+  it('escapes a source id in the layer controls', async () => {
+    await view.applyMode('focus');
+    const first = [...engine.sources.values()][0];
+    engine.sources.delete(first.id);
+    first.id = 'x"><img src=y onerror=alert(1)>';
+    engine.sources.set(first.id, first);
+    view.renderLayers();
+    expect(root.querySelector('.focus-layers img')).toBeNull();
+  });
+});

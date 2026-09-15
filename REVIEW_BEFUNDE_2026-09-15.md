@@ -9,7 +9,7 @@ Lauf: `lcr --zweck tief --base fa25485` gegen den v2-Umbau.
 | CodeRabbit | 5 Befunde, alle am Code verifiziert, alle behoben |
 | Codex | Kontingent erschöpft (429), lief nicht |
 | Gemini | Tageskontingent erschöpft (429, Limit 20 Anfragen), lief nicht |
-| Interne Prüfung | zwei Claude-Subagenten auf Audio und Oberfläche, Ergebnis unten |
+| Interne Prüfung | zwei Claude-Subagenten: 8 Befunde Audio, 7 Befunde Oberfläche, alle behoben |
 
 ⚠️ Zwei von drei fremden Modellen waren am Limit. Der Umbau hat damit
 **einen** fremden Leser bekommen, nicht drei. Vor dem nächsten Deploy auf ein
@@ -196,7 +196,109 @@ beim Klangbad mit zehn Quellen.
 
 ## Eigene Prüfung: Oberfläche
 
-Ergebnis wird hier nachgetragen.
+Ein zweiter Subagent hat `Timeline`, `CanvasGrid`, `Inspector`, `FocusView`,
+`Camera` und `main` gegengelesen: sieben Befunde, alle verifiziert, alle
+behoben.
+
+### O1. Cross-Site-Scripting über die Quellen-Kennung (schwer)
+
+Alle Anzeigenamen wurden maskiert, die **Kennung** einer Quelle dagegen nicht:
+`data-id="${id}"` in der Zeitleiste und an sechs Stellen in der Fokus-Ansicht.
+Kennungen kommen aus dem Szenen-JSON, und ein geteilter Link ist von dem
+geschrieben, der ihn schickt. `importFromURL` prüfte nur, ob `sources` ein
+Array ist.
+
+**Der Angriff:** ein Link mit `sources[0].id = 'x"><img src=x onerror=...>'`.
+Beim Öffnen lädt die App die Szene ohne Zutun, die Kennung bricht aus dem
+Attribut aus und der Code läuft. Der Eintrag wurde zusätzlich unter "Shared
+Scene" gespeichert, wäre also beim nächsten Öffnen aus der eigenen Liste erneut
+losgegangen.
+
+**Behoben, an zwei Stellen:**
+- Am Rand: `sanitiseScene` verwirft Quellen, deren Kennung, Typ oder Generator
+  kein einfacher Bezeichner ist, klemmt jede Zahl in ihren Bereich, kürzt
+  Anzeigenamen und wirft Zeitleisten-Einträge weg, die auf verworfene Quellen
+  zeigen. Acht Tests.
+- In der Tiefe: jede Kennung, jeder Typ und jede Farbe wird beim Bau von
+  Markup maskiert, in Zeitleiste, Bibliothek und Fokus-Ansicht.
+
+Im Browser mit dem echten Angriffslink geprüft: die bösartige Quelle fällt
+weg, die harmlose daneben wird geladen, nichts wird ausgeführt.
+
+### O2. Rückgängig konnte den Startwert eines anderen Reglers verwenden
+
+`_commitStart` merkte sich nur den Wert, nicht den Regler. Ein Solfeggio-Knopf
+ruft `_apply('freq', …, true)` direkt auf und nahm, was gerade gespeichert war.
+
+**Der Fall:** den Raumanteil-Regler anfassen, ohne ihn zu bewegen, dann einen
+Solfeggio-Knopf drücken. Der Rückgängig-Schritt lautet "Frequenz zurück auf
+0.3", und Rückgängig stellt den Ton auf 0,3 Hz.
+
+**Behoben:** der Startwert trägt den Schlüssel seines Reglers und gilt nur für
+diesen. Ein Preset-Knopf merkt sich den vorherigen Wert selbst. Beim Wechsel
+der Auswahl wird beides verworfen. Die Lautstärke wird zusätzlich geklemmt.
+
+### O3. Ein Zug in der Zeitleiste konnte hängenbleiben
+
+`_drag` wurde nur von `pointerup` am Fenster gelöscht. Wer die Maustaste
+außerhalb des Fensters loslässt, erzeugt dieses Ereignis nie: der Keyframe
+folgte dem Zeiger mit losgelassener Taste weiter, und der nächste Klick
+irgendwo auf der Seite legte ihn dort ab und schrieb das in den Rückgängig-Stapel.
+
+**Behoben:** Zeigerfang beim Beginn, Prüfung auf `buttons` bei jeder Bewegung,
+und `pointercancel` sowie der Fokusverlust des Fensters beenden den Zug. Vier
+Tests.
+
+### O4. Der Wechsel auf isochron blieb kopffest
+
+`_convertToIsochronic` baute die Quelle neu, behielt aber den alten Typ. Über
+`getSound('bw_alpha').spatial === false` blieb sie kopffest: der Wechsel, der
+gerade den Lautsprecherfall lösen soll, änderte nichts Sichtbares.
+
+**Behoben:** der Typ wechselt auf den passenden isochronen Eintrag, und die
+Kopffestigkeit richtet sich nach dem laufenden Generator statt nach dem
+Bibliothekseintrag. Der Wechsel liegt jetzt auf dem Rückgängig-Stapel.
+
+**Im Browser geprüft:** aus `bw_alpha`, kopffest, wird `iso_alpha` mit Panner,
+Beat 10 Hz erhalten, Bewegungs-Reiter wieder benutzbar, Rückgängig stellt den
+binauralen Beat samt Kopffestigkeit her.
+
+### O5. Die zweite Sitzung blendete nicht mehr aus
+
+`_fadeStarted` wurde nur beim natürlichen Ende zurückgesetzt. Wer eine Sitzung
+mitten im Ausklang pausiert und dann einen anderen Modus wählt, bekam nie
+wieder eine Ausblendung.
+
+**Behoben:** das Kennzeichen wird beim Moduswechsel und beim Pausieren
+zurückgesetzt, und beim Pausieren wird die laufende Rampe verworfen und der
+Pegel wiederhergestellt. Zwei Tests.
+
+### O6. Zwei Journeys konnten sich überlagern
+
+`loadJourney` räumt auf, wartet dann auf das Dekodieren und fügt danach ein.
+Zwei schnelle Klicks ließen den zweiten Lauf aufräumen, während der erste noch
+wartete: danach mischten sich beide Journeys.
+
+**Behoben:** ein Zähler; nur der jüngste Aufruf darf weitermachen.
+
+### O7. Die Reiterleiste widersprach sich auf dem Telefon
+
+`showTimeline` änderte die Sichtbarkeit der Zeitleiste, ohne die Reiterleiste
+zu informieren. Eine Journey aus den Einstellungen öffnete die Zeitleiste,
+während der Bibliotheksreiter noch leuchtete und sein Blatt darunter offen
+stand.
+
+**Behoben:** eine Funktion leitet den aktiven Reiter aus dem tatsächlichen
+Zustand ab und wird von jeder Änderung aufgerufen. Der Zeitleisten-Reiter
+leuchtet jetzt auch, solange sein Dock offen ist.
+
+### Ausdrücklich geprüft und in Ordnung
+
+Rückgängig bei Clips und Keyframes endet auf dem neuen Wert. Der Zeigerfang in
+der Leinwand wird vom Browser selbst gelöst. Die kopffesten Plätze sind
+innerhalb eines Einzelbilds stabil. Umrechnung von Richtung und Winkel im
+Inspektor sind exakte Umkehrungen. In der Leinwand wird kein Markup gebaut,
+dort ist kein Cross-Site-Scripting möglich.
 
 Zusätzlich im Browser geprüft und in Ordnung:
 

@@ -184,6 +184,10 @@ export class FocusView {
       if (src) this._baseParams.set(id, { ...src.params });
     });
     this._tapered = false;
+    // A session that was interrupted mid-fade would otherwise leave this set,
+    // and the next one would never ramp down.
+    this._fadeStarted = false;
+    this.elapsed = 0;
 
     this.renderModes();
     this._renderLengths();
@@ -213,6 +217,16 @@ export class FocusView {
 
   pause() {
     this.running = false;
+    // Pausing during a fade abandons that ramp, so the flag goes with it.
+    if (this._fadeStarted) {
+      this._fadeStarted = false;
+      const mode = this.modeId ? MODES[this.modeId] : null;
+      if (mode && this.audioEngine.masterGain && this.audioEngine.ctx) {
+        const g = this.audioEngine.masterGain.gain;
+        g.cancelScheduledValues(this.audioEngine.ctx.currentTime);
+        g.setValueAtTime(mode.masterVolume, this.audioEngine.ctx.currentTime);
+      }
+    }
     this.orbEl.classList.remove('is-running');
     this.orbIcon.innerHTML = icon('play', { size: 34 });
     for (const [id, src] of this.audioEngine.sources) if (src.isPlaying) this.audioEngine.toggleSource(id);
@@ -379,15 +393,15 @@ export class FocusView {
       const mainValue = main ? src.params[main.key] : null;
       return `
         <div class="focus-layer">
-          <span class="focus-layer-glyph" style="--tint:${def.color}">${icon(def.glyph || 'file', { size: 15 })}</span>
+          <span class="focus-layer-glyph" style="--tint:${escapeHtml(def.color)}">${icon(def.glyph || 'file', { size: 15 })}</span>
           <span class="focus-layer-name">${escapeHtml(src.name || soundName(src.type))}</span>
           <label class="focus-layer-ctl">
-            <input type="range" data-id="${src.id}" data-key="volume" min="0" max="1" step="0.01" value="${src.volume}" />
+            <input type="range" data-id="${escapeHtml(src.id)}" data-key="volume" min="0" max="1" step="0.01" value="${src.volume}" />
             <output class="mono">${Math.round(src.volume * 100)}%</output>
           </label>
           ${main ? layerControl(src.id, main, mainValue) : ''}
-          ${src.gen === 'tone' ? `<div class="chips">${SOLFEGGIO.slice(0, 5).map(f => `<button class="chip solf-btn" data-id="${src.id}" data-freq="${f}">${f}</button>`).join('')}</div>` : ''}
-          <button class="icon-btn focus-layer-remove" data-id="${src.id}" title="${t('removeSound')}">${icon('close', { size: 12 })}</button>
+          ${src.gen === 'tone' ? `<div class="chips">${SOLFEGGIO.slice(0, 5).map(f => `<button class="chip solf-btn" data-id="${escapeHtml(src.id)}" data-freq="${f}">${f}</button>`).join('')}</div>` : ''}
+          <button class="icon-btn focus-layer-remove" data-id="${escapeHtml(src.id)}" title="${t('removeSound')}">${icon('close', { size: 12 })}</button>
         </div>`;
     }).join('');
     syncRangeFills(this.layersEl);
@@ -406,13 +420,13 @@ function cell(label, value, sub) {
 function layerControl(id, ctl, value) {
   if (ctl.options) {
     return `<label class="focus-layer-ctl">
-      <select class="input" data-id="${id}" data-key="${ctl.key}">
+      <select class="input" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}">
         ${ctl.options.map(o => `<option value="${o}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
       </select>
     </label>`;
   }
   return `<label class="focus-layer-ctl">
-    <input type="range" data-id="${id}" data-key="${ctl.key}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${value}" />
+    <input type="range" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${value}" />
     <output class="mono">${formatParam(ctl.key, value)}</output>
   </label>`;
 }

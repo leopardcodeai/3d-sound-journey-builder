@@ -164,11 +164,17 @@ async function importAudioFile(file) {
 // Journeys
 // ---------------------------------------------------------------------------
 
+let journeyLoad = 0;
+
 async function loadJourney(id) {
   const journey = JOURNEYS[id];
   if (!journey) return;
+  // Loading awaits a decode, so a second click would clear and configure on
+  // top of the first one still in flight. Only the newest call may finish.
+  const token = ++journeyLoad;
   if (!audioEngine.isInitialized) audioEngine.init();
   await audioEngine.resume();
+  if (token !== journeyLoad) return;
 
   for (const sid of [...audioEngine.sources.keys()]) audioEngine.removeSource(sid);
   canvasGrid.automations.clear();
@@ -189,6 +195,7 @@ async function loadJourney(id) {
   const needed = [...new Set(journey.sources.map(s => s.type))]
     .filter(type => getSound(type).kind === 'sample' && !audioEngine.hasBuffer(type));
   await Promise.all(needed.map(type => audioEngine.preloadSound(type, getSound(type).url)));
+  if (token !== journeyLoad) return;
   setHint('');
 
   for (const s of journey.sources) {
@@ -238,19 +245,35 @@ function setView(view) {
 function showTimeline(show) {
   if (show) timeline.show(); else timeline.hide();
   $('#timeline-toggle').classList.toggle('is-on', timeline.visible);
+  syncTabBar();
+}
+
+/**
+ * On a phone the sheets, the dock and the tab bar are one state. Whichever of
+ * them changes, the highlight follows: the open sheet if there is one, the
+ * timeline if its dock is up, otherwise the field.
+ */
+function syncTabBar() {
+  if (window.innerWidth > 900) return;
+  const panel = document.body.dataset.panel;
+  const active = (panel === 'library' || panel === 'inspector')
+    ? panel
+    : (timeline.visible ? 'timeline' : 'field');
+  document.querySelectorAll('.tabbar-btn').forEach(b => b.classList.toggle('is-on', b.dataset.panel === active));
 }
 
 function openMobilePanel(panel) {
   if (window.innerWidth > 900) return;
   document.body.dataset.panel = panel;
-  document.querySelectorAll('.tabbar-btn').forEach(b => b.classList.toggle('is-on', b.dataset.panel === panel));
+  syncTabBar();
 }
 
 /** The tab bar toggles: tapping the open panel again returns to the field. */
 function toggleMobilePanel(panel) {
   if (panel === 'timeline') {
+    // Opening the dock closes any sheet over it, so they never stack.
+    document.body.dataset.panel = 'field';
     showTimeline(!timeline.visible);
-    openMobilePanel('field');
     return;
   }
   openMobilePanel(document.body.dataset.panel === panel ? 'field' : panel);

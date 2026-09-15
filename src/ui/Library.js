@@ -172,8 +172,8 @@ export class Library {
       const evidence = s.evidence ? `<span class="tag tag-${s.evidence}">${t(`evidence${cap(s.evidence)}`)}</span>` : '';
       const note = s.noteKey ? `<span class="card-note">${escapeHtml(t(s.noteKey))}</span>` : '';
       return `
-        <article class="card-sound" data-type="${s.type}" draggable="true" tabindex="0">
-          <span class="card-glyph" style="--tint:${s.color}">${icon(s.glyph || 'file', { size: 17 })}</span>
+        <article class="card-sound" data-type="${escapeHtml(s.type)}" draggable="true" tabindex="0">
+          <span class="card-glyph" style="--tint:${escapeHtml(s.color)}">${icon(s.glyph || 'file', { size: 17 })}</span>
           <span class="card-body">
             <span class="card-name">${escapeHtml(name)}</span>
             <span class="card-desc">${escapeHtml(s.desc || '')}</span>

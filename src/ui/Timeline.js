@@ -46,6 +46,7 @@ export class Timeline {
     this._animationFrame = null;
     this._lastFrameTime = 0;
     this._drag = null;
+    this._captured = null;
     this._masterBeforeFade = undefined;
     this._endFadeTimer = null;
 
@@ -158,6 +159,10 @@ export class Timeline {
 
     window.addEventListener('pointermove', (e) => this._onPointerMove(e));
     window.addEventListener('pointerup', (e) => this._onPointerUp(e));
+    // A release outside the window never reaches us. Without these the drag
+    // stays live with the button up, and the next click anywhere commits it.
+    window.addEventListener('pointercancel', (e) => this._onPointerUp(e));
+    window.addEventListener('blur', () => this._onPointerUp());
 
     // Double-click a lane to add a keyframe, a keyframe to remove it
     this.tracksArea.addEventListener('dblclick', (e) => {
@@ -204,6 +209,7 @@ export class Timeline {
     e.preventDefault();
     this.ensureTiming(id);
 
+    this._capture(e);
     if (kfEl) {
       const index = parseInt(kfEl.dataset.kfIndex, 10);
       const kf = this.keyframes.get(id)?.[index];
@@ -227,6 +233,7 @@ export class Timeline {
 
   _onScrubStart(e) {
     if (e.button !== 0) return;
+    this._capture(e);
     this._drag = { kind: 'scrub', wasPlaying: this.isPlaying };
     this.pause();
     this._seekTo(this._timeAt(e.clientX));
@@ -235,12 +242,33 @@ export class Timeline {
   _onPointerMove(e) {
     const d = this._drag;
     if (!d) return;
+    // The primary button is no longer down: the release happened somewhere we
+    // could not see it, so finish the drag here rather than keep following.
+    if (e.buttons !== undefined && (e.buttons & 1) === 0) { this._onPointerUp(e); return; }
     if (d.kind === 'scrub') { this._seekTo(this._timeAt(e.clientX)); return; }
     if (d.kind === 'clip') { this._dragClip(e); return; }
     if (d.kind === 'keyframe') { this._dragKeyframe(e); return; }
   }
 
+  /** Hold the pointer so a drag keeps reporting once it leaves the element. */
+  _capture(e) {
+    const target = e && e.currentTarget;
+    if (target && target.setPointerCapture && e.pointerId !== undefined) {
+      try { target.setPointerCapture(e.pointerId); this._captured = { target, id: e.pointerId }; }
+      catch (err) { this._captured = null; }
+    }
+  }
+
+  _release() {
+    const c = this._captured;
+    this._captured = null;
+    if (c && c.target.releasePointerCapture) {
+      try { c.target.releasePointerCapture(c.id); } catch (err) { /* already released */ }
+    }
+  }
+
   _onPointerUp() {
+    this._release();
     const d = this._drag;
     this._drag = null;
     if (!d) return;
@@ -787,7 +815,7 @@ export class Timeline {
       const envelope = kfs.length > 1 ? this._envelopeSvg(kfs, left, width) : '';
 
       html += `
-        <div class="tl-track${selected ? ' is-selected' : ''}${dimmed ? ' is-dim' : ''}" data-id="${id}">
+        <div class="tl-track${selected ? ' is-selected' : ''}${dimmed ? ' is-dim' : ''}" data-id="${escapeHtml(id)}">
           <div class="tl-head">
             <span class="tl-dot" style="background:${color}"></span>
             <span class="tl-name">${escapeHtml(src.name || soundName(src.type))}</span>

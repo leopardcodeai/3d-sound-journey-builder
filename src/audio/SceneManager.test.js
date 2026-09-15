@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SceneManager } from './SceneManager';
+import { SceneManager, sanitiseScene } from './SceneManager';
 
 const mockAudioEngine = {
   sources: new Map(),
@@ -510,5 +510,78 @@ describe('importFromURL', () => {
     window.location.hash = '#something-else';
     const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
     expect(manager.importFromURL()).toBeNull();
+  });
+});
+
+describe('sanitiseScene', () => {
+  const base = () => ({
+    masterVolume: 0.6, posture: 'lying-back', headTilt: 10,
+    sources: [{ id: 's1', type: 'rain', name: 'Rain', x: 1, y: 2, z: 0, volume: 0.5, isPlaying: true }],
+    automations: {}, timeline: null,
+  });
+
+  it('keeps a well-formed scene', () => {
+    const out = sanitiseScene(base());
+    expect(out.sources).toHaveLength(1);
+    expect(out.posture).toBe('lying-back');
+    expect(out.headTilt).toBe(10);
+  });
+
+  it('drops a source whose id could break out of an attribute', () => {
+    const raw = base();
+    raw.sources.push({ id: 'x"><img src=x onerror=alert(1)>', type: 'rain', name: 'Evil', x: 0, y: 0, z: 0, volume: 0.5 });
+    expect(sanitiseScene(raw).sources.map(s => s.id)).toEqual(['s1']);
+  });
+
+  it('drops a source whose type or generator name is not an identifier', () => {
+    const raw = base();
+    raw.sources.push({ id: 'ok1', type: '"><script>', name: 'A', x: 0, y: 0, z: 0, volume: 0.5 });
+    raw.sources.push({ id: 'ok2', type: 'rain', gen: '"><script>', name: 'B', x: 0, y: 0, z: 0, volume: 0.5 });
+    expect(sanitiseScene(raw).sources.map(s => s.id)).toEqual(['s1']);
+  });
+
+  it('clamps positions, volume, tilt and duration into range', () => {
+    const raw = base();
+    raw.headTilt = 9999;
+    raw.masterVolume = 50;
+    raw.sources[0] = { ...raw.sources[0], x: 1e9, y: -1e9, z: NaN, volume: 99 };
+    raw.timeline = { totalDuration: 1e9, timings: {}, keyframes: {}, tracks: {}, sections: [] };
+    const out = sanitiseScene(raw);
+    expect(out.headTilt).toBe(90);
+    expect(out.masterVolume).toBe(1);
+    expect(out.sources[0].x).toBe(10);
+    expect(out.sources[0].y).toBe(-10);
+    expect(out.sources[0].z).toBe(0);
+    expect(out.sources[0].volume).toBe(1.5);
+    expect(out.timeline.totalDuration).toBe(7200);
+  });
+
+  it('drops timeline entries that refer to sources it rejected', () => {
+    const raw = base();
+    raw.timeline = {
+      totalDuration: 600,
+      timings: { s1: { startTime: 0, duration: 60 }, ghost: { startTime: 0, duration: 60 } },
+      keyframes: { s1: [], ghost: [] },
+      tracks: { ghost: { muted: true } },
+      sections: [{ time: 0, name: 'A' }],
+    };
+    const out = sanitiseScene(raw);
+    expect(Object.keys(out.timeline.timings)).toEqual(['s1']);
+    expect(Object.keys(out.timeline.keyframes)).toEqual(['s1']);
+    expect(out.timeline.tracks).toEqual({});
+  });
+
+  it('rejects anything that is not a scene', () => {
+    expect(sanitiseScene(null)).toBeNull();
+    expect(sanitiseScene({ hello: 'world' })).toBeNull();
+    expect(sanitiseScene({ sources: [] })).toBeNull();
+    expect(sanitiseScene({ sources: [{ id: '<bad>', type: 'rain' }] })).toBeNull();
+  });
+
+  it('truncates a very long display name but keeps it as text', () => {
+    const raw = base();
+    raw.sources[0].name = '<img src=x>'.repeat(50);
+    const out = sanitiseScene(raw);
+    expect(out.sources[0].name.length).toBe(64);
   });
 });

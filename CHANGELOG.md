@@ -40,7 +40,7 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 - **Suggested mode** for the current hour in the focus view.
 - **Two journeys**: Restore, built only from water and birdsong, and an
   hour-long Sound bath with the seven chakra bowls entering in order.
-- **Tests**: 221 unit tests across the engine, generators, camera, timeline,
+- **Tests**: 236 unit tests across the engine, generators, camera, timeline,
   library, focus view, presets, scenes, undo and i18n, up from 104.
 
 ### Changed
@@ -66,6 +66,21 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 
 ### Fixed
 
+- **Security**: a shared link could run script in the reader's browser. Display
+  names were escaped everywhere, but a source's identifier was written into a
+  `data-id` attribute unescaped, and a scene from a URL is written by whoever
+  sent the link. Scenes are now validated on import, identifiers that are not
+  plain identifiers are rejected, and every identifier is escaped where it
+  reaches markup.
+- An undo step could take its starting value from a different control, so
+  undoing a Solfeggio preset could set the tone to 0.3 Hz.
+- A timeline drag released outside the window stayed live, and the next click
+  anywhere dropped the keyframe there.
+- Switching a binaural source to an isochronic one left it head-locked, which
+  is exactly what the switch exists to undo.
+- A focus session paused mid-fade left the next session without a fade-out.
+- Two quick journey clicks interleaved into one hybrid state.
+- On a phone the timeline dock, the sheets and the tab bar could disagree.
 - A shared link, opened for the first time on another machine, restored only
   the generators. Loading a scene built its sources without decoding the
   samples first, so every recorded sound was silently dropped. Loading is now

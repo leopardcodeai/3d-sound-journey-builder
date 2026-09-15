@@ -330,7 +330,12 @@ export class SpatialAudioEngine {
       console.error(`Unknown generator "${genName}" for "${type}"`);
       return null;
     }
-    const headLocked = !!handle.meta.headLocked || def.spatial === false;
+    // Head-locking follows the generator that is actually running, not the
+    // library entry: swapping a binaural source to an isochronic one has to
+    // release it into the field. `options.spatial` lets a caller be explicit.
+    const headLocked = options.spatial !== undefined
+      ? options.spatial === false
+      : (!!handle.meta.headLocked || (options.gen ? false : def.spatial === false));
 
     const src = {
       id, type, name: name || type, x, y, z, volume,

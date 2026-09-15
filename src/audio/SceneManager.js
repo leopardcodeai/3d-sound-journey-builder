@@ -232,8 +232,8 @@ export class SceneManager {
     try {
       const encoded = hash.replace('#scene=', '');
       const json = decodeURIComponent(escape(atob(encoded)));
-      const scene = JSON.parse(json);
-      if (!scene || !Array.isArray(scene.sources)) throw new Error('not a scene');
+      const scene = sanitiseScene(JSON.parse(json));
+      if (!scene) throw new Error('not a scene');
       scene.name = 'Shared Scene';
       this.scenes.set('Shared Scene', scene);
       this.persistScenes();
@@ -286,4 +286,70 @@ function rampOf(src) {
   const repeat = src.repeatInterval || 0;
   if (!up && !down && !repeat) return null;
   return compact({ up: up || null, down: down || null, repeat: repeat || null });
+}
+
+/** Identifiers that are safe to put in markup and to use as object keys. */
+const SAFE_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+const num = (v, min, max, fallback) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+/**
+ * A scene from a URL is written by whoever sent the link. Reject anything that
+ * is not shaped like a scene, drop sources whose id or type could break out of
+ * an attribute, and clamp every number into its legal range. Display names stay
+ * free text: they are escaped wherever they are rendered.
+ */
+export function sanitiseScene(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sources)) return null;
+
+  const sources = [];
+  const keptIds = new Set();
+  for (const s of raw.sources) {
+    if (!s || typeof s !== 'object') continue;
+    if (!SAFE_ID.test(String(s.id)) || !SAFE_ID.test(String(s.type))) continue;
+    if (s.gen !== undefined && s.gen !== null && !SAFE_ID.test(String(s.gen))) continue;
+    keptIds.add(String(s.id));
+    sources.push({
+      ...s,
+      id: String(s.id),
+      type: String(s.type),
+      name: typeof s.name === 'string' ? s.name.slice(0, 64) : String(s.type),
+      x: num(s.x, -10, 10, 0),
+      y: num(s.y, -10, 10, 0),
+      z: num(s.z, -10, 10, 0),
+      volume: num(s.volume, 0, 1.5, 0.5),
+      isPlaying: s.isPlaying !== false,
+    });
+  }
+  if (sources.length === 0) return null;
+
+  const pickKnown = (obj) => {
+    const out = {};
+    for (const [id, value] of Object.entries(obj || {})) if (keptIds.has(id)) out[id] = value;
+    return out;
+  };
+
+  const tl = raw.timeline && typeof raw.timeline === 'object' ? raw.timeline : null;
+  return {
+    name: 'Shared Scene',
+    masterVolume: num(raw.masterVolume, 0, 1, 0.7),
+    posture: ['standing', 'lying-back', 'lying-side'].includes(raw.posture) ? raw.posture : 'standing',
+    headTilt: num(raw.headTilt, -90, 90, 0),
+    shoulderStrength: raw.shoulderStrength === undefined ? undefined : num(raw.shoulderStrength, 0, 1, 0.5),
+    pinnaStrength: raw.pinnaStrength === undefined ? undefined : num(raw.pinnaStrength, 0, 1, 0.5),
+    sources,
+    automations: pickKnown(raw.automations),
+    timeline: tl ? {
+      totalDuration: num(tl.totalDuration, 30, 7200, 600),
+      timings: pickKnown(tl.timings),
+      keyframes: pickKnown(tl.keyframes),
+      tracks: pickKnown(tl.tracks),
+      sections: Array.isArray(tl.sections)
+        ? tl.sections.slice(0, 32).map(sec => ({ time: num(sec && sec.time, 0, 7200, 0), name: String((sec && sec.name) || '').slice(0, 40) }))
+        : [],
+    } : null,
+  };
 }
