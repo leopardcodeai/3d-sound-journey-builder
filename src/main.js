@@ -327,13 +327,34 @@ function showTimeline(show) {
  * them changes, the highlight follows: the open sheet if there is one, the
  * timeline if its dock is up, otherwise the field.
  */
+/**
+ * The bar holds two different kinds of control and used to show only one state
+ * across all four.
+ *
+ * Library, Field and Inspector are exclusive: one of them is what you are
+ * looking at. The timeline is not one of them; it is a dock that opens over
+ * whichever of the three is showing. Computing a single "active" entry meant
+ * opening the dock un-highlighted Field while Field was still on screen, and
+ * pressing Field afterwards left Timeline highlighted. Now the three carry a
+ * selection and the dock carries a pressed state of its own.
+ */
 function syncTabBar() {
   if (window.innerWidth > 900) return;
   const panel = document.body.dataset.panel;
-  const active = (panel === 'library' || panel === 'inspector')
-    ? panel
-    : (timeline.visible ? 'timeline' : 'field');
-  document.querySelectorAll('.tabbar-btn').forEach(b => b.classList.toggle('is-on', b.dataset.panel === active));
+  const selected = (panel === 'library' || panel === 'inspector') ? panel : 'field';
+  document.querySelectorAll('.tabbar-btn').forEach(b => {
+    const p = b.dataset.panel;
+    if (p === 'timeline') {
+      b.classList.remove('is-on');
+      b.classList.toggle('is-open', timeline.visible);
+      b.setAttribute('aria-pressed', timeline.visible ? 'true' : 'false');
+      return;
+    }
+    const on = p === selected;
+    b.classList.toggle('is-on', on);
+    if (on) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  });
 }
 
 function openMobilePanel(panel) {
@@ -772,7 +793,15 @@ function bindUI() {
     setLanguage(lang.value);
     applyTranslations(document);
     renderJourneyList();
+    renderSetList();
+    renderStartWith(loadPrefs().startWith);
     refreshPanels();
+    // The timeline keeps its own rendered labels, so a language switch left the
+    // track names and the transport in the old language. applyTranslations also
+    // resets the transport title from its static key, which desynchronised it
+    // from the state-aware accessible name.
+    timeline._render();
+    timeline._setPlayIcon(timeline.isPlaying);
     inspector.show(canvasGrid.selectedNodeId ? audioEngine.sources.get(canvasGrid.selectedNodeId) : null);
   });
 

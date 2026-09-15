@@ -20,7 +20,14 @@
   /* Text */
   --text: rgba(255, 248, 242, 0.92);
   --text-2: rgba(255, 248, 242, 0.58);
-  --text-3: rgba(255, 248, 242, 0.34);
+  /* Measured, not guessed. At 0.34 every piece of secondary text sat at
+     2.96:1 against the darkest ground it appears on (#0d0c0c): card
+     descriptions, notes, drawer titles, focus summaries, clip labels. 0.46 is
+     the value that reaches 4.5:1 there; 0.48 keeps a little margin. */
+  --text-3: rgba(255, 248, 242, 0.48);
+  /* The old value, kept for genuinely decorative marks where low contrast is
+     the point and no information is lost. */
+  --text-4: rgba(255, 248, 242, 0.34);
 
   /* Accent */
   --accent: #f26f3b;
@@ -485,7 +492,7 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .tl-clip:hover { background: color-mix(in srgb, var(--clip) 24%, transparent); }
 .tl-clip.is-active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clip) 70%, transparent); }
 .tl-clip:active { cursor: grabbing; }
-.tl-clip-label { position: absolute; left: 7px; top: 3px; font-family: var(--mono); font-size: 9px; color: var(--text-3); pointer-events: none; }
+.tl-clip-label { position: absolute; left: 7px; top: 3px; font-family: var(--mono); font-size: 10px; color: var(--text-3); pointer-events: none; }
 .tl-env { position: absolute; inset: 4px 0; pointer-events: none; }
 .tl-env polyline { fill: none; stroke: var(--clip); stroke-width: 1.2; opacity: 0.85; vector-effect: non-scaling-stroke; }
 .tl-clip-kfs { position: absolute; inset: 0; pointer-events: none; }
@@ -616,6 +623,7 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
   border: 1px solid var(--line); border-bottom-color: var(--line-strong);
   border-radius: 4px;
 }
+.focus-length-note { margin: -2px 0 8px; max-width: 48ch; }
 .focus-bare-hint { font-size: var(--fs-xs); color: var(--text-3); text-align: center; opacity: 0; transition: opacity 0.6s var(--ease); pointer-events: none; }
 .focus-head { position: relative; }
 .focus-bare-btn {
@@ -749,6 +757,14 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
     background: none; border: none; color: var(--text-3); font: inherit; font-size: 9.5px; cursor: pointer;
   }
   .tabbar-btn.is-on { color: var(--accent-2); }
+/* The dock is open, which is a different thing from being the selected panel.
+   A dot rather than the full selection treatment, so the two read apart. */
+.tabbar-btn.is-open { color: var(--text-2); }
+.tabbar-btn.is-open::after {
+  content: ''; position: absolute; top: 6px; right: 50%; transform: translateX(14px);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+.tabbar-btn { position: relative; }
 
   .drawer { width: 100%; }
   .focus-wrap { padding: 20px 14px 80px; gap: 20px; }

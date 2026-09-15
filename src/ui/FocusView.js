@@ -13,6 +13,11 @@ import { CircleField } from './CircleField.js';
 import { syncRangeFills } from './sliders.js';
 import { t } from '../i18n.js';
 
+/** "Remove Singing bowl" rather than five buttons all called "Remove". */
+function named(key, name) {
+  return t(key).replace('{name}', name);
+}
+
 const LENGTHS = [10, 20, 25, 45, 60, 90];
 
 export class FocusView {
@@ -79,8 +84,9 @@ export class FocusView {
         <div class="focus-controls">
           <div class="focus-lengths">
             <span class="focus-label" data-i18n="sessionLength">Length</span>
+            <p class="note focus-length-note" data-i18n="sessionLengthHelp"></p>
             <div class="chips focus-length-chips">
-              ${LENGTHS.map(min => `<button class="chip" data-minutes="${min}">${min}</button>`).join('')}
+              ${LENGTHS.map(min => `<button class="chip" data-minutes="${min}" aria-label="${escapeHtml(t('minutesLong').replace('{n}', min))}">${min}</button>`).join('')}
             </div>
           </div>
           <div class="focus-layers"></div>
@@ -435,7 +441,11 @@ export class FocusView {
         cells.push(cell(t('breathRate'), `${p.bpm}`, `${(60 / p.bpm).toFixed(1)} s`));
       }
     }
-    if (session.ambient.length) cells.push(cell(t('layers'), String(session.ambient.length), session.ambient.map(s => s.name).join(', ')));
+    // This cell counts the texture bed only, while the list further down shows
+    // every layer including the beat and the breath pacer. Both were labelled
+    // "Layers", so the readout said 3 with 5 rows underneath and nothing
+    // explained the difference. Same numbers, different word.
+    if (session.ambient.length) cells.push(cell(t('textureLayers'), String(session.ambient.length), session.ambient.map(s => s.name).join(', ')));
     this.readoutEl.innerHTML = cells.join('') || `<p class="note">${t('focusHelp')}</p>`;
   }
 
@@ -447,17 +457,19 @@ export class FocusView {
       const gen = src.gen && GENERATORS[src.gen];
       const main = gen ? gen.controls[0] : null;
       const mainValue = main ? src.params[main.key] : null;
+      const layerName = src.name || soundName(src.type);
       return `
         <div class="focus-layer">
           <span class="focus-layer-glyph" style="--tint:${escapeHtml(def.color)}">${icon(def.glyph || 'file', { size: 15 })}</span>
-          <span class="focus-layer-name">${escapeHtml(src.name || soundName(src.type))}</span>
+          <span class="focus-layer-name">${escapeHtml(layerName)}</span>
           <label class="focus-layer-ctl">
-            <input type="range" data-id="${escapeHtml(src.id)}" data-key="volume" min="0" max="1" step="0.01" value="${src.volume}" />
+            <input type="range" data-id="${escapeHtml(src.id)}" data-key="volume" min="0" max="1" step="0.01" value="${src.volume}"
+                   aria-label="${escapeHtml(named('volumeNamed', layerName))}" />
             <output class="mono">${Math.round(src.volume * 100)}%</output>
           </label>
-          ${main ? layerControl(src.id, main, mainValue) : ''}
-          ${src.gen === 'tone' ? `<div class="chips">${SOLFEGGIO.slice(0, 5).map(f => `<button class="chip solf-btn" data-id="${escapeHtml(src.id)}" data-freq="${f}">${f}</button>`).join('')}</div>` : ''}
-          <button class="icon-btn focus-layer-remove" data-id="${escapeHtml(src.id)}" title="${t('removeSound')}">${icon('close', { size: 12 })}</button>
+          ${main ? layerControl(src.id, main, mainValue, layerName) : ''}
+          ${src.gen === 'tone' ? `<div class="chips">${SOLFEGGIO.slice(0, 5).map(f => `<button class="chip solf-btn" data-id="${escapeHtml(src.id)}" data-freq="${f}" aria-label="${escapeHtml(`${f} Hz`)}">${f}</button>`).join('')}</div>` : ''}
+          <button class="icon-btn focus-layer-remove" data-id="${escapeHtml(src.id)}" title="${escapeHtml(named('removeNamed', layerName))}" aria-label="${escapeHtml(named('removeNamed', layerName))}">${icon('close', { size: 12 })}</button>
         </div>`;
     }).join('');
     syncRangeFills(this.layersEl);
@@ -473,16 +485,21 @@ function cell(label, value, sub) {
  * chord) needs a select; a numeric one gets a range. Feeding a range with an
  * option value would show NaN.
  */
-function layerControl(id, ctl, value) {
+function layerControl(id, ctl, value, layerName) {
+  // Both controls carry the sound and the parameter, e.g. "Pink noise Low-pass".
+  // Nine sliders in this view had no accessible name at all, so a screen reader
+  // announced a row of bare values with nothing to attach them to.
+  const label = layerName ? `${layerName} ${ctl.label}` : ctl.label;
   if (ctl.options) {
     return `<label class="focus-layer-ctl">
-      <select class="input" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}">
+      <select class="input" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}" aria-label="${escapeHtml(label)}">
         ${ctl.options.map(o => `<option value="${o}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
       </select>
     </label>`;
   }
   return `<label class="focus-layer-ctl">
-    <input type="range" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${value}" />
+    <input type="range" data-id="${escapeHtml(id)}" data-key="${escapeHtml(ctl.key)}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${value}"
+           aria-label="${escapeHtml(label)}" />
     <output class="mono">${formatParam(ctl.key, value)}</output>
   </label>`;
 }

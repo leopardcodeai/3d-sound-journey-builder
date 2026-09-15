@@ -18,6 +18,15 @@ const MAX_PPS = 60;
 const LANE_H = 40;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+/**
+ * "Solo Singing bowl" rather than six buttons all called "Solo". Without the
+ * track name the accessibility tree offered S, M, S, M, S, M and no way to tell
+ * which row any of them belonged to.
+ */
+function named(key, name) {
+  return t(key).replace('{name}', name);
+}
+
 export class Timeline {
   constructor(container, audioEngine, canvasGrid) {
     this.container = container;
@@ -68,7 +77,7 @@ export class Timeline {
     this.header.className = 'tl-bar';
     this.header.innerHTML = `
       <div class="tl-group">
-        <button class="tl-btn tl-play" data-i18n-title="play">${icon('play', { size: 14 })}</button>
+        <button class="tl-btn tl-play" title="${t('play')}" aria-label="${t('play')}">${icon('play', { size: 14 })}</button>
         <button class="tl-btn tl-stop" data-i18n-title="stop">${icon('stop', { size: 13 })}</button>
         <button class="tl-btn tl-loop is-on" data-i18n-title="loopForever">${icon('loop', { size: 15 })}</button>
       </div>
@@ -438,7 +447,13 @@ export class Timeline {
     if (!btn) return;
     btn.innerHTML = icon(playing ? 'pause' : 'play', { size: 14 });
     btn.classList.toggle('is-on', playing);
-    btn.title = playing ? t('pause') : t('play');
+    // The title tracked the state but the accessible name did not, so while a
+    // journey was playing the button read "Play" to a screen reader and
+    // "Pause" to a mouse user. data-i18n-title set aria-label once at start-up
+    // and never again; this keeps both in step.
+    const label = playing ? t('pause') : t('play');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
   }
 
   _seekTo(time) {
@@ -800,6 +815,7 @@ export class Timeline {
       const state = this.trackState.get(id);
       const def = getSound(src.type);
       const color = (this.canvasGrid && this.canvasGrid.colorFor) ? this.canvasGrid.colorFor(src.type) : (def.color || '#888');
+      const trackName = src.name || soundName(src.type);
       const left = this.timeToX(timing.startTime);
       const width = Math.max(18, timing.duration * pps);
       const active = this.playheadTime >= timing.startTime && this.playheadTime <= timing.startTime + timing.duration;
@@ -820,9 +836,9 @@ export class Timeline {
         <div class="tl-track${selected ? ' is-selected' : ''}${dimmed ? ' is-dim' : ''}" data-id="${escapeHtml(id)}">
           <div class="tl-head">
             <span class="tl-dot" style="background:${color}"></span>
-            <span class="tl-name">${escapeHtml(src.name || soundName(src.type))}</span>
-            <button class="tl-mini tl-solo${state.solo ? ' is-on' : ''}" title="${t('solo')}">S</button>
-            <button class="tl-mini tl-mute${state.muted ? ' is-on' : ''}" title="${t('muteSound')}">M</button>
+            <span class="tl-name" title="${escapeHtml(trackName)}">${escapeHtml(trackName)}</span>
+            <button class="tl-mini tl-solo${state.solo ? ' is-on' : ''}" title="${escapeHtml(named('soloNamed', trackName))}" aria-label="${escapeHtml(named('soloNamed', trackName))}" aria-pressed="${state.solo ? 'true' : 'false'}">S</button>
+            <button class="tl-mini tl-mute${state.muted ? ' is-on' : ''}" title="${escapeHtml(named('muteNamed', trackName))}" aria-label="${escapeHtml(named('muteNamed', trackName))}" aria-pressed="${state.muted ? 'true' : 'false'}">M</button>
           </div>
           <div class="tl-lane">
             <div class="tl-clip${active ? ' is-active' : ''}" style="left:${left}px;width:${width}px;--clip:${color}">

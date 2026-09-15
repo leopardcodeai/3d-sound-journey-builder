@@ -378,3 +378,67 @@ describe('Timeline drag safety', () => {
     expect(container.querySelectorAll('.tl-track').length).toBe(2);
   });
 });
+
+describe('accessible names on the transport and the tracks (live test, 2026-09-15)', () => {
+  let engine, grid, tl, host;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="dock"></div>';
+    host = document.getElementById('dock');
+    engine = createMockAudioEngine();
+    grid = createMockCanvasGrid();
+    tl = new Timeline(host, engine, grid);
+    tl.visible = true;          // _render returns early otherwise
+  });
+
+  it('keeps the transport name in step with the state it shows', () => {
+    const btn = host.querySelector('.tl-play');
+    tl._setPlayIcon(false);
+    expect(btn.getAttribute('aria-label')).toBe(btn.title);
+    const stopped = btn.getAttribute('aria-label');
+    tl._setPlayIcon(true);
+    // While playing, the button offers Pause. It used to say Pause in the
+    // tooltip and Play to a screen reader at the same time.
+    expect(btn.getAttribute('aria-label')).toBe(btn.title);
+    expect(btn.getAttribute('aria-label')).not.toBe(stopped);
+  });
+
+  it('names solo and mute after their own track', () => {
+    addSource(engine, 't1', { name: 'Singing bowl' });
+    addSource(engine, 't2', { name: 'Wind chimes' });
+    tl.ensureTiming('t1');
+    tl.ensureTiming('t2');
+    tl._render();
+
+    const solos = [...host.querySelectorAll('.tl-solo')].map(b => b.getAttribute('aria-label'));
+    const mutes = [...host.querySelectorAll('.tl-mute')].map(b => b.getAttribute('aria-label'));
+    expect(solos).toHaveLength(2);
+    // Six buttons called S and M told a screen reader nothing about which row.
+    expect(new Set(solos).size).toBe(2);
+    expect(new Set(mutes).size).toBe(2);
+    for (const label of [...solos, ...mutes]) {
+      expect(label).toBeTruthy();
+      expect(label).not.toContain('{name}');
+    }
+    expect(solos.some(l => l.includes('Singing bowl'))).toBe(true);
+    expect(mutes.some(l => l.includes('Wind chimes'))).toBe(true);
+  });
+
+  it('reports solo and mute as pressed states, not just as styling', () => {
+    addSource(engine, 't1', { name: 'Singing bowl' });
+    tl.ensureTiming('t1');
+    tl._render();
+    expect(host.querySelector('.tl-solo').getAttribute('aria-pressed')).toBe('false');
+    tl.toggleSolo('t1');
+    tl._render();
+    expect(host.querySelector('.tl-solo').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps the full track name reachable when the column truncates it', () => {
+    addSource(engine, 't1', { name: 'A very long sound name that will not fit' });
+    tl.ensureTiming('t1');
+    tl._render();
+    const el = host.querySelector('.tl-name');
+    expect(el.getAttribute('title')).toBe('A very long sound name that will not fit');
+  });
+});
