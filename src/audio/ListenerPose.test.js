@@ -140,3 +140,92 @@ describe('the panner input is summed to mono', () => {
     expect(pannerOf().panningModel).toBe('HRTF');
   });
 });
+
+/**
+ * The field draws its figure from poseVectors, and the panner is fed from the
+ * same call, so these assertions are the contract between the picture and the
+ * sound. They exist because the two had drifted apart: lying on your back the
+ * drawn ears were mirrored against the audio, so a sound on the right of the
+ * map was heard on the left while the right-hand marker lit up, and lying on
+ * your side the drawn nose pointed along the body while the audio faced across
+ * it. Both were drawn by hand, per posture, next to the code that had the
+ * answer already.
+ */
+describe('poseVectors, the one place that decides where the listener faces', () => {
+  const axis = ([x, y, z]) => {
+    const r = (n) => +n.toFixed(6);
+    const [a, b, c] = [r(x), r(y), r(z)];
+    const m = Math.max(Math.abs(a), Math.abs(b), Math.abs(c));
+    if (Math.abs(c) === m) return c > 0 ? 'sky' : 'ground';
+    if (Math.abs(b) === m) return b > 0 ? 'map-top' : 'map-bottom';
+    return a > 0 ? 'map-right' : 'map-left';
+  };
+  const named = (posture, tilt = 0, turn = 0) => {
+    const v = SpatialAudioEngine.poseVectors(posture, tilt, turn);
+    return { nose: axis(v.forward), crown: axis(v.up), rightEar: axis(v.right), v };
+  };
+
+  it('stands facing the top of the map, crown up, right ear to the right', () => {
+    expect(named('standing')).toMatchObject({ nose: 'map-top', crown: 'sky', rightEar: 'map-right' });
+  });
+
+  it('lies on its back facing the sky, crown to the top, ears mirrored', () => {
+    // Mirrored is correct and not a defect: you are under the map looking up at
+    // it, so the map's right is your left.
+    expect(named('lying-back')).toMatchObject({ nose: 'sky', crown: 'map-top', rightEar: 'map-left' });
+  });
+
+  it('lies on its side with one ear up and one ear down', () => {
+    // The whole point of the posture. The preset used to stop at 45 degrees,
+    // which put the crown into the ground and neither ear anywhere useful.
+    const p = named('lying-side');
+    expect(p).toMatchObject({ nose: 'map-top', crown: 'map-right' });
+    expect(['sky', 'ground']).toContain(p.rightEar);
+    expect(Math.abs(p.v.right[2])).toBeCloseTo(1, 6);
+  });
+
+  it('keeps the three axes a right-handed orthonormal frame in every posture', () => {
+    for (const posture of ['standing', 'lying-back', 'lying-side']) {
+      for (const tilt of [-90, -30, 0, 30, 90]) {
+        for (const turn of [-180, -40, 0, 40, 180]) {
+          const { forward, up, right } = SpatialAudioEngine.poseVectors(posture, tilt, turn);
+          const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+          const label = `${posture} tilt ${tilt} turn ${turn}`;
+          expect(Math.hypot(...forward), label).toBeCloseTo(1, 6);
+          expect(Math.hypot(...up), label).toBeCloseTo(1, 6);
+          expect(Math.hypot(...right), label).toBeCloseTo(1, 6);
+          expect(dot(forward, up), label).toBeCloseTo(0, 6);
+          expect(dot(forward, right), label).toBeCloseTo(0, 6);
+          expect(dot(up, right), label).toBeCloseTo(0, 6);
+        }
+      }
+    }
+  });
+
+  it('turns the face to the right for a positive turn, in every posture', () => {
+    for (const posture of ['standing', 'lying-back', 'lying-side']) {
+      const { forward, right } = SpatialAudioEngine.poseVectors(posture, 0, 0);
+      const turned = SpatialAudioEngine.poseVectors(posture, 0, 40).forward;
+      const towardsRight = turned[0] * right[0] + turned[1] * right[1] + turned[2] * right[2];
+      const stillForward = turned[0] * forward[0] + turned[1] * forward[1] + turned[2] * forward[2];
+      expect(towardsRight, `${posture} turns right`).toBeGreaterThan(0.5);
+      expect(stillForward, `${posture} keeps most of its facing`).toBeGreaterThan(0.5);
+    }
+  });
+
+  it('tilts the crown towards the listener own right ear, in every posture', () => {
+    // The rule a single slider can actually teach: it is always the same
+    // movement of the head, whatever the body is doing. Lying on your side
+    // used to lean the other way, so the control meant two different things
+    // depending on which posture happened to be selected.
+    for (const posture of ['standing', 'lying-back', 'lying-side']) {
+      const rest = SpatialAudioEngine.poseVectors(posture, 0, 0);
+      const tilted = SpatialAudioEngine.poseVectors(posture, 25, 0).up;
+      const moved = [
+        tilted[0] - rest.up[0], tilted[1] - rest.up[1], tilted[2] - rest.up[2],
+      ];
+      const towardsRightEar = moved[0] * rest.right[0] + moved[1] * rest.right[1] + moved[2] * rest.right[2];
+      expect(towardsRightEar, posture).toBeGreaterThan(0);
+    }
+  });
+});

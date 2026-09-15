@@ -58,3 +58,29 @@ describe('speaker layouts', () => {
     expect(/\p{Extended_Pictographic}/u.test(text)).toBe(false);
   });
 });
+
+/**
+ * Choosing "Custom speakers" used to break the app until localStorage was
+ * cleared by hand. The preset carried the string 'custom' as its channel
+ * count, which reached createChannelMerger and threw IndexSizeError, but only
+ * after _reconnectSource had already disconnected the panner. Every playing
+ * source went silent. The choice is remembered, so the next launch applied it
+ * again with no sources present, where it succeeds quietly, and then every
+ * later addSource threw before the source was registered: nothing could be
+ * added to the field at all, with nothing on screen to say why.
+ */
+describe('a speaker choice can never break the signal path', () => {
+  it('gives no preset a channel count that is not a number', () => {
+    for (const [key, preset] of Object.entries(SPEAKER_PRESETS)) {
+      if (preset.channels === null) continue;
+      expect(Number.isInteger(preset.channels), `${key}`).toBe(true);
+      expect(preset.channels, `${key}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('derives the custom count from the speakers actually placed', () => {
+    expect(SPEAKER_PRESETS.custom.channels).toBe(null);
+    expect(SPEAKER_PRESETS.custom.speakerPositions).toEqual([]);
+  });
+
+});

@@ -116,14 +116,14 @@
         <div class="scene-list" id="scene-list"></div>
       </section>
 <section class="drawer-section">
-        <h3 class="drawer-title" data-i18n="startWith">Start with</h3>
+        <h3 class="drawer-title" id="start-with-label" data-i18n="startWith">Start with</h3>
         <p class="note" data-i18n="startWithHelp"></p>
-        <select class="input" id="start-with"></select>
+        <select class="input" id="start-with" aria-labelledby="start-with-label"></select>
       </section>
       <section class="drawer-section">
-        <h3 class="drawer-title" data-i18n="output">Output</h3>
+        <h3 class="drawer-title" id="output-label" data-i18n="output">Output</h3>
         <p class="note" data-i18n="outputHelp"></p>
-        <select class="input" id="speaker-config">
+        <select class="input" id="speaker-config" aria-labelledby="output-label">
           <option value="stereo-headphones" data-i18n="stereoHeadphones">Headphones (3D HRTF)</option>
           <option value="stereo-speakers" data-i18n="stereoSpeakers">Stereo speakers</option>
           <option value="surround-5.1" data-i18n="surround51">5.1 surround</option>
@@ -200,8 +200,8 @@
       </section>
 
       <section class="drawer-section">
-        <h3 class="drawer-title" data-i18n="language">Language</h3>
-        <select class="input" id="lang-select">
+        <h3 class="drawer-title" id="language-label" data-i18n="language">Language</h3>
+        <select class="input" id="lang-select" aria-labelledby="language-label">
           <option value="en">English</option>
           <option value="de">Deutsch</option>
         </select>

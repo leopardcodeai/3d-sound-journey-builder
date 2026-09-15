@@ -870,34 +870,71 @@ export class CanvasGrid {
     const cam = this.camera;
     const levels = this.audioEngine.getLeftRightLevels ? this.audioEngine.getLeftRightLevels() : { left: 0, right: 0 };
     const posture = this.audioEngine.posture || 'standing';
-    const tilt = ((this.audioEngine.headTilt || 0) * Math.PI) / 180;
     const outputMode = this.audioEngine.outputMode || 'hrtf';
     const headphones = outputMode === 'hrtf';
 
-    // Figure geometry in metres, top-down. Head centre at (0, 0).
-    let head = { x: 0, y: 0, r: 0.3 };
-    let body = [];
-    let earL = { x: -0.32, y: 0 }, earR = { x: 0.32, y: 0 };
-    let nose = [[0, 0.3], [0, 0.55]];
-    if (posture === 'lying-back') {
-      head = { x: 0, y: 0.75, r: 0.3 };
-      body = [[-0.42, 0.35], [0.42, 0.35], [0.3, -1.4], [-0.3, -1.4]];
-      earL = { x: -0.32, y: 0.75 }; earR = { x: 0.32, y: 0.75 };
-      nose = [[0, 1.05], [0, 1.25]];
-    } else if (posture === 'lying-side') {
-      head = { x: 0.75, y: 0, r: 0.3 };
-      body = [[0.35, 0.36], [0.35, -0.36], [-1.4, -0.26], [-1.4, 0.26]];
-      earL = { x: 0.75, y: 0.32 }; earR = { x: 0.75, y: -0.32 };
-      nose = [[1.05, 0], [1.25, 0]];
-    } else {
-      body = [[-0.62 * this.shoulderWidth, -0.28], [0.62 * this.shoulderWidth, -0.28]];
-    }
+    // The figure is derived from the listener's own axes rather than drawn by
+    // hand per posture. Hand-drawn is how the two got out of step: on your back
+    // the ears were mirrored, so a sound on the right of the map was heard on
+    // the left while the right-hand marker lit up. Reading the same vectors the
+    // panner reads means the picture cannot say one thing and the sound another.
+    const axes = this.audioEngine.listenerAxes
+      ? this.audioEngine.listenerAxes()
+      : { forward: [0, 1, 0], up: [0, 0, 1], right: [1, 0, 0] };
 
-    const rot = (p) => {
-      const c = Math.cos(tilt), s = Math.sin(tilt);
-      const dx = p[0] - head.x, dy = p[1] - head.y;
-      return [head.x + dx * c - dy * s, head.y + dx * s + dy * c, 0];
+    // Seen from above, only the map-plane part of an axis has a direction. The
+    // length of that part says how much of the axis is left after the rest has
+    // gone vertical, which is exactly the cue a top-down view should show: a
+    // rolled head brings its ears together, a face turned skyward has no
+    // direction on the map at all.
+    const flat = (v) => {
+      const len = Math.hypot(v[0], v[1]);
+      return { x: v[0], y: v[1], len, ux: len > 1e-6 ? v[0] / len : 0, uy: len > 1e-6 ? v[1] / len : 0 };
     };
+    const fwd = flat(axes.forward);
+    const crown = flat(axes.up);
+    const side = flat(axes.right);
+
+    const HEAD_R = 0.3;
+    const EAR = 0.34;
+    const FLAT_ENOUGH = 0.35;
+
+    // Ears. Normally they sit along the listener's own right axis. When that
+    // axis points at the sky and the floor, which is what lying on your side
+    // means, the two would land on one spot, so they are spread across the body
+    // instead and the marker size says which one faces up.
+    let ex, ey;
+    if (side.len > FLAT_ENOUGH) {
+      ex = side.x * EAR; ey = side.y * EAR;
+    } else {
+      const along = crown.len > 1e-6 ? crown : fwd;
+      ex = -along.uy * EAR * 0.7; ey = along.ux * EAR * 0.7;
+    }
+    const earR = { x: ex, y: ey, up: axes.right[2] };
+    const earL = { x: -ex, y: -ey, up: -axes.right[2] };
+
+    // Body. Feet lead away from the crown, so a lying figure lies the way the
+    // head is pointing. Standing, the crown is vertical and has no direction
+    // here, so the shoulders stand in for the body.
+    let body = [];
+    if (crown.len > FLAT_ENOUGH) {
+      const bx = -crown.ux, by = -crown.uy;
+      const px = -by, py = bx;
+      body = [
+        [px * 0.42, py * 0.42],
+        [-px * 0.42, -py * 0.42],
+        [-px * 0.3 + bx * 2.1, -py * 0.3 + by * 2.1],
+        [px * 0.3 + bx * 2.1, py * 0.3 + by * 2.1],
+      ];
+    } else {
+      const w = 0.62 * this.shoulderWidth;
+      const px = -fwd.uy, py = fwd.ux;
+      const back = [-fwd.ux * 0.28, -fwd.uy * 0.28];
+      body = [
+        [back[0] + px * w, back[1] + py * w],
+        [back[0] - px * w, back[1] - py * w],
+      ];
+    }
 
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -918,8 +955,8 @@ export class CanvasGrid {
       }
     }
 
-    // Head (filled ellipse via projected ring)
-    const headPts = this._ringPoints(head.r, 0, 36).map(p => rot([p[0] + head.x, p[1] + head.y]));
+    // Head, at the origin, because that is where the ears the panner uses are.
+    const headPts = this._ringPoints(HEAD_R, 0, 36).map(p => [p[0], p[1], 0]);
     ctx.fillStyle = '#0f1013';
     ctx.strokeStyle = 'rgba(255, 246, 236, 0.75)';
     ctx.lineWidth = 1.5;
@@ -929,15 +966,35 @@ export class CanvasGrid {
     if (ctx.fill) ctx.fill();
     ctx.stroke();
 
-    // Facing tick
+    // Facing. A nose drawn as a tick only means anything while the face has a
+    // direction on the map. Lying on your back it points at the ceiling, which
+    // from above is straight at the viewer, so it becomes a ring instead of a
+    // tick that would claim a direction the face does not have.
     ctx.strokeStyle = 'rgba(255, 246, 236, 0.75)';
-    this._strokeWorldPoly(nose.map(rot));
+    if (fwd.len > FLAT_ENOUGH) {
+      this._strokeWorldPoly([
+        [fwd.ux * HEAD_R, fwd.uy * HEAD_R, 0],
+        [fwd.ux * (HEAD_R + 0.25 * fwd.len), fwd.uy * (HEAD_R + 0.25 * fwd.len), 0],
+      ]);
+    } else {
+      const c = cam.project(0, 0, 0);
+      const rr = Math.max(2.5, 0.09 * c.k);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(c.sx, c.sy, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      if (axes.forward[2] > 0 && ctx.fill) {
+        ctx.fillStyle = 'rgba(255, 246, 236, 0.75)';
+        ctx.beginPath(); ctx.arc(c.sx, c.sy, rr * 0.4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
 
     // Ears / headphone cups with level glow
     const maxLevel = Math.max(levels.left || 0, levels.right || 0);
     for (const [ear, lv] of [[earL, levels.left || 0], [earR, levels.right || 0]]) {
-      const e = cam.project(...rot([ear.x, ear.y]));
-      const rr = Math.max(3, 0.1 * e.k);
+      const e = cam.project(ear.x, ear.y, 0);
+      // An ear facing the ceiling reads larger than one against the pillow.
+      const rr = Math.max(3, 0.1 * e.k) * (1 + 0.3 * (ear.up || 0));
       if (lv > 0.02 && ctx.createRadialGradient) {
         const g = ctx.createRadialGradient(e.sx, e.sy, rr, e.sx, e.sy, rr + 10 + lv * 26);
         g.addColorStop(0, `rgba(${ACCENT_RGB}, ${0.35 * lv})`);
@@ -951,13 +1008,20 @@ export class CanvasGrid {
       ctx.beginPath(); ctx.arc(e.sx, e.sy, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
 
-    // Headphone band
+    // Headphone band, arcing from ear to ear over the crown. Standing, the
+    // crown is vertical and the band falls behind the head instead.
     if (headphones) {
+      const spread = Math.hypot(ex, ey) || EAR;
+      const ax = ex / spread, ay = ey / spread;
+      const over = crown.len > FLAT_ENOUGH ? { x: crown.ux, y: crown.uy } : { x: -fwd.ux, y: -fwd.uy };
       const band = [];
-      const from = posture === 'lying-side' ? -Math.PI / 2 : Math.PI;
       for (let i = 0; i <= 18; i++) {
-        const a = from + (i / 18) * Math.PI;
-        band.push(rot([head.x + Math.cos(a) * 0.4, head.y + Math.sin(a) * 0.4]));
+        const a = Math.PI - (i / 18) * Math.PI;
+        band.push([
+          Math.cos(a) * spread * 1.15 * ax + Math.sin(a) * 0.4 * over.x,
+          Math.cos(a) * spread * 1.15 * ay + Math.sin(a) * 0.4 * over.y,
+          0,
+        ]);
       }
       ctx.strokeStyle = `rgba(${ACCENT_RGB}, 0.7)`;
       ctx.lineWidth = 2;
@@ -966,7 +1030,7 @@ export class CanvasGrid {
 
     // Level ring around the head
     if (maxLevel > 0.02) {
-      const s = cam.project(head.x, head.y, 0);
+      const s = cam.project(0, 0, 0);
       const rr = 0.55 * s.k + maxLevel * 0.35 * s.k;
       ctx.strokeStyle = `rgba(${ACCENT_RGB}, ${0.18 + maxLevel * 0.35})`;
       ctx.lineWidth = 1;

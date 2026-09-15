@@ -34,7 +34,10 @@ export const SPEAKER_PRESETS = {
   },
   'custom': {
     name: 'Custom Speakers',
-    channels: 'custom',
+    // No fixed channel count: it is however many speakers have been placed.
+    // This field used to hold the string 'custom', which travelled all the way
+    // into createChannelMerger and threw, leaving every source disconnected.
+    channels: null,
     description: 'Place speakers freely in the room for multi-room setups.',
     speakerPositions: [],
   }
@@ -58,7 +61,7 @@ export class SpeakerConfig {
       this.audioEngine.setOutputMode('hrtf');
     } else {
       const positions = presetKey === 'custom' ? this.customSpeakers : preset.speakerPositions;
-      this.audioEngine.setOutputMode('speakers', positions, preset.channels);
+      this.audioEngine.setOutputMode('speakers', positions, preset.channels || positions.length);
     }
 
     if (this.onConfigChange) this.onConfigChange(presetKey, preset);

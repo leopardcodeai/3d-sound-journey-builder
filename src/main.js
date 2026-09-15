@@ -316,11 +316,31 @@ async function loadSet(id) {
  * view, or an empty field. A stored id that no longer exists falls back to the
  * default rather than leaving the field blank without explanation.
  */
-async function openTarget(id) {
-  if (id === START_FOCUS) { setView('focus'); await focusView.applyMode('focus'); return; }
-  if (id === START_EMPTY) { showTimeline(false); return; }
-  if (SOUND_SETS[id]) { setView('field'); await loadSet(id); return; }
-  if (JOURNEYS[id]) { setView('field'); await loadJourney(id); return; }
+/**
+ * Opens whatever "Start with" names.
+ *
+ * The prefix matters. A set and a journey may share an id, and two did: the
+ * Storm passage journey and the Storm porch set were both stored as "storm",
+ * and the set was checked first, so the journey could never be started. The
+ * Deep work journey lost the same way to the id of the frequencies view.
+ * Unprefixed values are still accepted, because they are what older settings
+ * hold, and they keep resolving the way they always did so nobody's stored
+ * choice quietly changes meaning.
+ */
+async function openTarget(target) {
+  const [kind, rest] = String(target || '').split(':');
+  const id = rest === undefined ? kind : rest;
+
+  if (rest !== undefined) {
+    if (kind === 'set' && SOUND_SETS[id]) { setView('field'); await loadSet(id); return; }
+    if (kind === 'journey' && JOURNEYS[id]) { setView('field'); await loadJourney(id); return; }
+  } else {
+    if (id === START_FOCUS) { setView('focus'); await focusView.applyMode('focus'); return; }
+    if (id === START_EMPTY) { showTimeline(false); return; }
+    if (id === 'focus') { setView('focus'); await focusView.applyMode('focus'); return; }
+    if (SOUND_SETS[id]) { setView('field'); await loadSet(id); return; }
+    if (JOURNEYS[id]) { setView('field'); await loadJourney(id); return; }
+  }
   await loadJourney(DEFAULTS.startWith in JOURNEYS ? DEFAULTS.startWith : 'meditate');
 }
 
@@ -621,10 +641,10 @@ function renderStartWith(selected) {
   const opt = (value, label) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`;
   el.innerHTML = [
     `<optgroup label="${escapeAttr(t('sets'))}">`,
-    ...SET_ORDER.map(id => opt(id, SOUND_SETS[id].name)),
+    ...SET_ORDER.map(id => opt(`set:${id}`, SOUND_SETS[id].name)),
     '</optgroup>',
     `<optgroup label="${escapeAttr(t('journeys'))}">`,
-    ...JOURNEY_ORDER.map(id => opt(id, JOURNEYS[id].name)),
+    ...JOURNEY_ORDER.map(id => opt(`journey:${id}`, JOURNEYS[id].name)),
     '</optgroup>',
     `<optgroup label="${escapeAttr(t('more'))}">`,
     opt(START_FOCUS, t('startFocus')),
@@ -633,8 +653,20 @@ function renderStartWith(selected) {
   ].join('');
   // A stored id whose journey or set has since been removed would leave the
   // select showing the first entry while the preference says something else.
-  const known = [...SET_ORDER, ...JOURNEY_ORDER, START_FOCUS, START_EMPTY];
-  el.value = known.includes(selected) ? selected : DEFAULTS.startWith;
+  const known = [
+    ...SET_ORDER.map(id => `set:${id}`),
+    ...JOURNEY_ORDER.map(id => `journey:${id}`),
+    START_FOCUS, START_EMPTY,
+  ];
+  // A setting stored before the prefixes existed still names something real,
+  // so it is carried across rather than thrown away back to the default.
+  const legacy = { focus: START_FOCUS, empty: START_EMPTY };
+  const upgraded = known.includes(selected) ? selected
+    : legacy[selected] ? legacy[selected]
+    : SOUND_SETS[selected] ? `set:${selected}`
+    : JOURNEYS[selected] ? `journey:${selected}`
+    : `journey:${DEFAULTS.startWith}`;
+  el.value = known.includes(upgraded) ? upgraded : START_EMPTY;
 }
 
 const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');

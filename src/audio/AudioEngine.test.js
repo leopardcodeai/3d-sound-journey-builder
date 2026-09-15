@@ -212,11 +212,52 @@ describe('SpatialAudioEngine', () => {
       expect(engine.pinnaStrength).toBe(0.4);
     });
 
-    it('should apply lying-side preset', () => {
+    it('should apply lying-side preset as a full quarter turn', () => {
+      // Zero tilt is already a quarter turn in this posture: the crown points
+      // out to the side, one ear at the pillow and one at the ceiling. The
+      // preset used to add -45 on top of that, which put the crown into the
+      // ground and matched no posture a person can be in.
       engine.applyPosturePreset('lying-side');
       expect(engine.posture).toBe('lying-side');
-      expect(engine.headTilt).toBe(-45);
+      expect(engine.headTilt).toBe(-15);
+      const { right } = SpatialAudioEngine.poseVectors('lying-side', engine.headTilt, 0);
+      // One ear clearly up and one clearly down, which is what the posture
+      // means, but not so exactly vertical that the map loses its left and
+      // right. Measured: a full quarter turn renders a source on the map's
+      // right at 0.0 dB right minus left, 75 degrees renders it at 7.7 dB.
+      expect(Math.abs(right[2])).toBeGreaterThan(0.9);
+      expect(Math.abs(right[2])).toBeLessThan(1);
     });
+  });
+
+
+  describe('a speaker choice can never break the signal path', () => {
+    // Choosing "Custom speakers" used to throw IndexSizeError out of
+    // createChannelMerger, after _reconnectSource had already disconnected the
+    // panner, so every playing source went silent. The choice is remembered,
+    // so the next launch applied it again and then every addSource threw
+    // before registering the source: nothing could be added at all.
+  it('holds the output at headphones while there is nothing to route to', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    engine.setOutputMode('speakers', [], null);
+    expect(engine.outputMode).toBe('hrtf');
+    expect(engine.speakerPositions).toBe(null);
+    expect(Number.isInteger(engine.channelCount)).toBe(true);
+    expect(engine.channelCount).toBeGreaterThan(0);
+  });
+
+  it('never leaves a rubbish channel count behind, whatever it is handed', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    const three = [{ x: 0, y: 1, z: 0, channel: 0 }, { x: 1, y: 0, z: 0, channel: 1 }, { x: -1, y: 0, z: 0, channel: 2 }];
+    for (const bad of ['custom', undefined, null, NaN, 0, -4, 1e9, {}]) {
+      engine.setOutputMode('speakers', three, bad);
+      expect(Number.isInteger(engine.channelCount), String(bad)).toBe(true);
+      expect(engine.channelCount, String(bad)).toBeGreaterThan(0);
+      expect(engine.channelCount, String(bad)).toBeLessThanOrEqual(32);
+    }
+  });
   });
 
   describe('source management', () => {

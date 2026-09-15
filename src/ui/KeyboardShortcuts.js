@@ -26,7 +26,7 @@ export const SHORTCUTS = [
   { group: 'shortcutsView', keys: ['3'], labelKey: 'shortcut3d' },
   { group: 'shortcutsView', keys: ['0'], labelKey: 'reset' },
   { group: 'shortcutsView', keys: ['+', '\u2212'], labelKey: 'shortcutZoom' },
-  { group: 'shortcutsView', keys: ['Tab'], labelKey: 'shortcutSwitchView' },
+  { group: 'shortcutsView', keys: ['V'], labelKey: 'shortcutSwitchView' },
   { group: 'shortcutsView', keys: ['Esc'], labelKey: 'shortcutEscape' },
   { group: 'shortcutsView', keys: ['?'], labelKey: 'shortcutSheet' },
 ];
@@ -95,7 +95,13 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
         document.querySelectorAll('.drawer.is-open').forEach(d => { d.hidden = true; d.classList.remove('is-open'); });
         return;
       }
-      case 'Tab':
+      // Not Tab. Tab is how a keyboard reaches the next control, and taking it
+      // meant focus never moved once anything was focused: isTyping() only
+      // exempts text fields, and in this app a button holds focus nearly all
+      // the time. Every named button and labelled slider in here was useless
+      // to someone not using a mouse.
+      case 'v':
+      case 'V':
         if (onToggleView) { e.preventDefault(); onToggleView(); }
         return;
       case '2': canvasGrid.setViewMode('2d'); toast('2D'); return;

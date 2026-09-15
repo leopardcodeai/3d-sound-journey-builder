@@ -20,7 +20,9 @@ export const OUTPUT_MODES = ['stereo-headphones', 'stereo-speakers', 'surround-5
 export const POSTURES = ['standing', 'lying-back', 'lying-side'];
 
 /** What the app opens with. A journey id, a set id, or one of these two. */
-export const START_FOCUS = 'focus';
+// Not 'focus'. That is also the id of the Deep work journey, and openTarget
+// checked this first, so that journey could never be started from the setting.
+export const START_FOCUS = 'frequencies';
 export const START_EMPTY = 'empty';
 
 export const DEFAULTS = Object.freeze({
@@ -53,7 +55,9 @@ const num = (min, max) => (v, fallback) => {
 
 const oneOf = (list) => (v, fallback) => (list.includes(v) ? v : fallback);
 
-const id = (v, fallback) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v) ? v : fallback);
+// One optional kind prefix, so "journey:storm" and "set:storm" can be told
+// apart. They could not be: both were stored as "storm" and the set always won.
+const id = (v, fallback) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,20}:?[A-Za-z0-9_-]{0,40}$/.test(v) ? v : fallback);
 
 const bool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
 

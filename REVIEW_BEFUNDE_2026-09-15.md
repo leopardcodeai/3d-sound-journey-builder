@@ -388,3 +388,141 @@ eigene Sorgfalt und einen eigenen Commit:
 | gemini | uebersprungen | Kontingent: Kontingent erschoepft (429) (bis 2026-09-15) |
 
 Rohausgaben: /Users/alexanderbrunker/Coding/company/tools/review_agent/laeufe/2026-09-15/3d_sound_app-4
+
+---
+
+# Zweiter Lauf, 15.09.2026: CodeRabbit ueber das ganze Repo
+
+Anlass: Auftrag, die App einmal komplett durchzuklicken und dabei extern
+gegenlesen zu lassen. Gelesen wurde nicht nur der letzte Diff, sondern das
+ganze Repo mit Schwerpunkt Audio und Interaktion, gegen HEAD 7e907fe.
+
+Der Lauf lief, waehrend ich selbst an der Haltungs-Geometrie gearbeitet habe.
+Der Reviewer hat das gemerkt und seine Zeilennummern danach neu verankert; die
+Befunde unten sind gegen den aktuellen Stand nachgeprueft.
+
+## Was ich selbst verifiziert und behoben habe
+
+Jeder dieser vier wurde vor der Aenderung im laufenden Browser nachgestellt,
+nicht nur gelesen.
+
+### B1 · Kritisch · "Eigene Lautsprecher" machte die App unbrauchbar
+
+**Nachgestellt.** `SPEAKER_PRESETS.custom.channels` war die Zeichenkette
+`'custom'`. Sie lief bis `createChannelMerger` durch, das daraus 0 machte:
+
+```
+IndexSizeError: The number of inputs provided (0) is outside the range [1, 32]
+```
+
+Der Wurf kam, **nachdem** `_reconnectSource` den Panner bereits getrennt hatte.
+Gemessen: jede laufende Quelle war danach still.
+
+Schwerer ist die zweite Haelfte, und die habe ich ebenfalls nachgestellt. Die
+Auswahl wird gespeichert. Beim naechsten Start wird sie ohne Quellen angewandt,
+wo sie still durchlaeuft, und danach warf **jedes** `addSource`, bevor die
+Quelle registriert war. Gemessen: `sources.size` blieb bei 4, `addSound` meldete
+keinen Fehler, und es liess sich **kein einziger Klang mehr hinzufuegen**, ohne
+Hinweis auf dem Bildschirm und ohne Weg zurueck ausser localStorage loeschen.
+
+**Behoben.** Die Zahl kommt jetzt aus den tatsaechlich gesetzten Lautsprechern.
+`setOutputMode` haelt die Ausgabe auf Kopfhoerer, solange es nichts zu
+beschicken gibt, und `_setupMultiChannelSource` faellt auf den Panner zurueck
+statt zu werfen, weil an dieser Stelle schon getrennt wurde. Vier Tests dagegen.
+
+**Nachgemessen nach dem Fix:** Auswahl wirft nicht mehr, Modus `hrtf`,
+Kanalzahl 2, Hinzufuegen funktioniert wieder (5 auf 6 Quellen).
+
+### B2 · Hoch · Tab war belegt, die App war ohne Maus nicht bedienbar
+
+**Nachgestellt.** `KeyboardShortcuts.js` rief bei Tab `preventDefault()` und
+wechselte die Ansicht. Die Ausnahme daneben deckt nur INPUT, TEXTAREA, SELECT
+und contenteditable ab, nicht BUTTON, und in dieser App liegt der Fokus fast
+immer auf einem Knopf. Der Fokus bewegte sich also nie.
+
+Das ist besonders aergerlich, weil F01 bis F04 aus dem Feedback-Auftrag genau
+darauf hinausliefen, jedem Knopf und jedem Regler einen Namen zu geben. Fuer
+jemanden ohne Maus war davon nichts erreichbar.
+
+**Behoben.** Der Ansichtswechsel liegt auf **V**, Tab gehoert wieder dem
+Browser. Die Tastenuebersicht sagt V. Vier Tests dagegen, darunter einer, der
+prueft, dass Tab nicht mehr abgefangen wird.
+
+### B3 · Hoch · Zwei Reisen waren aus "Starten mit" nicht erreichbar
+
+**Nachgestellt im laufenden Browser.** Die Auswahlliste hatte 21 Eintraege mit
+zwei doppelten Werten:
+
+```
+storm = Storm porch     (Set)
+storm = Storm passage   (Reise)
+focus = Deep work       (Reise)
+focus = Frequencies only
+```
+
+`openTarget` prueft `START_FOCUS` zuerst und Sets vor Reisen. Ergebnis: wer die
+**Reise** Storm passage waehlte, bekam das **Set** Storm porch, und wer Deep
+work waehlte, bekam die Frequenzansicht. Beide Reisen waren nicht startbar.
+
+**Behoben.** Die Werte tragen jetzt ihre Art: `set:storm` gegen
+`journey:storm`. `START_FOCUS` heisst `frequencies` statt `focus`. Alte
+gespeicherte Werte ohne Praefix werden weiter akzeptiert und behalten ihre
+bisherige Bedeutung, damit sich niemandem die Einstellung still aendert.
+
+**Nachgemessen:** keine Dubletten mehr, und ein Neustart mit `journey:storm`
+laedt tatsaechlich `jst_rain, jst_thunder, jst_chimes, jst_fire`, also die
+Reise.
+
+### B4 · Selbst gefunden · Bild und Klang widersprachen sich in beiden Liegehaltungen
+
+Nicht aus dem Review, sondern aus dem Durchklicken. Siehe Commit-Text; die
+Figur wird jetzt aus denselben Vektoren gezeichnet, die der Panner bekommt.
+
+## Verifiziert, noch offen
+
+Am Code nachgeprueft und bestaetigt, aber nicht in diesem Durchgang behoben.
+Jeder einzelne ist eine eigene Aenderung mit eigenem Risiko.
+
+| Nr | Schwere | Befund | Stelle |
+|---|---|---|---|
+| B5 | hoch | Stop, Scrubben, Mute und Solo starten Quellen, obwohl der Transport pausiert ist. `_applyKeyframes` hat keine `isPlaying`-Pruefung | `Timeline.js:728` |
+| B6 | hoch | Eine solo geschaltete Spur, die entfernt wird, legt die ganze Zeitachse still. `trackState` wird bei "Alles loeschen" nicht mitgeraeumt, anders als bei "Neue Sitzung" | `Timeline.js:607`, `main.js:892` |
+| B7 | hoch | Eine Reise ohne Schleife kommt nach dem Schlussblenden wieder. `_finishOnce` haelt keine Quellen an, `_applyKeyframes` hebt sie zurueck auf Pegel | `Timeline.js:519` |
+| B8 | hoch | Einen Preset-Lautsprecher zu ziehen schreibt in die geteilte Konstante `SPEAKER_PRESETS`. Die ITU-Anordnung ist danach fuer die Sitzung verloren | `CanvasGrid.js:533`, `SpeakerConfig.js:60` |
+| B9 | hoch | Die Reiselaenge zu verkleinern loescht Keyframes und Abschnitte endgueltig, an der Rueckgaengig-Kette vorbei | `Timeline.js:545` |
+| B10 | hoch | Ein geteilter Link mit Klangschalen oder Instrumenten laedt unvollstaendig: der Hash-Pfad ruft `preloadHealing` nie auf, und `SceneManager` ueberspringt alles, was kein Sample ist | `SceneManager.js:137`, `main.js:1045` |
+| B11 | hoch | Der Abspielkopf laeuft ueber `requestAnimationFrame` ohne Abgleich mit der Audiouhr und ohne `visibilitychange`. Bildschirm aus heisst: Ton laeuft weiter, Kopf steht, beim Zurueckkommen springt alles auf einmal. Fuer eine Einschlaf-App ist das der Normalfall. Der Timer hat dieselbe Form | `Timeline.js:483`, `Timer.js:19` |
+| B12 | mittel | Nichts hindert daran, eine Quelle unter die HRTF-Grenze von -45 Grad zu ziehen. Inhalt ist getestet, die Interaktion nicht | `CanvasGrid.js:552`, `Inspector.js:274` |
+| B13 | mittel | Pause laesst Quellen auf Pegel 0 stehen, waehrend der Regler 50 Prozent zeigt | `Timeline.js:448` |
+| B14 | mittel | Quellen werden am Clip-Anfang gestartet, aber am Clip-Ende nie gestoppt | `Timeline.js:728` |
+| B15 | mittel | Der Zeitachsen-Teil einer geteilten Szene wird nicht geprueft. Ein handgebauter Link kann die gespeicherte Szenenliste des Empfaengers dauerhaft lahmlegen | `SceneManager.js:336` |
+| B16 | mittel | Wiederherstellen eines Hinzufuegens verliert die Generator-Parameter | `UndoManager.js:103` |
+| B17 | mittel | Inspector-Positionen und Pfeiltasten sind nicht rueckgaengig zu machen | `Inspector.js:375`, `KeyboardShortcuts.js:131` |
+| B18 | mittel | "Atmen" senkt die Lautstaerke bei jedem Ein- und Ausschalten weiter ab, 0,8 auf 0,66 auf 0,55 | `CanvasGrid.js:695`, `Inspector.js:445` |
+| B19 | mittel | Ein Modifikator mitten im Ziehen versetzt eine Quelle sprunghaft in der Hoehe | `CanvasGrid.js:549` |
+| B20 | mittel | `HeadTracker` schreibt einen Up-Vektor, der nicht senkrecht auf der Blickrichtung steht, und geht an `updateListenerPose` vorbei | `HeadTracker.js:115` |
+| B21 | mittel | Eine Wiederholung, die eine Pause ueberlebt, laesst die Quelle dauerhaft still | `AudioEngine.js:737` |
+
+Dazu rund zwanzig kleinere Befunde (Vorschau-Gain wird nie getrennt,
+`setSourceParam('lowpass')` speichert ungeklemmt, deutsche Anzeigetexte samt
+Emoji in `InstrumentSynth.js`, die Clarity-Beschreibung nennt binaural obwohl
+nur isochron und Drone laufen, rund 9 MB verwaiste mp3s im Wurzelverzeichnis).
+
+## Gemessen und fuer richtig befunden
+
+Der Reviewer hat einiges ausdruecklich geprueft und in Ordnung gefunden. Das
+gehoert hierher, damit es nicht noch einmal geprueft wird: die
+devicePixelRatio-Behandlung, `pointercancel` und der Fenster-Backstop, dass die
+Zeichenschleife auf `_isPaused` und nicht auf `document.hidden` schaut, keine
+Division durch null in der Kamera, der Analyser hat einen echten Weg zum
+Ausgang, `sanitiseScene` fuer das `sources`-Feld, `Preferences.sanitisePrefs`,
+jede referenzierte mp3 existiert, `secret_scan.py` ist sauber, und Quellnamen
+sind an jeder Ausgabestelle maskiert. **Kein XSS gefunden.**
+
+## Eine Zahl, die nicht behoben ist und benannt gehoert
+
+Der Start blockiert den Hauptprozess **850 ms**, gemessen: 54 ms fuer
+`preloadAll` plus 796 ms fuer `preloadHealing`, dominiert von sieben elf
+Sekunden langen Chakra-Schalen und einem dreizehn Sekunden langen Gong. Auf
+einem mittleren Telefon ist das ein Mehrfaches. Es faellt genau dann an, wenn
+jemand gerade Start gedrueckt hat und noch nichts zu sehen ist.

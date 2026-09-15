@@ -21,7 +21,15 @@ import { buildGenerator, GENERATORS, createImpulseResponse, clampParam } from '.
 const POSTURE_PRESETS = {
   standing:     { shoulder: 0.5, pinna: 0.5,  headTilt: 0 },
   'lying-back': { shoulder: 0.8, pinna: 0.4,  headTilt: 0 },
-  'lying-side': { shoulder: 0.9, pinna: 0.15, headTilt: -45 },
+  // Fifteen degrees short of a full quarter turn, and the number is measured,
+  // not chosen. On your side the ears stack vertically, so the flat map becomes
+  // the median plane and every sound on it sits equidistant from both. At a
+  // true 90 degrees a source three metres to the map's right renders at 0.0 dB
+  // right minus left: the map loses its left and right completely. Backing off
+  // to 75 degrees brings that to 7.7 dB while an overhead source only falls
+  // from -11.4 to -9.8, so the posture still reads unmistakably as lying on
+  // one side. A head on a pillow is not at a perfect right angle either.
+  'lying-side': { shoulder: 0.9, pinna: 0.15, headTilt: -15 },
 };
 
 export const INSERT_DEFAULTS = { lowpass: 20000, highpass: 20, modRate: 0, modDepth: 0, reverb: 0, rate: 1 };
@@ -220,6 +228,72 @@ export class SpatialAudioEngine {
    * axis, so it works the same way in all three postures instead of needing a
    * special case for each.
    */
+  /**
+   * The listener's three axes in the app's own world terms: x to the right of
+   * the map, y towards the top of it, z up. Nose, crown and right ear.
+   *
+   * This exists so that exactly one piece of code decides where the listener
+   * faces. The field used to carry its own copy of the geometry, drawn by hand
+   * per posture, and the two had drifted apart in both lying postures: on the
+   * back the drawn ears were the wrong way round, so a sound on the right of
+   * the map lit the marker on the left while being heard on the left. On the
+   * side the drawn nose pointed along the body. Anything that needs to show
+   * the listener reads from here now.
+   *
+   * Posture sets the neutral pose and tilt rolls the head away from it, in the
+   * same direction in all three: positive leans the crown towards the map's
+   * right. Turn is yaw about the listener's own crown, applied last.
+   */
+  static poseVectors(posture, headTilt = 0, headTurn = 0) {
+    const rad = ((Number.isFinite(headTilt) ? headTilt : 0) * Math.PI) / 180;
+    let forward, up;
+    if (posture === 'lying-back') {
+      // On your back: face the sky, crown towards the top of the map, feet
+      // towards the bottom. You are looking up at the screen rather than down
+      // at it, so left and right are mirrored against the standing case. That
+      // is not a bug to correct, it is what lying under a map means.
+      forward = [0, 0, 1];
+      up = [-Math.sin(rad), Math.cos(rad), 0];
+    } else if (posture === 'lying-side') {
+      // On your side: face along the map, crown out to the right of it, so one
+      // ear is against the pillow and the other faces the ceiling. That full
+      // quarter turn is the whole point of the posture; the preset used to
+      // stop halfway, at 45 degrees, which left the crown pointing into the
+      // ground and belonged to no posture at all.
+      forward = [0, 1, 0];
+      // Negative sine, so that a positive tilt leans the crown towards the
+      // listener's own right ear here too. With a plus it leaned the other way
+      // and the one tilt slider meant two different things depending on which
+      // posture happened to be selected.
+      up = [Math.cos(rad), 0, -Math.sin(rad)];
+    } else {
+      forward = [0, 1, 0];
+      up = [Math.sin(rad), 0, Math.cos(rad)];
+    }
+
+    const turn = Number.isFinite(headTurn) ? headTurn : 0;
+    if (turn !== 0) {
+      const len = Math.hypot(up[0], up[1], up[2]) || 1;
+      const k = [up[0] / len, up[1] / len, up[2] / len];
+      // Negated so a positive angle turns to the right, like a compass bearing
+      // and like the yaw a head tracker reports. Rotating about the up axis by
+      // a positive angle would otherwise swing the face to the left.
+      forward = SpatialAudioEngine._rotateAbout(forward, k, (-turn * Math.PI) / 180);
+    }
+
+    const right = [
+      forward[1] * up[2] - forward[2] * up[1],
+      forward[2] * up[0] - forward[0] * up[2],
+      forward[0] * up[1] - forward[1] * up[0],
+    ];
+    return { forward, up, right };
+  }
+
+  /** The current pose as vectors, for anything that draws the listener. */
+  listenerAxes() {
+    return SpatialAudioEngine.poseVectors(this.posture, this.headTilt, this.headTurn);
+  }
+
   updateListenerPose(posture, headTilt, headTurn) {
     this.posture = posture;
     this.headTilt = headTilt;
@@ -227,37 +301,13 @@ export class SpatialAudioEngine {
     const turn = Number.isFinite(this.headTurn) ? this.headTurn : 0;
     if (!this.isInitialized || !this.ctx) return;
     const listener = this.ctx.listener;
-    const rad = (headTilt * Math.PI) / 180;
-    let fx = 0, fy = 0, fz = -1, ux = 0, uy = 1, uz = 0;
-    if (posture === 'lying-back') {
-      // Face the ceiling, crown towards the top of the map.
-      //
-      // This used to point the crown at the bottom of the map, exactly 180
-      // degrees out. The consequence was audible: a sound drawn on the right of
-      // the map arrived at the right ear, when lying on your back it should
-      // arrive at the left. You are looking up at the screen rather than down
-      // at it, so the image is mirrored, and the map only agrees with what you
-      // hear once the crown points the way your head actually does.
-      fx = 0; fy = 1; fz = 0;
-      ux = -Math.sin(rad); uy = 0; uz = -Math.cos(rad);
-    } else if (posture === 'lying-side') {
-      fx = 0; fy = 0; fz = -1;
-      ux = Math.cos(rad); uy = Math.sin(rad); uz = 0;
-    } else {
-      fx = 0; fy = 0; fz = -1;
-      ux = Math.sin(rad); uy = Math.cos(rad); uz = 0;
-    }
 
-    if (turn !== 0) {
-      const axis = [ux, uy, uz];
-      const len = Math.hypot(axis[0], axis[1], axis[2]) || 1;
-      const k = [axis[0] / len, axis[1] / len, axis[2] / len];
-      // Negated so a positive angle turns to the right, like a compass bearing
-      // and like the yaw a head tracker reports. Rotating about the up axis by
-      // a positive angle would otherwise swing the face to the left.
-      const f = SpatialAudioEngine._rotateAbout([fx, fy, fz], k, (-turn * Math.PI) / 180);
-      fx = f[0]; fy = f[1]; fz = f[2];
-    }
+    // World (x right, y towards the top of the map, z up) to Web Audio
+    // (x, z, -y). A proper rotation, so the turn above may be applied on
+    // either side of it.
+    const { forward, up } = SpatialAudioEngine.poseVectors(posture, headTilt, turn);
+    const fx = forward[0], fy = forward[2], fz = -forward[1];
+    const ux = up[0], uy = up[2], uz = -up[1];
 
     const t = this.ctx.currentTime;
     if (listener.forwardX) {
@@ -695,10 +745,24 @@ export class SpatialAudioEngine {
   // Output modes
   // ---------------------------------------------------------------------
 
+  /**
+   * Speaker mode with nothing to send to is not a mode, it is a broken graph.
+   * Custom speakers start out empty, and the preset used to carry the string
+   * 'custom' as its channel count; both ended at createChannelMerger, which
+   * threw after the panner had already been disconnected. Every source went
+   * silent, and because the choice is remembered, so did every source added
+   * after the next reload. Hold the output at headphones until there is
+   * something real to route to.
+   */
   setOutputMode(mode, speakerPositions = null, channels = 2) {
-    this.outputMode = mode;
-    this.speakerPositions = speakerPositions;
-    this.channelCount = channels;
+    const count = Math.floor(Number(channels));
+    const positions = Array.isArray(speakerPositions) ? speakerPositions : null;
+    const usable = mode !== 'speakers' || (positions && positions.length > 0);
+    this.outputMode = usable ? mode : 'hrtf';
+    this.speakerPositions = usable ? positions : null;
+    this.channelCount = Number.isFinite(count) && count > 0
+      ? Math.min(count, 32)
+      : ((positions && positions.length) || 2);
     for (const src of this.sources.values()) this._reconnectSource(src);
   }
 
@@ -726,7 +790,15 @@ export class SpatialAudioEngine {
   }
 
   _setupMultiChannelSource(src) {
-    const numChannels = this.channelCount || this.speakerPositions.length;
+    const numChannels = this.channelCount || (this.speakerPositions || []).length;
+    // Last line of defence. _reconnectSource has already disconnected the
+    // panner by the time it gets here, so throwing would leave the source with
+    // no path to the output at all.
+    if (!Number.isInteger(numChannels) || numChannels < 1 || numChannels > 32) {
+      src.pannerNode.panningModel = 'HRTF';
+      src.pannerNode.connect(src.gainNode);
+      return;
+    }
     src._channelGains = [];
     src._channelMerger = this.ctx.createChannelMerger(numChannels);
     src.pannerNode.panningModel = 'equalpower';
