@@ -122,7 +122,7 @@ export function createAddCommand(audioEngine, canvasGrid, sourceData, timeline) 
         const t = timeline.sourceTimings.get(sourceData.id);
         if (t) {
           t.startTime = 0;
-          t.duration = 600;
+          t.duration = timeline.totalDuration;
         }
         timeline.addKeyframe(sourceData.id, 0, { x: sourceData.x, y: sourceData.y, z: sourceData.z, volume: sourceData.volume });
         if (timeline.visible) timeline._render();
@@ -264,4 +264,40 @@ export function createRemoveKeyframeCommand(timeline, id, keyframe, index) {
       if (timeline.visible) timeline._render();
     }
   );
+}
+
+export function createMoveKeyframeCommand(timeline, id, index, oldKf, newKf) {
+  // The list stays sorted by time, so a move can change the index. Both
+  // directions locate the entry by identity before writing.
+  const write = (from, to) => {
+    const kfs = timeline.keyframes.get(id);
+    if (!kfs) return;
+    let i = kfs.findIndex(k => k.time === from.time && k.volume === from.volume);
+    if (i === -1) i = Math.min(index, kfs.length - 1);
+    if (i < 0) return;
+    kfs[i] = { ...to };
+    kfs.sort((a, b) => a.time - b.time);
+    if (timeline.visible) timeline._render();
+  };
+  return new Command(
+    'MoveKeyframe',
+    () => write(oldKf, newKf),
+    () => write(newKf, oldKf)
+  );
+}
+
+export function createParamCommand(audioEngine, id, key, oldValue, newValue) {
+  return new Command(
+    'ChangeParam',
+    () => audioEngine.setSourceParam(id, key, newValue),
+    () => audioEngine.setSourceParam(id, key, oldValue)
+  );
+}
+
+export function createAutomationCommand(canvasGrid, id, oldAuto, newAuto) {
+  const apply = (auto) => {
+    if (auto) canvasGrid.setAutomation(id, auto.type, true, auto);
+    else canvasGrid.automations.delete(id);
+  };
+  return new Command('ChangeMotion', () => apply(newAuto), () => apply(oldAuto));
 }

@@ -97,7 +97,8 @@ describe('SceneManager', () => {
       expect(mockAudioEngine.removeSource).not.toHaveBeenCalled();
       expect(mockAudioEngine.addSource).toHaveBeenCalledTimes(2);
       expect(mockAudioEngine.addSource).toHaveBeenCalledWith(
-        'src1', 'oscillator', 'Source 1', 1, 2, 3, 0.5
+        'src1', 'oscillator', 'Source 1', 1, 2, 3, 0.5,
+        expect.objectContaining({ gen: undefined, params: undefined, inserts: undefined })
       );
     });
 
@@ -279,5 +280,37 @@ describe('SceneManager', () => {
       expect(manager.scenes).toBeInstanceOf(Map);
       expect(manager.scenes.size).toBe(0);
     });
+  });
+});
+
+describe('generator sources', () => {
+  it('captures generator parameters and replays them on load', () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('bw1', {
+      id: 'bw1', type: 'bw_alpha', name: 'Alpha',
+      x: 0, y: 0, z: 0, volume: 0.3, isPlaying: true,
+      gen: 'binaural', params: { beat: 10, carrier: 200 }, inserts: { reverb: 0.2 },
+    });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    const scene = manager.saveScene('Freq');
+    expect(scene.sources[0].gen).toBe('binaural');
+    expect(scene.sources[0].params).toEqual({ beat: 10, carrier: 200 });
+
+    vi.clearAllMocks();
+    manager.loadScene('Freq');
+    expect(mockAudioEngine.addSource).toHaveBeenCalledWith(
+      'bw1', 'bw_alpha', 'Alpha', 0, 0, 0, 0.3,
+      { gen: 'binaural', params: { beat: 10, carrier: 200 }, inserts: { reverb: 0.2 } }
+    );
+  });
+
+  it('stores copies so later edits do not mutate the saved scene', () => {
+    mockAudioEngine.sources.clear();
+    const live = { id: 'g1', type: 'tone_pure', name: 'Tone', x: 0, y: 0, z: 0, volume: 0.4, isPlaying: true, gen: 'tone', params: { freq: 432 } };
+    mockAudioEngine.sources.set('g1', live);
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    const scene = manager.saveScene('Tone');
+    live.params.freq = 528;
+    expect(scene.sources[0].params.freq).toBe(432);
   });
 });

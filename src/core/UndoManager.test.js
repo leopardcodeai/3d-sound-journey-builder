@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { UndoManager, createMoveCommand, createAddCommand, createDeleteCommand, createVolumeCommand, createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand } from './UndoManager.js';
+import { UndoManager, createMoveCommand, createAddCommand, createDeleteCommand, createVolumeCommand, createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand,
+  createMoveKeyframeCommand,
+  createParamCommand,
+  createAutomationCommand,
+} from './UndoManager.js';
 
 describe('UndoManager', () => {
   let undoManager;
@@ -323,5 +327,65 @@ describe('Command helpers', () => {
       um.redo();
       expect(tl.keyframes.has('src1')).toBe(false);
     });
+  });
+});
+
+describe('createMoveKeyframeCommand', () => {
+  function makeTimeline(kfs) {
+    return { keyframes: new Map([['s1', kfs]]), visible: true, _render: vi.fn() };
+  }
+
+  it('moves a keyframe in time and puts it back on undo', () => {
+    const kfs = [
+      { time: 0, x: 0, y: 0, z: 0, volume: 0.2 },
+      { time: 30, x: 1, y: 1, z: 0, volume: 0.5 },
+    ];
+    const tl = makeTimeline(kfs);
+    const oldKf = { ...kfs[1] };
+    const newKf = { ...kfs[1], time: 10, volume: 0.9 };
+    const cmd = createMoveKeyframeCommand(tl, 's1', 1, oldKf, newKf);
+    cmd.execute();
+    expect(tl.keyframes.get('s1')[1].time).toBe(10);
+    expect(tl.keyframes.get('s1')[1].volume).toBe(0.9);
+    cmd.undo();
+    expect(tl.keyframes.get('s1')[1].time).toBe(30);
+    expect(tl.keyframes.get('s1')[1].volume).toBe(0.5);
+  });
+
+  it('keeps the list sorted when a move crosses a neighbour', () => {
+    const kfs = [
+      { time: 0, x: 0, y: 0, z: 0, volume: 0.2 },
+      { time: 10, x: 1, y: 1, z: 0, volume: 0.5 },
+      { time: 20, x: 2, y: 2, z: 0, volume: 0.7 },
+    ];
+    const tl = makeTimeline(kfs);
+    const cmd = createMoveKeyframeCommand(tl, 's1', 1, { ...kfs[1] }, { ...kfs[1], time: 25 });
+    cmd.execute();
+    expect(tl.keyframes.get('s1').map(k => k.time)).toEqual([0, 20, 25]);
+    cmd.undo();
+    expect(tl.keyframes.get('s1').map(k => k.time)).toEqual([0, 10, 20]);
+  });
+});
+
+describe('createParamCommand', () => {
+  it('sets and restores a source parameter', () => {
+    const engine = { setSourceParam: vi.fn() };
+    const cmd = createParamCommand(engine, 's1', 'beat', 10, 14);
+    cmd.execute();
+    expect(engine.setSourceParam).toHaveBeenCalledWith('s1', 'beat', 14);
+    cmd.undo();
+    expect(engine.setSourceParam).toHaveBeenCalledWith('s1', 'beat', 10);
+  });
+});
+
+describe('createAutomationCommand', () => {
+  it('applies a new motion and restores the old one', () => {
+    const grid = { automations: new Map(), setAutomation: vi.fn() };
+    const cmd = createAutomationCommand(grid, 's1', null, { type: 'orbit', radius: 4 });
+    cmd.execute();
+    expect(grid.setAutomation).toHaveBeenCalledWith('s1', 'orbit', true, { type: 'orbit', radius: 4 });
+    grid.automations.set('s1', { type: 'orbit' });
+    cmd.undo();
+    expect(grid.automations.has('s1')).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 {
-  "name": "pirate-healings-sound-journey-builder",
-  "version": "0.0.0",
+  "name": "sound-journey-builder",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,12 +8,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "shoot": "node scripts/shoot.mjs"
   },
   "devDependencies": {
-    "jsdom": "^29.1.1",
-    "playwright": "^1.60.0",
-    "vite": "^8.0.12",
-    "vitest": "^4.1.7"
-  }
+    "jsdom": "^30.0.1",
+    "playwright": "^1.63.0",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  },
+  "description": "A spatial audio studio that runs entirely in the browser.",
+  "license": "MIT"
 }

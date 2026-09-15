@@ -1,309 +1,381 @@
-import { createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand } from '../core/UndoManager.js';
-
 /**
- * Timeline Pro — Professional multitrack timeline for designing spatial sound journeys.
- * Features: Keyframe-based spatial animation, glass UI, play/loop/scrub,
- * draggable clips (move/resize), double-click keyframe editing, journey duration control.
+ * Timeline
+ * The journey editor: one lane per sound, a clip that says when it plays, and
+ * keyframes that carry position and level through time. The transport owns
+ * playback; while it runs, keyframed sources are driven from here and the
+ * canvas automations stand back (`src._timelineControlled`).
+ *
+ * Layout is a fixed-width header column plus a scrolling lane area. One
+ * coordinate system: `timeToX(t) = headerW + t * pixelsPerSecond - scrollX`.
  */
+import { createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand, createMoveKeyframeCommand } from '../core/UndoManager.js';
+import { getSound, soundName } from '../data/SoundLibrary.js';
+import { icon } from './Icons.js';
+import { t } from '../i18n.js';
+
+const MIN_PPS = 0.6;
+const MAX_PPS = 60;
+const LANE_H = 40;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
 export class Timeline {
   constructor(container, audioEngine, canvasGrid) {
     this.container = container;
     this.audioEngine = audioEngine;
     this.canvasGrid = canvasGrid;
     this.undoManager = null;
+
     this.visible = false;
     this.isPlaying = false;
     this.isLooping = true;
-    this.pixelsPerSecond = 12;
+    this.pixelsPerSecond = 1.4;
     this.scrollX = 0;
     this.playheadTime = 0;
-    this.totalDuration = 600; // 10 minutes default
-    this.sourceTimings = new Map();
-    this.keyframes = new Map(); // id -> [{time, x, y, z, volume, easing}]
+    this.totalDuration = 600;
+    this.snap = true;
+
+    this.sourceTimings = new Map();   // id -> { startTime, duration }
+    this.keyframes = new Map();       // id -> [{ time, x, y, z, volume, easing }]
+    this.trackState = new Map();      // id -> { muted, solo }
+    this.sections = [];               // [{ time, name }]
+
+    this.onTimeUpdate = null;
+    this.onSelect = null;
+
+    this._headerW = 168;
     this._animationFrame = null;
     this._lastFrameTime = 0;
-    this._headerW = 140; // track header width, measured at render time
     this._drag = null;
+    this._masterBeforeFade = undefined;
+    this._endFadeTimer = null;
 
     this._buildDOM();
     this._setupEvents();
     this._render();
   }
 
+  // ---------------------------------------------------------------------
+  // DOM
+  // ---------------------------------------------------------------------
+
   _buildDOM() {
     this.container.innerHTML = '';
     this.container.style.display = 'none';
+    this.container.classList.add('tl');
 
-    // Header with controls
     this.header = document.createElement('div');
-    this.header.className = 'tl-pro-header';
+    this.header.className = 'tl-bar';
     this.header.innerHTML = `
-      <div class="tl-pro-controls">
-        <button class="tl-pro-btn tl-pro-play" title="Play/Pause">▶</button>
-        <button class="tl-pro-btn tl-pro-stop" title="Stop">⏹</button>
-        <button class="tl-pro-btn tl-pro-loop active" title="Infinity — loop forever">∞</button>
-        <div class="tl-pro-time">
-          <span class="tl-pro-current">00:00</span>
-          <span class="tl-pro-separator"> / </span>
-          <span class="tl-pro-total">10:00</span>
-        </div>
-        <select class="tl-pro-duration" title="Journey duration">
-          <option value="60">1 min</option>
-          <option value="120">2 min</option>
+      <div class="tl-group">
+        <button class="tl-btn tl-play" data-i18n-title="play">${icon('play', { size: 14 })}</button>
+        <button class="tl-btn tl-stop" data-i18n-title="stop">${icon('stop', { size: 13 })}</button>
+        <button class="tl-btn tl-loop is-on" data-i18n-title="loopForever">${icon('loop', { size: 15 })}</button>
+      </div>
+      <div class="tl-readout">
+        <span class="tl-current">00:00</span><span class="tl-sep">/</span><span class="tl-total">10:00</span>
+      </div>
+      <label class="tl-field">
+        <span class="tl-field-label" data-i18n="journeyDuration">Journey length</span>
+        <select class="tl-duration">
           <option value="300">5 min</option>
           <option value="600" selected>10 min</option>
           <option value="900">15 min</option>
           <option value="1200">20 min</option>
+          <option value="1800">30 min</option>
+          <option value="2700">45 min</option>
+          <option value="3600">60 min</option>
         </select>
-      </div>
-      <div class="tl-pro-zoom">
-        <button class="tl-pro-btn tl-pro-zoom-out" title="Zoom Out">−</button>
-        <div class="tl-pro-zoom-bar"><div class="tl-pro-zoom-fill"></div></div>
-        <button class="tl-pro-btn tl-pro-zoom-in" title="Zoom In">+</button>
+      </label>
+      <div class="tl-spacer"></div>
+      <div class="tl-group">
+        <button class="tl-btn tl-snap is-on" data-i18n-title="snap">${icon('snap', { size: 14 })}</button>
+        <button class="tl-btn tl-fit" data-i18n-title="fitToView">${icon('fit', { size: 14 })}</button>
+        <button class="tl-btn tl-zoom-out" data-i18n-title="zoomOut">${icon('minus', { size: 14 })}</button>
+        <button class="tl-btn tl-zoom-in" data-i18n-title="zoomIn">${icon('plus', { size: 14 })}</button>
       </div>
     `;
     this.container.appendChild(this.header);
 
-    // Timeline ruler + tracks area
     this.viewport = document.createElement('div');
-    this.viewport.className = 'tl-pro-viewport';
+    this.viewport.className = 'tl-viewport';
     this.container.appendChild(this.viewport);
 
     this.ruler = document.createElement('div');
-    this.ruler.className = 'tl-pro-ruler';
+    this.ruler.className = 'tl-ruler';
     this.viewport.appendChild(this.ruler);
 
     this.tracksArea = document.createElement('div');
-    this.tracksArea.className = 'tl-pro-tracks';
+    this.tracksArea.className = 'tl-tracks';
     this.viewport.appendChild(this.tracksArea);
 
-    // Playhead
     this.playhead = document.createElement('div');
-    this.playhead.className = 'tl-pro-playhead';
-    this.playhead.innerHTML = '<div class="tl-pro-playhead-line"></div><div class="tl-pro-playhead-handle">▲</div>';
+    this.playhead.className = 'tl-playhead';
+    this.playhead.innerHTML = '<div class="tl-playhead-head"></div><div class="tl-playhead-line"></div>';
     this.viewport.appendChild(this.playhead);
 
-    // Empty state
     this.emptyState = document.createElement('div');
-    this.emptyState.className = 'tl-pro-empty';
+    this.emptyState.className = 'tl-empty';
     this.emptyState.innerHTML = `
-      <div style="font-size:32px;margin-bottom:12px">🎼</div>
-      <div style="font-weight:600;margin-bottom:6px">No Sounds in Timeline</div>
-      <div style="opacity:0.6">Add sounds from the library — drag clips to arrange them, double-click a lane to set a keyframe</div>
+      <div class="tl-empty-title" data-i18n="timelineEmpty">No sounds yet</div>
+      <div class="tl-empty-help" data-i18n="timelineEmptyHelp"></div>
     `;
     this.viewport.appendChild(this.emptyState);
   }
 
+  _q(sel) { return this.header.querySelector(sel); }
+
+  // ---------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------
+
   _setupEvents() {
-    // Play/Pause
-    this.header.querySelector('.tl-pro-play').addEventListener('click', () => this.togglePlay());
-    this.header.querySelector('.tl-pro-stop').addEventListener('click', () => this.stop());
-    this.header.querySelector('.tl-pro-loop').addEventListener('click', (e) => {
-      this.setLooping(!this.isLooping);
-    });
+    this._q('.tl-play').addEventListener('click', () => this.togglePlay());
+    this._q('.tl-stop').addEventListener('click', () => this.stop());
+    this._q('.tl-loop').addEventListener('click', () => this.setLooping(!this.isLooping));
+    this._q('.tl-snap').addEventListener('click', () => this.setSnap(!this.snap));
+    this._q('.tl-fit').addEventListener('click', () => this.fit());
+    this._q('.tl-zoom-in').addEventListener('click', () => this.zoom(1.35));
+    this._q('.tl-zoom-out').addEventListener('click', () => this.zoom(1 / 1.35));
+    this._q('.tl-duration').addEventListener('change', (e) => this.setTotalDuration(parseInt(e.target.value, 10)));
 
-    // Journey duration
-    this.header.querySelector('.tl-pro-duration').addEventListener('change', (e) => {
-      this.setTotalDuration(parseInt(e.target.value, 10));
-    });
-
-    // Zoom
-    this.header.querySelector('.tl-pro-zoom-in').addEventListener('click', () => {
-      this.pixelsPerSecond = Math.min(60, this.pixelsPerSecond * 1.3);
-      this._render();
-    });
-    this.header.querySelector('.tl-pro-zoom-out').addEventListener('click', () => {
-      this.pixelsPerSecond = Math.max(3, this.pixelsPerSecond / 1.3);
-      this._render();
-    });
-
-    // Clip editing: drag to move, drag edges to resize
-    this.tracksArea.addEventListener('mousedown', (e) => {
-      const block = e.target.closest('.tl-pro-block');
-      if (!block) return;
-      const id = block.closest('.tl-pro-track')?.dataset.id;
+    // Track header buttons: mute / solo / select
+    this.tracksArea.addEventListener('click', (e) => {
+      const head = e.target.closest('.tl-head');
+      if (!head) return;
+      const id = head.closest('.tl-track')?.dataset.id;
       if (!id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.ensureTiming(id);
-      const edge = e.target.closest('.tl-pro-block-edge');
-      this._drag = {
-        id,
-        mode: edge ? (edge.classList.contains('tl-pro-block-left') ? 'left' : 'right') : 'move',
-        startX: e.clientX,
-        orig: { ...this.sourceTimings.get(id) },
-      };
+      if (e.target.closest('.tl-mute')) { this.toggleMute(id); return; }
+      if (e.target.closest('.tl-solo')) { this.toggleSolo(id); return; }
+      if (this.onSelect) this.onSelect(id);
     });
 
-    // Double-click: add keyframe on a lane, remove keyframe on a dot
+    this.tracksArea.addEventListener('pointerdown', (e) => this._onLanePointerDown(e));
+    this.ruler.addEventListener('pointerdown', (e) => this._onScrubStart(e));
+    this.viewport.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.tl-track') || e.target.closest('.tl-ruler')) return;
+      this._onScrubStart(e);
+    });
+
+    window.addEventListener('pointermove', (e) => this._onPointerMove(e));
+    window.addEventListener('pointerup', (e) => this._onPointerUp(e));
+
+    // Double-click a lane to add a keyframe, a keyframe to remove it
     this.tracksArea.addEventListener('dblclick', (e) => {
-      const id = e.target.closest('.tl-pro-track')?.dataset.id;
+      const id = e.target.closest('.tl-track')?.dataset.id;
       if (!id) return;
-      const kfEl = e.target.closest('.tl-pro-kf');
+      const kfEl = e.target.closest('.tl-kf');
       if (kfEl) {
         const index = parseInt(kfEl.dataset.kfIndex, 10);
-        if (this.undoManager) {
-          const kf = this.keyframes.get(id)?.[index];
-          if (kf) this.undoManager.execute(createRemoveKeyframeCommand(this, id, kf, index));
-        } else {
-          this.removeKeyframe(id, index);
-        }
-      } else if (e.target.closest('.tl-pro-track-lane')) {
-        const rect = this.viewport.getBoundingClientRect();
-        const time = (e.clientX - rect.left - this._headerW - this.scrollX) / this.pixelsPerSecond;
-        const clampedTime = Math.round(Math.max(0, Math.min(this.totalDuration, time)) * 10) / 10;
-        if (this.undoManager) {
-          const kfs = this.keyframes.get(id) || [];
-          const src = this.audioEngine.sources.get(id);
-          if (src) {
-            const kf = {
-              time: clampedTime,
-              x: src.x, y: src.y, z: src.z,
-              volume: src.volume,
-              easing: 'linear'
-            };
-            const insertIdx = kfs.findIndex(k => k.time > kf.time);
-            const index = insertIdx === -1 ? kfs.length : insertIdx;
-            this.undoManager.execute(createAddKeyframeCommand(this, id, kf, index));
-          }
-        } else {
-          this.addKeyframe(id, clampedTime);
-        }
+        const kf = this.keyframes.get(id)?.[index];
+        if (!kf) return;
+        if (this.undoManager) this.undoManager.execute(createRemoveKeyframeCommand(this, id, kf, index));
+        else this.removeKeyframe(id, index);
+      } else if (e.target.closest('.tl-lane')) {
+        this.addKeyframeAt(id, this._timeAt(e.clientX));
       }
       this._render();
     });
 
-    // Drag on timeline (scrub)
-    let dragging = false;
-    let wasPlaying = false;
-
-    this.viewport.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.tl-pro-block') || e.target.closest('.tl-pro-track-header')) return;
-      dragging = true;
-      wasPlaying = this.isPlaying;
-      this.pause();
-      this._seekAtMouse(e);
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (this._drag) {
-        this._updateClipDrag(e);
-        return;
-      }
-      if (!dragging) return;
-      const rect = this.viewport.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
-        this._seekAtMouse(e);
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (this._drag) {
-        const d = this._drag;
-        this._drag = null;
-        const current = this.sourceTimings.get(d.id);
-        if (current && (current.startTime !== d.orig.startTime || current.duration !== d.orig.duration) && this.undoManager) {
-          const newTiming = { ...current };
-          const oldTiming = { ...d.orig };
-          this.sourceTimings.set(d.id, oldTiming);
-          this.undoManager.execute(createClipTimingCommand(this, d.id, oldTiming, newTiming));
-        }
-        this._applyKeyframes();
-        this._render();
-      }
-      if (dragging && wasPlaying) this.play();
-      dragging = false;
-    });
-
-    // Scroll wheel: scroll horizontally, Cmd/Ctrl+scroll to zoom time
     this.viewport.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const rect = this.viewport.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const timeAtMouse = (mouseX - this._headerW - this.scrollX) / this.pixelsPerSecond;
-
+      const timeAtMouse = this._timeAt(e.clientX, false);
       if (e.metaKey || e.ctrlKey) {
-        // Zoom time scale
         const factor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newPPS = Math.max(3, Math.min(60, this.pixelsPerSecond * factor));
-        this.scrollX = mouseX - this._headerW - timeAtMouse * newPPS;
-        this.pixelsPerSecond = newPPS;
+        const rect = this.viewport.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const newPps = clamp(this.pixelsPerSecond * factor, MIN_PPS, MAX_PPS);
+        this.scrollX = timeAtMouse * newPps - (mouseX - this._headerW);
+        this.pixelsPerSecond = newPps;
       } else {
-        // Pan / horizontal scroll
-        this.scrollX -= e.deltaY;
+        this.scrollX += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
       }
       this._clampScroll();
       this._render();
     }, { passive: false });
-
-    // Touch: horizontal swipe to scroll
-    let touchStartX = 0;
-    let touchStartScrollX = 0;
-    this.viewport.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        touchStartX = e.touches[0].clientX;
-        touchStartScrollX = this.scrollX;
-      }
-    }, { passive: true });
-    this.viewport.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 1) {
-        const dx = touchStartX - e.touches[0].clientX;
-        this.scrollX = touchStartScrollX + dx;
-        this._clampScroll();
-        this._render();
-      }
-    }, { passive: true });
   }
 
-  _updateClipDrag(e) {
-    const d = this._drag;
-    const t = this.sourceTimings.get(d.id);
-    if (!t) { this._drag = null; return; }
-    const dt = (e.clientX - d.startX) / this.pixelsPerSecond;
+  _onLanePointerDown(e) {
+    const track = e.target.closest('.tl-track');
+    if (!track) return;
+    const id = track.dataset.id;
+    const kfEl = e.target.closest('.tl-kf');
+    const block = e.target.closest('.tl-clip');
+    if (!kfEl && !block) return;
+    e.preventDefault();
+    this.ensureTiming(id);
 
+    if (kfEl) {
+      const index = parseInt(kfEl.dataset.kfIndex, 10);
+      const kf = this.keyframes.get(id)?.[index];
+      if (!kf) return;
+      this._drag = { kind: 'keyframe', id, index, startX: e.clientX, startY: e.clientY, orig: { ...kf }, moved: false };
+      if (this.onSelect) this.onSelect(id);
+      return;
+    }
+
+    const edge = e.target.closest('.tl-clip-edge');
+    this._drag = {
+      kind: 'clip',
+      id,
+      mode: edge ? (edge.classList.contains('tl-clip-left') ? 'left' : 'right') : 'move',
+      startX: e.clientX,
+      orig: { ...this.sourceTimings.get(id) },
+      moved: false,
+    };
+    if (this.onSelect) this.onSelect(id);
+  }
+
+  _onScrubStart(e) {
+    if (e.button !== 0) return;
+    this._drag = { kind: 'scrub', wasPlaying: this.isPlaying };
+    this.pause();
+    this._seekTo(this._timeAt(e.clientX));
+  }
+
+  _onPointerMove(e) {
+    const d = this._drag;
+    if (!d) return;
+    if (d.kind === 'scrub') { this._seekTo(this._timeAt(e.clientX)); return; }
+    if (d.kind === 'clip') { this._dragClip(e); return; }
+    if (d.kind === 'keyframe') { this._dragKeyframe(e); return; }
+  }
+
+  _onPointerUp() {
+    const d = this._drag;
+    this._drag = null;
+    if (!d) return;
+
+    if (d.kind === 'scrub') {
+      if (d.wasPlaying) this.play();
+      return;
+    }
+    if (d.kind === 'clip' && d.moved) {
+      const current = { ...this.sourceTimings.get(d.id) };
+      this.sourceTimings.set(d.id, { ...d.orig });
+      if (this.undoManager) this.undoManager.execute(createClipTimingCommand(this, d.id, d.orig, current));
+      else this.sourceTimings.set(d.id, current);
+    }
+    if (d.kind === 'keyframe' && d.moved) {
+      const kfs = this.keyframes.get(d.id) || [];
+      const current = { ...kfs[d.index] };
+      kfs[d.index] = { ...d.orig };
+      if (this.undoManager) this.undoManager.execute(createMoveKeyframeCommand(this, d.id, d.index, d.orig, current));
+      else kfs[d.index] = current;
+    }
+    this._applyKeyframes();
+    this._render();
+  }
+
+  _dragClip(e) {
+    const d = this._drag;
+    const timing = this.sourceTimings.get(d.id);
+    if (!timing) { this._drag = null; return; }
+    const dt = (e.clientX - d.startX) / this.pixelsPerSecond;
+    if (Math.abs(e.clientX - d.startX) > 2) d.moved = true;
     if (d.mode === 'move') {
-      t.startTime = Math.round(Math.max(0, Math.min(this.totalDuration - d.orig.duration, d.orig.startTime + dt)));
+      timing.startTime = this._snapTime(clamp(d.orig.startTime + dt, 0, this.totalDuration - d.orig.duration));
     } else if (d.mode === 'right') {
-      t.duration = Math.round(Math.max(1, Math.min(this.totalDuration - d.orig.startTime, d.orig.duration + dt)));
+      timing.duration = this._snapTime(clamp(d.orig.duration + dt, 1, this.totalDuration - d.orig.startTime));
     } else {
       const origEnd = d.orig.startTime + d.orig.duration;
-      const newStart = Math.round(Math.max(0, Math.min(origEnd - 1, d.orig.startTime + dt)));
-      t.startTime = newStart;
-      t.duration = origEnd - newStart;
+      const newStart = this._snapTime(clamp(d.orig.startTime + dt, 0, origEnd - 1));
+      timing.startTime = newStart;
+      timing.duration = origEnd - newStart;
     }
     this._render();
   }
 
-  _clampScroll() {
-    const totalWidth = this.totalDuration * this.pixelsPerSecond + 200;
-    const viewportW = this.viewport.clientWidth;
-    this.scrollX = Math.max(0, Math.min(this.scrollX, totalWidth - viewportW));
-  }
-
-  _seekAtMouse(e) {
-    const rect = this.viewport.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    this.playheadTime = Math.max(0, (x - this._headerW - this.scrollX) / this.pixelsPerSecond);
-    if (this.playheadTime > this.totalDuration) this.playheadTime = this.totalDuration;
-    this._updatePlayhead();
+  _dragKeyframe(e) {
+    const d = this._drag;
+    const kfs = this.keyframes.get(d.id);
+    if (!kfs || !kfs[d.index]) { this._drag = null; return; }
+    if (Math.abs(e.clientX - d.startX) > 2 || Math.abs(e.clientY - d.startY) > 2) d.moved = true;
+    const dt = (e.clientX - d.startX) / this.pixelsPerSecond;
+    const kf = kfs[d.index];
+    kf.time = this._snapTime(clamp(d.orig.time + dt, 0, this.totalDuration));
+    // Vertical drag adjusts the level of that keyframe.
+    const dv = (d.startY - e.clientY) / (LANE_H - 10);
+    kf.volume = clamp(d.orig.volume + dv * 0.8, 0, 1);
+    // Keep the list sorted; follow the moved entry.
+    const moved = kf;
+    kfs.sort((a, b) => a.time - b.time);
+    d.index = kfs.indexOf(moved);
     this._applyKeyframes();
+    this._render();
   }
 
-  togglePlay() {
-    this.isPlaying ? this.pause() : this.play();
+  // ---------------------------------------------------------------------
+  // Coordinates
+  // ---------------------------------------------------------------------
+
+  timeToX(t) { return this._headerW + t * this.pixelsPerSecond - this.scrollX; }
+
+  _timeAt(clientX, snap = true) {
+    const rect = this.viewport.getBoundingClientRect();
+    const raw = (clientX - rect.left - this._headerW + this.scrollX) / this.pixelsPerSecond;
+    const clamped = clamp(raw, 0, this.totalDuration);
+    return snap ? this._snapTime(clamped) : clamped;
   }
 
-  /**
-   * Switch between infinity (loop forever) and once (run to the end, then fade
-   * out and pause). The button reflects the active mode.
-   */
+  /** Snap step chosen from the current zoom: finer when zoomed in. */
+  snapStep() {
+    if (!this.snap) return 0;
+    const pps = this.pixelsPerSecond;
+    if (pps > 24) return 0.5;
+    if (pps > 8) return 1;
+    if (pps > 3) return 5;
+    if (pps > 1.2) return 15;
+    return 30;
+  }
+
+  _snapTime(t) {
+    const step = this.snapStep();
+    if (!step) return Math.round(t * 10) / 10;
+    return Math.round(t / step) * step;
+  }
+
+  _clampScroll() {
+    const contentW = this.totalDuration * this.pixelsPerSecond;
+    const laneW = Math.max(60, this.viewport.clientWidth - this._headerW);
+    this.scrollX = clamp(this.scrollX, 0, Math.max(0, contentW - laneW + 24));
+  }
+
+  zoom(factor) {
+    const centre = this.playheadTime;
+    this.pixelsPerSecond = clamp(this.pixelsPerSecond * factor, MIN_PPS, MAX_PPS);
+    const laneW = Math.max(60, this.viewport.clientWidth - this._headerW);
+    this.scrollX = centre * this.pixelsPerSecond - laneW / 2;
+    this._clampScroll();
+    this._render();
+  }
+
+  /** Fit the whole journey into the lane area. */
+  fit() {
+    const laneW = Math.max(60, this.viewport.clientWidth - this._headerW - 24);
+    this.pixelsPerSecond = clamp(laneW / Math.max(1, this.totalDuration), MIN_PPS, MAX_PPS);
+    this.scrollX = 0;
+    this._render();
+  }
+
+  setSnap(on) {
+    this.snap = on;
+    this._q('.tl-snap').classList.toggle('is-on', on);
+  }
+
+  // ---------------------------------------------------------------------
+  // Transport
+  // ---------------------------------------------------------------------
+
+  togglePlay() { this.isPlaying ? this.pause() : this.play(); }
+
   setLooping(on) {
     this.isLooping = on;
-    const btn = this.header.querySelector('.tl-pro-loop');
+    const btn = this._q('.tl-loop');
     if (btn) {
-      btn.classList.toggle('active', on);
-      btn.textContent = on ? '∞' : '↦';
-      btn.title = on ? 'Infinity — loop forever' : 'Once — play through, then fade out';
+      btn.classList.toggle('is-on', on);
+      btn.innerHTML = icon(on ? 'loop' : 'once', { size: 15 });
+      btn.title = on ? t('loopForever') : t('playOnce');
+      btn.setAttribute('aria-label', btn.title);
     }
   }
 
@@ -311,12 +383,65 @@ export class Timeline {
     if (this.isPlaying) return;
     this._restoreMaster();
     this.isPlaying = true;
-    this._lastFrameTime = performance.now();
-    this.header.querySelector('.tl-pro-play').textContent = '⏸';
+    this._lastFrameTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this._setPlayIcon(true);
     this._loop();
   }
 
-  // Undo an end-of-journey fade so the next play starts at full volume
+  pause() {
+    this.isPlaying = false;
+    this._setPlayIcon(false);
+    if (this._animationFrame) { cancelAnimationFrame(this._animationFrame); this._animationFrame = null; }
+    if (this._endFadeTimer) { clearTimeout(this._endFadeTimer); this._endFadeTimer = null; this._restoreMaster(); }
+    for (const src of this.audioEngine.sources.values()) if (src) src._timelineControlled = false;
+  }
+
+  stop() {
+    this.pause();
+    this.playheadTime = 0;
+    this._updatePlayhead();
+    this._applyKeyframes();
+  }
+
+  _setPlayIcon(playing) {
+    const btn = this._q('.tl-play');
+    if (!btn) return;
+    btn.innerHTML = icon(playing ? 'pause' : 'play', { size: 14 });
+    btn.classList.toggle('is-on', playing);
+    btn.title = playing ? t('pause') : t('play');
+  }
+
+  _seekTo(time) {
+    this.playheadTime = clamp(time, 0, this.totalDuration);
+    this._updatePlayhead();
+    this._applyKeyframes();
+  }
+
+  _loop() {
+    if (!this.isPlaying) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const dt = (now - this._lastFrameTime) / 1000;
+    this._lastFrameTime = now;
+    this.playheadTime += dt;
+
+    if (this.playheadTime >= this.totalDuration) {
+      if (this.isLooping) {
+        this.playheadTime = 0;
+      } else {
+        this.playheadTime = this.totalDuration;
+        this._updatePlayhead();
+        this.isPlaying = false;
+        this._setPlayIcon(false);
+        this._finishOnce();
+        return;
+      }
+    }
+    this._updatePlayhead();
+    this._applyKeyframes();
+    this._autoScroll();
+    this._animationFrame = requestAnimationFrame(() => this._loop());
+  }
+
   _restoreMaster() {
     if (this._masterBeforeFade === undefined) return;
     const mg = this.audioEngine.masterGain;
@@ -328,10 +453,6 @@ export class Timeline {
     this._masterBeforeFade = undefined;
   }
 
-  /**
-   * End of a one-shot journey: gently fade the master out, then pause and
-   * rewind, leaving the journey ready to replay.
-   */
   _finishOnce() {
     const mg = this.audioEngine.masterGain;
     const ctx = this.audioEngine.ctx;
@@ -351,41 +472,15 @@ export class Timeline {
     }, FADE * 1000 + 100);
   }
 
-  pause() {
-    this.isPlaying = false;
-    this.header.querySelector('.tl-pro-play').textContent = '▶';
-    if (this._animationFrame) {
-      cancelAnimationFrame(this._animationFrame);
-      this._animationFrame = null;
-    }
-    if (this._endFadeTimer) {
-      clearTimeout(this._endFadeTimer);
-      this._endFadeTimer = null;
-      this._restoreMaster();
-    }
-    // Hand position control back to canvas automations
-    for (const src of this.audioEngine.sources.values()) {
-      if (src) src._timelineControlled = false;
-    }
-  }
-
-  stop() {
-    this.pause();
-    this.playheadTime = 0;
-    this._updatePlayhead();
-    this._applyKeyframes();
-  }
-
-  /**
-   * Change journey length, clamping playhead and clip timings into the new range.
-   */
   setTotalDuration(seconds) {
     this.totalDuration = seconds;
     if (this.playheadTime > seconds) this.playheadTime = seconds;
-    for (const t of this.sourceTimings.values()) {
-      if (t.startTime >= seconds) t.startTime = Math.max(0, seconds - 1);
-      t.duration = Math.min(t.duration, seconds - t.startTime);
+    for (const timing of this.sourceTimings.values()) {
+      if (timing.startTime >= seconds) timing.startTime = Math.max(0, seconds - 1);
+      timing.duration = Math.min(timing.duration, seconds - timing.startTime);
     }
+    for (const kfs of this.keyframes.values()) for (const kf of kfs) kf.time = Math.min(kf.time, seconds);
+    this.sections = this.sections.filter(s => s.time < seconds);
     this._clampScroll();
     this._updatePlayhead();
     this._syncDurationSelect();
@@ -393,7 +488,7 @@ export class Timeline {
   }
 
   _syncDurationSelect() {
-    const sel = this.header.querySelector('.tl-pro-duration');
+    const sel = this._q('.tl-duration');
     if (!sel) return;
     if (![...sel.options].some(o => parseInt(o.value, 10) === this.totalDuration)) {
       const opt = document.createElement('option');
@@ -404,88 +499,122 @@ export class Timeline {
     sel.value = String(this.totalDuration);
   }
 
-  _loop() {
-    if (!this.isPlaying) return;
-    const now = performance.now();
-    const dt = (now - this._lastFrameTime) / 1000;
-    this._lastFrameTime = now;
-
-    this.playheadTime += dt;
-
-    if (this.playheadTime >= this.totalDuration) {
-      if (this.isLooping) {
-        this.playheadTime = 0;
-      } else {
-        this.playheadTime = this.totalDuration;
-        this._updatePlayhead();
-        this.isPlaying = false;
-        this.header.querySelector('.tl-pro-play').textContent = '▶';
-        this._finishOnce();
-        return;
-      }
-    }
-
-    this._updatePlayhead();
-    this._applyKeyframes();
-    this._autoScroll();
-
-    this._animationFrame = requestAnimationFrame(() => this._loop());
-  }
-
-  _updatePlayhead() {
-    const x = this.playheadTime * this.pixelsPerSecond + this.scrollX + this._headerW;
-    this.playhead.style.left = `${x}px`;
-
-    // Update time display
-    const m = Math.floor(this.playheadTime / 60);
-    const s = Math.floor(this.playheadTime % 60);
-    this.header.querySelector('.tl-pro-current').textContent =
-      `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-    const tm = Math.floor(this.totalDuration / 60);
-    const ts = Math.floor(this.totalDuration % 60);
-    this.header.querySelector('.tl-pro-total').textContent =
-      `${String(tm).padStart(2, '0')}:${String(ts).padStart(2, '0')}`;
-  }
-
   _autoScroll() {
-    const viewportW = this.viewport.clientWidth;
-    const playheadX = this.playheadTime * this.pixelsPerSecond + this.scrollX + this._headerW;
-
-    // Auto-scroll if playhead near edge
-    if (playheadX > viewportW - 100) {
-      this.scrollX = -(this.playheadTime * this.pixelsPerSecond - viewportW + 150);
-      this._render();
-    } else if (playheadX < this._headerW + 50) {
-      this.scrollX = -(this.playheadTime * this.pixelsPerSecond - 150);
+    const laneW = Math.max(60, this.viewport.clientWidth - this._headerW);
+    const x = this.playheadTime * this.pixelsPerSecond - this.scrollX;
+    if (x > laneW - 80 || x < 0) {
+      this.scrollX = this.playheadTime * this.pixelsPerSecond - laneW * 0.35;
+      this._clampScroll();
       this._render();
     }
   }
 
-  /**
-   * Sample keyframes at a point in time, interpolating position and volume.
-   */
+  // ---------------------------------------------------------------------
+  // Tracks
+  // ---------------------------------------------------------------------
+
+  ensureTiming(id) {
+    if (!this.sourceTimings.has(id)) {
+      this.sourceTimings.set(id, { startTime: 0, duration: this.totalDuration });
+    }
+    if (!this.trackState.has(id)) this.trackState.set(id, { muted: false, solo: false });
+  }
+
+  state(id) {
+    this.ensureTiming(id);
+    return this.trackState.get(id);
+  }
+
+  toggleMute(id) {
+    const s = this.state(id);
+    s.muted = !s.muted;
+    this._applyKeyframes();
+    this._render();
+    return s.muted;
+  }
+
+  toggleSolo(id) {
+    const s = this.state(id);
+    s.solo = !s.solo;
+    this._applyKeyframes();
+    this._render();
+    return s.solo;
+  }
+
+  _anySolo() {
+    for (const s of this.trackState.values()) if (s.solo) return true;
+    return false;
+  }
+
+  setSections(sections) {
+    this.sections = (sections || []).map(s => ({ time: s.time, name: s.name }));
+    this._render();
+  }
+
+  // ---------------------------------------------------------------------
+  // Keyframes
+  // ---------------------------------------------------------------------
+
+  addKeyframe(id, time, options = {}) {
+    if (!this.keyframes.has(id)) this.keyframes.set(id, []);
+    const kfs = this.keyframes.get(id);
+    const src = this.audioEngine.sources.get(id);
+    if (!src) return null;
+    const kf = {
+      time: time !== undefined ? time : this.playheadTime,
+      x: options.x !== undefined ? options.x : src.x,
+      y: options.y !== undefined ? options.y : src.y,
+      z: options.z !== undefined ? options.z : src.z,
+      volume: options.volume !== undefined ? options.volume : src.volume,
+      easing: options.easing || 'ease-in-out',
+    };
+    const idx = kfs.findIndex(k => k.time > kf.time);
+    const index = idx === -1 ? kfs.length : idx;
+    kfs.splice(index, 0, kf);
+    return { kf, index };
+  }
+
+  /** Add a keyframe at a time, routed through undo when available. */
+  addKeyframeAt(id, time) {
+    const src = this.audioEngine.sources.get(id);
+    if (!src) return;
+    const kfs = this.keyframes.get(id) || [];
+    const kf = { time: this._snapTime(time), x: src.x, y: src.y, z: src.z, volume: src.volume, easing: 'ease-in-out' };
+    const idx = kfs.findIndex(k => k.time > kf.time);
+    const index = idx === -1 ? kfs.length : idx;
+    if (this.undoManager) this.undoManager.execute(createAddKeyframeCommand(this, id, kf, index));
+    else { if (!this.keyframes.has(id)) this.keyframes.set(id, []); this.keyframes.get(id).splice(index, 0, kf); }
+    this._render();
+  }
+
+  removeKeyframe(id, index) {
+    const kfs = this.keyframes.get(id);
+    if (!kfs || index < 0 || index >= kfs.length) return;
+    kfs.splice(index, 1);
+    if (kfs.length === 0) this.keyframes.delete(id);
+  }
+
+  setKeyframes(id, keyframes) {
+    this.keyframes.set(id, keyframes.map(kf => ({
+      time: kf.time || 0,
+      x: kf.x || 0, y: kf.y || 0, z: kf.z || 0,
+      volume: kf.volume !== undefined ? kf.volume : 0.5,
+      easing: kf.easing || 'linear',
+    })));
+  }
+
   _sampleKeyframes(kfs, now) {
     const first = kfs[0];
-    if (kfs.length === 1 || now <= first.time) {
-      return { x: first.x, y: first.y, z: first.z, volume: first.volume };
-    }
+    if (kfs.length === 1 || now <= first.time) return { x: first.x, y: first.y, z: first.z, volume: first.volume };
     const last = kfs[kfs.length - 1];
-    if (now >= last.time) {
-      return { x: last.x, y: last.y, z: last.z, volume: last.volume };
-    }
-    let prev = first;
-    let next = last;
+    if (now >= last.time) return { x: last.x, y: last.y, z: last.z, volume: last.volume };
+    let prev = first, next = last;
     for (let i = 0; i < kfs.length - 1; i++) {
-      if (now >= kfs[i].time && now <= kfs[i + 1].time) {
-        prev = kfs[i];
-        next = kfs[i + 1];
-        break;
-      }
+      if (now >= kfs[i].time && now <= kfs[i + 1].time) { prev = kfs[i]; next = kfs[i + 1]; break; }
     }
     const span = next.time - prev.time;
-    const t = span > 0 ? (now - prev.time) / span : 1;
-    const eased = this._ease(t, prev.easing || 'linear');
+    const raw = span > 0 ? (now - prev.time) / span : 1;
+    const eased = this._ease(raw, prev.easing || 'linear');
     const lerp = (a, b) => a + (b - a) * eased;
     return {
       x: lerp(prev.x, next.x),
@@ -497,43 +626,6 @@ export class Timeline {
     };
   }
 
-  /**
-   * Apply keyframes and clip timings to sources at the current playhead time.
-   * Volume has a single owner here: keyframe volume if defined, otherwise the
-   * source's own volume — gated by whether the clip window is active.
-   */
-  _applyKeyframes() {
-    const now = this.playheadTime;
-
-    for (const [id, src] of this.audioEngine.sources.entries()) {
-      if (!src) continue;
-      this.ensureTiming(id);
-      const t = this.sourceTimings.get(id);
-      const active = now >= t.startTime && now <= (t.startTime + t.duration);
-
-      const kfs = this.keyframes.get(id);
-      let kfVolume;
-      if (kfs && kfs.length > 0) {
-        const state = this._sampleKeyframes(kfs, now);
-        this.audioEngine.updateSourcePosition(id, state.x, state.y, state.z);
-        kfVolume = state.volume;
-        // While the journey plays, keyframes own this source's position
-        src._timelineControlled = this.isPlaying;
-      } else {
-        src._timelineControlled = false;
-      }
-
-      if (active && !src.isPlaying) {
-        this.audioEngine.toggleSource(id, Math.max(0, now - t.startTime));
-      }
-
-      const targetVol = active ? (kfVolume !== undefined ? kfVolume : src.volume) : 0;
-      if (src.gainNode && this.audioEngine.ctx) {
-        src.gainNode.gain.setTargetAtTime(targetVol, this.audioEngine.ctx.currentTime, 0.05);
-      }
-    }
-  }
-
   _ease(t, type) {
     switch (type) {
       case 'ease-in': return t * t;
@@ -543,183 +635,210 @@ export class Timeline {
     }
   }
 
-  ensureTiming(id) {
-    if (!this.sourceTimings.has(id)) {
-      // New sounds span the whole journey by default
-      this.sourceTimings.set(id, { startTime: 0, duration: this.totalDuration });
-    }
-  }
-
   /**
-   * Add a keyframe for a source at the current time or specified time
+   * Drive every source from the playhead: position from keyframes, level from
+   * keyframe volume gated by the clip window, mute and solo.
    */
-  addKeyframe(id, time, options = {}) {
-    if (!this.keyframes.has(id)) {
-      this.keyframes.set(id, []);
-    }
-    const kfs = this.keyframes.get(id);
-    const src = this.audioEngine.sources.get(id);
-    if (!src) return;
+  _applyKeyframes() {
+    const now = this.playheadTime;
+    const soloing = this._anySolo();
 
-    const kf = {
-      time: time !== undefined ? time : this.playheadTime,
-      x: options.x !== undefined ? options.x : src.x,
-      y: options.y !== undefined ? options.y : src.y,
-      z: options.z !== undefined ? options.z : src.z,
-      volume: options.volume !== undefined ? options.volume : src.volume,
-      easing: options.easing || 'linear'
-    };
+    for (const [id, src] of this.audioEngine.sources.entries()) {
+      if (!src) continue;
+      this.ensureTiming(id);
+      const timing = this.sourceTimings.get(id);
+      const state = this.trackState.get(id);
+      const inWindow = now >= timing.startTime && now <= timing.startTime + timing.duration;
+      const audible = inWindow && !state.muted && (!soloing || state.solo);
 
-    // Insert in sorted order
-    const idx = kfs.findIndex(k => k.time > kf.time);
-    if (idx === -1) {
-      kfs.push(kf);
-    } else {
-      kfs.splice(idx, 0, kf);
+      const kfs = this.keyframes.get(id);
+      let kfVolume;
+      if (kfs && kfs.length > 0) {
+        const s = this._sampleKeyframes(kfs, now);
+        if (src.spatial !== false) this.audioEngine.updateSourcePosition(id, s.x, s.y, s.z);
+        kfVolume = s.volume;
+        src._timelineControlled = this.isPlaying;
+      } else {
+        src._timelineControlled = false;
+      }
+
+      if (inWindow && !src.isPlaying) {
+        this.audioEngine.toggleSource(id, Math.max(0, now - timing.startTime));
+      }
+
+      const target = audible ? (kfVolume !== undefined ? kfVolume : src.volume) : 0;
+      if (src.gainNode && this.audioEngine.ctx) {
+        if (src.gainNode.gain.setTargetAtTime) src.gainNode.gain.setTargetAtTime(target, this.audioEngine.ctx.currentTime, 0.05);
+        else src.gainNode.gain.value = target;
+      }
     }
+    if (this.onTimeUpdate) this.onTimeUpdate(this.playheadTime, this.totalDuration);
   }
 
-  /**
-   * Remove a keyframe by its index in the source's keyframe list.
-   */
-  removeKeyframe(id, index) {
-    const kfs = this.keyframes.get(id);
-    if (!kfs || index < 0 || index >= kfs.length) return;
-    kfs.splice(index, 1);
-    if (kfs.length === 0) this.keyframes.delete(id);
-  }
+  // ---------------------------------------------------------------------
+  // Visibility
+  // ---------------------------------------------------------------------
 
-  /**
-   * Set predefined keyframes for a journey preset
-   */
-  setKeyframes(id, keyframes) {
-    this.keyframes.set(id, keyframes.map(kf => ({
-      time: kf.time || 0,
-      x: kf.x || 0,
-      y: kf.y || 0,
-      z: kf.z || 0,
-      volume: kf.volume !== undefined ? kf.volume : 0.5,
-      easing: kf.easing || 'linear'
-    })));
-  }
+  toggle() { this.visible ? this.hide() : this.show(); }
 
-  toggle() {
-    this.visible = !this.visible;
-    this.container.style.display = this.visible ? 'block' : 'none';
-    if (this.visible) {
-      this._render();
-      this._updatePlayhead();
-    } else {
-      this.pause();
-    }
+  show() {
+    this.visible = true;
+    this.container.style.display = 'flex';
+    this._render();
+    this._updatePlayhead();
     this._reflectVisibility();
   }
 
-  show() { this.visible = true; this.container.style.display = 'block'; this._render(); this._reflectVisibility(); }
-  hide() { this.visible = false; this.container.style.display = 'none'; this.pause(); this._reflectVisibility(); }
+  hide() {
+    this.visible = false;
+    this.container.style.display = 'none';
+    this.pause();
+    this._reflectVisibility();
+  }
 
-  // Mirror visibility to <body> so other floating panels can dodge the timeline dock
   _reflectVisibility() {
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.toggle('timeline-open', this.visible);
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------
+
+  _updatePlayhead() {
+    if (!this.playhead) return;
+    this.playhead.style.transform = `translateX(${this.timeToX(this.playheadTime)}px)`;
+    const cur = this._q('.tl-current');
+    const tot = this._q('.tl-total');
+    if (cur) cur.textContent = fmt(this.playheadTime);
+    if (tot) tot.textContent = fmt(this.totalDuration);
+    const visible = this.timeToX(this.playheadTime) >= this._headerW - 2;
+    this.playhead.style.opacity = visible ? '1' : '0';
+  }
+
+  /**
+   * Horizontal pixel range worth drawing. Before the first layout (and in
+   * jsdom) clientWidth is 0, so culling is switched off rather than hiding
+   * everything.
+   */
+  _cullRange(margin = 40) {
+    const w = this.viewport.clientWidth;
+    if (!w) return { min: -Infinity, max: Infinity };
+    return { min: this._headerW - margin, max: w + margin };
+  }
+
   _render() {
     if (!this.visible) return;
     const pps = this.pixelsPerSecond;
-    const sx = this.scrollX;
-    const colors = this.canvasGrid.themeColors;
-    const emojiMap = this.canvasGrid.emojiMap || {};
 
-    // Measure track header width so ruler/playhead/lanes share one coordinate system
-    const headerEl = this.tracksArea.querySelector('.tl-pro-track-header');
-    if (headerEl && headerEl.offsetWidth > 0) this._headerW = headerEl.offsetWidth;
-
-    // Update zoom bar
-    const zoomPercent = (pps - 3) / (60 - 3);
-    this.header.querySelector('.tl-pro-zoom-fill').style.width = `${zoomPercent * 100}%`;
     this._syncDurationSelect();
 
-    // Ruler
-    let rulerHTML = '';
-    const majorInt = pps > 20 ? 30 : (pps > 10 ? 60 : 120);
-    const minorInt = majorInt / 6;
-
-    for (let t = 0; t <= this.totalDuration; t += minorInt) {
-      const isMajor = t % majorInt === 0;
-      const left = t * pps + sx + this._headerW;
-      if (left < -50 || left > this.viewport.clientWidth + 50) continue;
-
-      const m = Math.floor(t / 60);
-      const s = Math.floor(t % 60);
-      const label = isMajor ? `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : '';
-
-      rulerHTML += `<div class="tl-pro-tick ${isMajor ? 'tl-pro-tick-major' : ''}" style="left:${left}px">
-        ${isMajor ? `<span class="tl-pro-tick-label">${label}</span>` : ''}
-      </div>`;
+    // --- ruler ---
+    const majorStep = pickStep(pps);
+    const minorStep = majorStep / (majorStep >= 60 ? 6 : 5);
+    const cull = this._cullRange(40);
+    let ruler = '';
+    for (let time = 0; time <= this.totalDuration + 0.001; time += minorStep) {
+      const x = this.timeToX(time);
+      if (x < cull.min || x > cull.max) continue;
+      const major = Math.abs(time % majorStep) < 0.001;
+      ruler += `<div class="tl-tick${major ? ' is-major' : ''}" style="left:${x}px">${major ? `<span>${fmt(time)}</span>` : ''}</div>`;
     }
-    this.ruler.innerHTML = rulerHTML;
+    for (const section of this.sections) {
+      const x = this.timeToX(section.time);
+      if (x < cull.min || x > cull.max) continue;
+      ruler += `<div class="tl-section" style="left:${x}px"><span>${escapeHtml(section.name)}</span></div>`;
+    }
+    this.ruler.innerHTML = ruler;
 
-    // Tracks
-    const sources = Array.from(this.audioEngine.sources.entries());
-
+    // --- tracks ---
+    const sources = [...this.audioEngine.sources.entries()].filter(([, s]) => s);
     if (sources.length === 0) {
       this.emptyState.style.display = 'flex';
       this.tracksArea.innerHTML = '';
-    } else {
-      this.emptyState.style.display = 'none';
-      let tracksHTML = '';
+      this._updatePlayhead();
+      return;
+    }
+    this.emptyState.style.display = 'none';
+    const soloing = this._anySolo();
 
-      sources.forEach(([id, src]) => {
-        if (!src) return;
-        this.ensureTiming(id);
-        const t = this.sourceTimings.get(id);
-        const color = colors[src.type] || colors.custom || '#999';
-        const emoji = emojiMap[src.type] || '🎵';
-        const left = t.startTime * pps + sx;
-        const width = Math.max(40, t.duration * pps);
-        const label = (src.name || '').substring(0, 20);
-        const isActive = this.playheadTime >= t.startTime && this.playheadTime <= (t.startTime + t.duration);
+    let html = '';
+    for (const [id, src] of sources) {
+      this.ensureTiming(id);
+      const timing = this.sourceTimings.get(id);
+      const state = this.trackState.get(id);
+      const def = getSound(src.type);
+      const color = (this.canvasGrid && this.canvasGrid.colorFor) ? this.canvasGrid.colorFor(src.type) : (def.color || '#888');
+      const left = this.timeToX(timing.startTime);
+      const width = Math.max(18, timing.duration * pps);
+      const active = this.playheadTime >= timing.startTime && this.playheadTime <= timing.startTime + timing.duration;
+      const dimmed = state.muted || (soloing && !state.solo);
+      const selected = this.canvasGrid && this.canvasGrid.selectedNodeId === id;
+      const kfs = this.keyframes.get(id) || [];
 
-        // Keyframe indicators
-        const kfs = this.keyframes.get(id) || [];
-        let keyframeDots = '';
-        kfs.forEach((kf, ki) => {
-          const kfX = kf.time * pps + sx;
-          if (kfX >= left && kfX <= left + width) {
-            keyframeDots += `<div class="tl-pro-kf" data-kf-index="${ki}" style="left:${kfX - left}px" title="${kf.time.toFixed(1)}s: (${kf.x.toFixed(1)}, ${kf.y.toFixed(1)}) — double-click to remove"></div>`;
-          }
-        });
+      const dots = kfs.map((kf, i) => {
+        const x = this.timeToX(kf.time) - left;
+        if (x < -8 || x > width + 8) return '';
+        const y = (1 - clamp(kf.volume, 0, 1)) * (LANE_H - 18) + 4;
+        return `<div class="tl-kf" data-kf-index="${i}" style="left:${x}px;top:${y}px" title="${fmt(kf.time)} · ${Math.round(kf.volume * 100)}%"></div>`;
+      }).join('');
 
-        tracksHTML += `
-          <div class="tl-pro-track" data-id="${id}">
-            <div class="tl-pro-track-header">
-              <span class="tl-pro-track-emoji">${emoji}</span>
-              <span class="tl-pro-track-name">${label}</span>
-            </div>
-            <div class="tl-pro-track-lane">
-              <div class="tl-pro-block ${isActive ? 'tl-pro-block-active' : ''}"
-                   title="Drag to move, drag edges to resize, double-click lane for keyframe"
-                   style="left:${left}px;width:${width}px;background:linear-gradient(90deg, ${color}33, ${color}66, ${color}33);border-color:${color}88">
-                <div class="tl-pro-block-inner">
-                  <span class="tl-pro-block-label">${t.startTime.toFixed(0)}s — ${(t.startTime + t.duration).toFixed(0)}s</span>
-                </div>
-                <div class="tl-pro-block-keyframes">${keyframeDots}</div>
-                <div class="tl-pro-block-edge tl-pro-block-left"></div>
-                <div class="tl-pro-block-edge tl-pro-block-right"></div>
-              </div>
+      const envelope = kfs.length > 1 ? this._envelopeSvg(kfs, left, width) : '';
+
+      html += `
+        <div class="tl-track${selected ? ' is-selected' : ''}${dimmed ? ' is-dim' : ''}" data-id="${id}">
+          <div class="tl-head">
+            <span class="tl-dot" style="background:${color}"></span>
+            <span class="tl-name">${escapeHtml(src.name || soundName(src.type))}</span>
+            <button class="tl-mini tl-solo${state.solo ? ' is-on' : ''}" title="${t('solo')}">S</button>
+            <button class="tl-mini tl-mute${state.muted ? ' is-on' : ''}" title="${t('muteSound')}">M</button>
+          </div>
+          <div class="tl-lane">
+            <div class="tl-clip${active ? ' is-active' : ''}" style="left:${left}px;width:${width}px;--clip:${color}">
+              ${envelope}
+              <span class="tl-clip-label">${fmt(timing.startTime)} – ${fmt(timing.startTime + timing.duration)}</span>
+              <div class="tl-clip-kfs">${dots}</div>
+              <div class="tl-clip-edge tl-clip-left"></div>
+              <div class="tl-clip-edge tl-clip-right"></div>
             </div>
           </div>
-        `;
-      });
-
-      this.tracksArea.innerHTML = tracksHTML;
+        </div>`;
     }
+    this.tracksArea.innerHTML = html;
 
-    // Set width for scrolling
-    const totalW = Math.max(this.viewport.clientWidth, this.totalDuration * pps + 200);
-    this.ruler.style.width = totalW + 'px';
-    this.tracksArea.style.width = totalW + 'px';
+    const headEl = this.tracksArea.querySelector('.tl-head');
+    if (headEl && headEl.offsetWidth > 0 && Math.abs(headEl.offsetWidth - this._headerW) > 1) {
+      this._headerW = headEl.offsetWidth;
+      this._updatePlayhead();
+    }
+    this._updatePlayhead();
   }
+
+  /** Volume envelope as an inline SVG polyline inside the clip. */
+  _envelopeSvg(kfs, clipLeft, clipWidth) {
+    const pts = kfs.map(kf => {
+      const x = this.timeToX(kf.time) - clipLeft;
+      const y = (1 - clamp(kf.volume, 0, 1)) * (LANE_H - 14) + 3;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<svg class="tl-env" width="${clipWidth}" height="${LANE_H - 8}" viewBox="0 0 ${clipWidth} ${LANE_H - 8}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+  }
+}
+
+function pickStep(pps) {
+  const target = 90; // pixels between major ticks
+  const candidates = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900];
+  for (const c of candidates) if (c * pps >= target) return c;
+  return 900;
+}
+
+function fmt(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }

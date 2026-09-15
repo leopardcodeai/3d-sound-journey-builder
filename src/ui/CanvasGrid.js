@@ -1,12 +1,28 @@
 /**
- * CanvasGrid
- * Manages the interactive 2D/3D canvas rendering and drag-and-drop soundscape controls.
+ * CanvasGrid: the spatial view.
+ * Renders the sound field (ground grid, listener, sources, motion paths,
+ * speakers) through a real camera so 2D (top-down orthographic) and 3D
+ * (tilted perspective orbit) are the same scene, and handles pointer input:
+ * select, drag on the ground plane, lift (height), pan, orbit, zoom, pinch.
+ *
+ * Coordinates: world metres (x right, y forward, z up). Screen space comes
+ * from Camera.project; pointer positions go back through Camera.screenToPlane.
  */
+import { Camera } from './Camera.js';
+import { getSound, buildColorMap } from '../data/SoundLibrary.js';
+import { drawGlyph } from './Icons.js';
+
+const raf = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, 16));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const FIELD_RADIUS = 10;
+const ACCENT = '#f26f3b';
+const ACCENT_RGB = '242, 111, 59';
+
 export class CanvasGrid {
   /**
-   * @param {HTMLCanvasElement} canvas - The canvas element
-   * @param {SpatialAudioEngine} audioEngine - The audio engine instance
-   * @param {Object} callbacks - Event callbacks (onNodeSelected, onNodeMoved)
+   * @param {HTMLCanvasElement} canvas
+   * @param {SpatialAudioEngine} audioEngine
+   * @param {Object} callbacks onNodeSelected, onNodeMoved, onNodeDragEnd, onNodeDropped, onNodeActivated, onViewChanged
    */
   constructor(canvas, audioEngine, callbacks = {}) {
     this.canvas = canvas;
@@ -14,156 +30,84 @@ export class CanvasGrid {
     this.audioEngine = audioEngine;
     this.callbacks = callbacks;
 
-    // Responsive CSS-pixel dimensions (updated on resize)
     this.w = canvas.width || 500;
     this.h = canvas.height || 500;
-
-    // Scale: maps Web Audio units (-10 to 10) to Canvas pixels
+    this._baseScale = Math.min(this.w, this.h) / 22;
     this.unitScale = 25;
 
-    // Selected node ID
     this.selectedNodeId = null;
-
-    // Drag state
     this.draggedNodeId = null;
-    this.dragOffset = { x: 0, y: 0 };
-
-    // Mouse hover state
     this.hoveredNodeId = null;
 
-    // Ripple animation trackers: id -> array of ripple objects
     this.ripples = new Map();
-
-    // Fog particles system
-    this.particles = [];
-    this.particleCount = 60;
-
-    // Automation state
     this.automations = new Map();
+    this._levels = new Map();
 
-    // 3D camera
-    this.viewMode = '2d';       // '2d' or '3d'
-    this.camPitch = 30;          // tilt degrees 0–65 (default 30° isometric)
-    this.camYaw = 0;            // rotation degrees -180..180
-    this.camZoom = 1.3;         // zoom level 0.4–2.5 (default zoomed in more)
-    this._targetPitch = 30;     // smooth transition target
-    this._targetYaw = 0;
-    this._targetZoom = 1.3;
-    this._velPitch = 0;         // momentum velocity
-    this._velYaw = 0;
-    this._velZoom = 0;
-    this._pinchDist = 0;        // touch tracking
-    this._pinchZoom = 1.3;
-    this._lastPinchMid = null;
+    // Camera state (animated toward targets)
+    this.viewMode = '2d';
+    this.camPitch = 90; this._targetPitch = 90;
+    this.camYaw = 0;    this._targetYaw = 0;
+    this.camZoom = 1.3; this._targetZoom = 1.3;
+    this.persp = 0;     this._targetPersp = 0;
+    this._velPitch = 0; this._velYaw = 0; this._velZoom = 0;
+    this.panX = 0; this.panY = 0; this._targetPanX = 0; this._targetPanY = 0;
+    this.camera = new Camera({ distance: 26 });
 
-    // View panning (2D/3D)
-    this.panX = 0;
-    this.panY = 0;
-    this._targetPanX = 0;
-    this._targetPanY = 0;
-    this._velPanX = 0;
-    this._velPanY = 0;
+    // Interaction state
+    this._pointers = new Map();
+    this._gesture = null;   // 'drag' | 'lift' | 'pan' | 'orbit' | 'pinch' | 'speaker'
+    this._gestureData = null;
     this._isPanning = false;
-    this._panStart = { x: 0, y: 0 };
-    this._panStartOffset = { x: 0, y: 0 };
     this._isOrbiting = false;
-    this._orbitStart = { x: 0, y: 0 };
-    this._orbitStartYaw = 0;
-    this._orbitStartPitch = 0;
-
-    // Layer editing: 'sources' or 'speakers'
-    this.editLayer = 'sources';
     this._draggedSpeakerIdx = -1;
+    this.editLayer = 'sources';
+    this._dragStartPos = null;
 
-    // Color definitions for sound types
-    this.themeColors = {
-      birds: '#10b981',     // Green
-      train: '#f59e0b',     // Orange
-      campfire: '#ef4444',  // Red
-      rain: '#3b82f6',      // Blue
-      thunder: '#8b5cf6',   // Purple
-      waves: '#06b6d4',     // Cyan
-      crickets: '#a3e635',  // Lime
-      cafe: '#ec4899',      // Pink
-      bell: '#a855f7',     // Purple
-      gong: '#f97316',     // Orange
-      'singing-bowl': '#14b8a6', // Teal
-      'wind-chimes': '#38bdf8', // Sky blue
-      city_traffic: '#f59e0b', // Orange
-      city_park: '#22c55e',    // Green
-      subway: '#6366f1',       // Indigo
-      jungle_night: '#166534', // Dark green
-      monkeys: '#ca8a04',      // Amber
-      elephant: '#78716c',     // Warm gray
-      leopard: '#eab308',      // Yellow
-      jungle_river: '#0e7490', // Cyan
-      tropical_birds: '#ec4899', // Pink
-      ocean_deep: '#0e7490',    // Deep teal
-      whales: '#6366f1',        // Indigo
-      dolphins: '#06b6d4',      // Cyan
-      underwater_ambient: '#0891b2', // Teal
-      custom: '#f43f5e',     // Rose
-      'instr_piano': '#e8e8e8',
-      'instr_synth-pad': '#8b5cf6',
-      'instr_bass': '#f59e0b',
-      'instr_strings': '#ec4899',
-      'instr_flute': '#06b6d4',
-      'instr_bell-synth': '#fbbf24',
-      'instr_drone': '#a855f7',
-      'instr_arpeggio': '#22d3ee',
-      'bw_alpha': '#7c3aed',
-      'bw_beta': '#2563eb',
-      'bw_theta': '#0891b2',
-      'bw_delta': '#4f46e5',
-      'bw_gamma': '#db2777',
-      'music_speaker': '#f59e0b',
-      bowl_c: '#ef4444', bowl_d: '#f97316', bowl_e: '#eab308',
-      bowl_f: '#22c55e', bowl_g: '#3b82f6', bowl_a: '#8b5cf6', bowl_b: '#e2e8f0',
-    };
-
-    this.emojiMap = {
-      birds: '🐦', train: '🚂', campfire: '🪵', rain: '🌧️', thunder: '⚡',
-      waves: '🌊', crickets: '🦗', cafe: '☕', bell: '🔔', gong: '🪘',
-      'singing-bowl': '🥣', 'wind-chimes': '🎐', city_traffic: '🚗',
-      city_park: '🌳', subway: '🚇', jungle_night: '🌴', monkeys: '🐒',
-      elephant: '🐘', leopard: '🐆', jungle_river: '🏞️', tropical_birds: '🦜',
-      ocean_deep: '🌊', whales: '🐋', dolphins: '🐬', underwater_ambient: '🫧',
-      custom: '🎵', 'instr_piano': '🎹', 'instr_synth-pad': '🎛️',
-      'instr_bass': '🎸', 'instr_strings': '🎻', 'instr_flute': '🪈',
-      'instr_bell-synth': '🔔', 'instr_drone': '🕉️', 'instr_arpeggio': '✨',
-      'bw_alpha': '🧘', 'bw_beta': '⚡', 'bw_theta': '😴', 'bw_delta': '💤',
-      'bw_gamma': '✨', 'music_speaker': '🎵',
-      bowl_c: '🔴', bowl_d: '🟠', bowl_e: '🟡',
-      bowl_f: '🟢', bowl_g: '🔵', bowl_a: '🟣', bowl_b: '⚪',
-    };
-    
-    // Cached font string (avoids per-frame getComputedStyle calls)
+    // Presentation
+    this.themeColors = buildColorMap();
+    this.emojiMap = {};
+    this.timeline = null;
+    this.showLabels = true;
+    this.showGrid = true;
+    this.showPaths = true;
+    this.shoulderWidth = 1;
+    this.pinnaSize = 1;
     this._hudFont = null;
+    this._monoFont = null;
+    this._hitRegions = [];
 
-    // Page visibility state
-    this._animationFrameId = null;
     this._isPaused = false;
+    this._animationFrameId = null;
+    this._frame = 0;
 
-    this.initParticles();
     this.initEvents();
     this.resize();
+    this.draw();           // paint once even if the loop starts throttled
     this.startAnimation();
-
-    window.addEventListener('resize', () => this.resize());
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('resize', () => this.resize());
+    }
   }
 
-  /** Lazily compute and cache the UI font string */
-  _getUIFont() {
+  // ---------------------------------------------------------------------
+  // Fonts, colours, sizing
+  // ---------------------------------------------------------------------
+
+  _uiFont() {
     if (!this._hudFont) {
-      this._hudFont = getComputedStyle(document.body).fontFamily;
+      try { this._hudFont = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif'; }
+      catch (e) { this._hudFont = 'system-ui, sans-serif'; }
     }
     return this._hudFont;
   }
 
-  /** Safely add/replace alpha on any color format (hex, rgb, rgba) */
+  _mono() {
+    if (!this._monoFont) this._monoFont = '"SF Mono", Menlo, Consolas, monospace';
+    return this._monoFont;
+  }
+
   _withAlpha(color, alpha) {
     if (!color) return `rgba(0,0,0,${alpha})`;
-    // Hex to rgba
     if (color.startsWith('#')) {
       const hex = color.slice(1);
       const r = parseInt(hex.substring(0, 2), 16);
@@ -171,446 +115,434 @@ export class CanvasGrid {
       const b = parseInt(hex.substring(4, 6), 16);
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    // rgba - replace existing alpha
     if (color.startsWith('rgba')) {
-      return color.replace(/rgba\([^)]+\)/, (match) => {
-        const parts = match.match(/[\d.]+/g);
-        if (parts && parts.length >= 3) {
-          return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha})`;
-        }
-        return match;
-      });
+      const parts = color.match(/[\d.]+/g);
+      if (parts && parts.length >= 3) return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha})`;
+      return color;
     }
-    // rgb - add alpha
-    if (color.startsWith('rgb')) {
-      return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
-    }
+    if (color.startsWith('rgb')) return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
     return color;
   }
 
+  colorFor(type) {
+    return this.themeColors[type] || getSound(type).color || this.themeColors.custom;
+  }
+
   resize() {
-    const dpr = window.devicePixelRatio || 1;
-    this.w = window.innerWidth || 500;
-    this.h = window.innerHeight || 500;
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    this.w = (typeof window !== 'undefined' && window.innerWidth) || 500;
+    this.h = (typeof window !== 'undefined' && window.innerHeight) || 500;
     this.canvas.width = this.w * dpr;
     this.canvas.height = this.h * dpr;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.unitScale = Math.min(this.w, this.h) / 22;
-    this._hudFont = null; // invalidate cached font on resize
-    // Re-init particles to fill new canvas area
-    this.initParticles();
+    if (this.ctx && this.ctx.setTransform) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this._baseScale = Math.min(this.w, this.h) / 22;
+    this.unitScale = this._baseScale * this.camZoom;
+    this._hudFont = null;
+    // Resizing clears the backing store, so repaint rather than wait a frame.
+    if (this._frame > 0) this.draw();
   }
 
-  /**
-   * Initialize fog particles
-   */
-  initParticles() {
-    this.particles = [];
-    for (let i = 0; i < this.particleCount; i++) {
-      this.particles.push({
-        x: Math.random() * this.w,
-        y: Math.random() * this.h,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.2,
-        size: 1 + Math.random() * 2,
-        opacity: 0.04 + Math.random() * 0.08,
-      });
-    }
+  /** Node radius in px for a height (kept for older callers and tests). */
+  getNodeRadius(z) {
+    return 16 + z * 0.8;
   }
 
-  /**
-   * Update and wrap fog particles
-   */
-  updateParticles() {
-    for (const p of this.particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      // Wrap around edges
-      if (p.x < -5) p.x = this.w + 5;
-      if (p.x > this.w + 5) p.x = -5;
-      if (p.y < -5) p.y = this.h + 5;
-      if (p.y > this.h + 5) p.y = -5;
-    }
+  /** Screen radius of a node given its projection factor. */
+  _nodeRadius(src, k) {
+    const depthScale = this.unitScale > 0 ? k / this.unitScale : 1;
+    const base = 15 * clamp(depthScale, 0.6, 1.6);
+    const heightCue = this.persp < 0.5 ? 1 + clamp(src.z || 0, -10, 10) * 0.025 : 1;
+    return clamp(base * heightCue, 8, 30);
   }
 
-  /**
-   * Draw fog particles
-   */
-  drawParticles() {
-    for (const p of this.particles) {
-      this.ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
-      this.ctx.beginPath();
-      this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-  }
+  // ---------------------------------------------------------------------
+  // Camera & coordinates
+  // ---------------------------------------------------------------------
 
-  /**
-   * Initialize canvas mouse and drag-drop event listeners
-   */
-  initEvents() {
-    this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-    this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-    window.addEventListener('mouseup', () => this.handleMouseUp());
-    
-    // Drag & Drop presets from library
-    this.canvas.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    });
-    
-    this.canvas.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const type = e.dataTransfer.getData('text/plain');
-      if (type) {
-        const rect = this.canvas.getBoundingClientRect();
-        const canvasX = e.clientX - rect.left;
-        const canvasY = e.clientY - rect.top;
-        const audioPos = this.canvasToAudioCoords(canvasX, canvasY);
-        
-        if (this.callbacks.onNodeDropped) {
-          this.callbacks.onNodeDropped(type, audioPos.x, audioPos.y);
-        }
-      }
-    });
-
-    // Context menu disabled (we use right-click for orbit)
-    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Page visibility: pause animation when tab is hidden
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        this._isPaused = true;
-      } else {
-        this._isPaused = false;
-        this.draw();
-      }
-    });
-
-    // Scroll: zoom (2D+3D), shift+scroll = pan
-    this.canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      if (e.shiftKey) {
-        // Pan with shift+scroll
-        this._targetPanX -= e.deltaX * 0.5 / this.camZoom;
-        this._targetPanY -= e.deltaY * 0.5 / this.camZoom;
-      } else if (this.viewMode === '3d' && (e.metaKey || e.ctrlKey)) {
-        // Orbit with cmd+scroll (3D)
-        this._velPitch += e.deltaY * 0.008;
-        this._velYaw += e.deltaX * 0.008;
-        this._velPitch = Math.max(-3, Math.min(3, this._velPitch));
-        this._velYaw = Math.max(-3, Math.min(3, this._velYaw));
-      } else {
-        // Zoom
-        const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
-        this._targetZoom *= zoomFactor;
-        this._targetZoom = Math.max(0.3, Math.min(3.0, this._targetZoom));
-      }
-    }, { passive: false });
-
-    // Touch: pinch-to-zoom (2D+3D) + two-finger rotate (3D only)
-    this.canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        this._pinchDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        this._pinchZoom = this.camZoom; // snap to current visual zoom
-        this._targetZoom = this.camZoom;
-        this._lastPinchMid = {
-          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-          y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-        };
-        if (this.viewMode === '3d') {
-          this._lastPinchAngle = Math.atan2(
-            e.touches[0].clientY - e.touches[1].clientY,
-            e.touches[0].clientX - e.touches[1].clientX
-          );
-          this._pinchYaw = this._targetYaw;
-        }
-      }
-    }, { passive: false });
-
-    this.canvas.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        const newDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        if (this._pinchDist < 10) return;
-        const rawScale = newDist / this._pinchDist;
-        const boostedScale = 1 + (rawScale - 1) * 5.0; // 5x sensitivity
-        const tz = Math.max(0.4, Math.min(2.5, this._pinchZoom * boostedScale));
-        this._targetZoom = tz;
-        this.camZoom = tz;
-
-        if (this.viewMode === '3d') {
-          const newAngle = Math.atan2(
-            e.touches[0].clientY - e.touches[1].clientY,
-            e.touches[0].clientX - e.touches[1].clientX
-          );
-          const angleDelta = (newAngle - this._lastPinchAngle) * (180 / Math.PI);
-          this._targetYaw += angleDelta;
-          this._lastPinchAngle = newAngle;
-        }
-      }
-    }, { passive: false });
-
-    // Double-click: smooth zoom in (2D+3D)
-    this.canvas.addEventListener('dblclick', (e) => {
-      const newZoom = Math.min(2.5, this._targetZoom * 1.5);
-      this.flyTo(this._targetPitch, this._targetYaw, newZoom, 0, 0, 350);
+  _syncCamera() {
+    this.camera.set({
+      yaw: this.camYaw, pitch: this.camPitch, persp: this.persp,
+      scale: this.unitScale, cx: this.w / 2 + this.panX, cy: this.h / 2 + this.panY,
     });
   }
 
-  /**
-   * Convert Canvas coordinates (pixels) to Web Audio space (-10 to 10)
-   * Accounts for pan and zoom
-   */
-  canvasToAudioCoords(cx, cy) {
-    const centerX = this.w / 2 + this.panX;
-    const centerY = this.h / 2 + this.panY;
+  project(x, y, z = 0) {
+    this._syncCamera();
+    return this.camera.project(x, y, z);
+  }
 
-    return {
-      x: (cx - centerX) / this.unitScale,
-      y: (centerY - cy) / this.unitScale // positive y is up/forward
-    };
+  /** World -> screen (x/y in px). Height optional. */
+  audioToCanvasCoords(ax, ay, az = 0) {
+    const p = this.project(ax, ay, az);
+    return { x: p.sx, y: p.sy, k: p.k, depth: p.depth };
+  }
+
+  /** Screen -> world on the plane z = z0. */
+  canvasToAudioCoords(cx, cy, z0 = 0) {
+    this._syncCamera();
+    const r = this.camera.screenToPlane(cx, cy, z0);
+    return r ? { x: r.x, y: r.y } : { x: 0, y: 0 };
   }
 
   /**
-   * Convert Web Audio space (-10 to 10) to Canvas coordinates (pixels)
-   * Accounts for pan and zoom
+   * Head-locked sources have no place in the field, so they are parked on a
+   * short arc behind the listener, far enough out not to cover the figure.
    */
-  audioToCanvasCoords(ax, ay) {
-    const centerX = this.w / 2 + this.panX;
-    const centerY = this.h / 2 + this.panY;
-
-    return {
-      x: centerX + (ax * this.unitScale),
-      y: centerY - (ay * this.unitScale) // positive y is up/forward
-    };
+  _headLockedSlot(src) {
+    const locked = [...this.audioEngine.sources.values()].filter(s => s.spatial === false);
+    const i = Math.max(0, locked.indexOf(src));
+    const n = Math.max(1, locked.length);
+    const spread = Math.min(0.62, 2.4 / n);
+    const angle = -Math.PI / 2 + (i - (n - 1) / 2) * spread;
+    const radius = 3.1 + (n > 2 ? 0.4 : 0);
+    return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, z: 0 };
   }
 
-  /**
-   * Find node under mouse cursor
-   */
+  _sourceWorldPos(src) {
+    if (src.spatial === false) return this._headLockedSlot(src);
+    return { x: src.x, y: src.y, z: src.z || 0 };
+  }
+
+  /** Sources sorted far -> near (painter's algorithm). */
+  _depthSortedSources() {
+    const entries = [...this.audioEngine.sources.entries()];
+    this._syncCamera();
+    return entries
+      .map(entry => {
+        const p = this._sourceWorldPos(entry[1]);
+        return { entry, depth: this.camera.project(p.x, p.y, p.z).depth };
+      })
+      .sort((a, b) => b.depth - a.depth)
+      .map(o => o.entry);
+  }
+
   getNodeAtPosition(cx, cy) {
-    for (const [id, src] of this.audioEngine.sources.entries()) {
-      const pos = this.audioToCanvasCoords(src.x, src.y);
-      const dist = Math.hypot(cx - pos.x, cy - pos.y);
-      const radius = this.getNodeRadius(src.z);
-      if (dist <= radius + 5) {
-        return id;
-      }
+    const sorted = this._depthSortedSources().reverse(); // nearest first
+    for (const [id, src] of sorted) {
+      const p = this._sourceWorldPos(src);
+      const pr = this.project(p.x, p.y, p.z);
+      const r = this._nodeRadius(src, pr.k);
+      if (Math.hypot(cx - pr.sx, cy - pr.sy) <= r + 4) return id;
     }
     return null;
   }
 
-  /** Find speaker under cursor */
   _getSpeakerAtPosition(cx, cy) {
     const positions = this.audioEngine.speakerPositions;
     if (!positions) return -1;
     for (let i = 0; i < positions.length; i++) {
-      const pos = this.audioToCanvasCoords(positions[i].x, positions[i].y);
-      if (Math.hypot(cx - pos.x, cy - pos.y) <= 14) return i;
+      const p = this.project(positions[i].x, positions[i].y, positions[i].z || 0);
+      if (Math.hypot(cx - p.sx, cy - p.sy) <= 14) return i;
     }
     return -1;
   }
 
-  /**
-   * Calculate node radius based on height Z (-10 to 10)
-   */
-  getNodeRadius(z) {
-    // Standard height (0) has radius 16.
-    // Height -10 has radius 8, height +10 has radius 26.
-    return 16 + (z * 0.8);
+  setViewMode(mode) {
+    this.viewMode = mode === '3d' ? '3d' : '2d';
+    this.resetView();
+    if (this.callbacks.onViewChanged) this.callbacks.onViewChanged(this.viewMode);
   }
 
-  handleMouseDown(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-
-    // Right-click (button 2): Orbit (3D) or Pan (2D)
-    if (e.button === 2) {
-      e.preventDefault();
-      this._isOrbiting = true;
-      this._orbitStart = { x: e.clientX, y: e.clientY };
-      this._orbitStartYaw = this._targetYaw;
-      this._orbitStartPitch = this._targetPitch;
-      this.canvas.style.cursor = this.viewMode === '3d' ? 'all-scroll' : 'move';
-      return;
-    }
-
-    // Middle-click (button 1): Pan
-    if (e.button === 1) {
-      e.preventDefault();
-      this._isPanning = true;
-      this._panStart = { x: e.clientX, y: e.clientY };
-      this._panStartOffset = { x: this._targetPanX, y: this._targetPanY };
-      this.canvas.style.cursor = 'move';
-      return;
-    }
-
-    // Speaker edit mode: handle speaker dragging
-    if (this.editLayer === 'speakers') {
-      const spIdx = this._getSpeakerAtPosition(cx, cy);
-      if (spIdx >= 0) {
-        this._draggedSpeakerIdx = spIdx;
-        this.canvas.style.cursor = 'grabbing';
-        return;
-      }
-      return;
-    }
-    
-    const nodeId = this.getNodeAtPosition(cx, cy);
-    
-    if (nodeId) {
-      this.draggedNodeId = nodeId;
-      this.selectedNodeId = nodeId;
-      
-      const node = this.audioEngine.sources.get(nodeId);
-      const pos = this.audioToCanvasCoords(node.x, node.y);
-      this.dragOffset = { x: cx - pos.x, y: cy - pos.y };
-      this._dragStartY = e.clientY;
-      this._dragStartZ = node ? node.z : 0;
-      this._dragStartPos = node ? { x: node.x, y: node.y, z: node.z } : null;
-      
-      if (this.callbacks.onNodeSelected) {
-        this.callbacks.onNodeSelected(node);
-      }
-    } else {
-      // Clicked empty space: start panning
-      this._isPanning = true;
-      this._panStart = { x: e.clientX, y: e.clientY };
-      this._panStartOffset = { x: this._targetPanX, y: this._targetPanY };
-      this.canvas.style.cursor = 'move';
-      
-      // Deselect
-      this.selectedNodeId = null;
-      if (this.callbacks.onNodeSelected) {
-        this.callbacks.onNodeSelected(null);
-      }
-    }
+  resetView() {
+    const is3d = this.viewMode === '3d';
+    this._targetPersp = is3d ? 1 : 0;
+    this.flyTo(is3d ? 36 : 90, 0, 1.3, 0, 0, 550);
   }
 
-  handleMouseMove(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
+  flyTo(pitch, yaw, zoom, panX = 0, panY = 0, duration = 600) {
+    const s = { pitch: this._targetPitch, yaw: this._targetYaw, zoom: this._targetZoom, panX: this._targetPanX, panY: this._targetPanY };
+    const start = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    this._targetPersp = this.viewMode === '3d' ? 1 : 0;
+    const animate = () => {
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const t = Math.min(1, (now - start) / duration);
+      const e = 1 - Math.pow(1 - t, 3);
+      this._targetPitch = s.pitch + (pitch - s.pitch) * e;
+      this._targetYaw = s.yaw + (yaw - s.yaw) * e;
+      this._targetZoom = s.zoom + (zoom - s.zoom) * e;
+      this._targetPanX = s.panX + (panX - s.panX) * e;
+      this._targetPanY = s.panY + (panY - s.panY) * e;
+      if (t < 1) raf(animate);
+    };
+    raf(animate);
+  }
 
-    // Orbit (right-click drag)
-    if (this._isOrbiting) {
-      const dx = e.clientX - this._orbitStart.x;
-      const dy = e.clientY - this._orbitStart.y;
-      if (this.viewMode === '3d') {
-        this._targetYaw = this._orbitStartYaw + dx * 0.5;
-        this._targetPitch = Math.max(2, Math.min(68, this._orbitStartPitch - dy * 0.5));
+  zoomAt(cx, cy, factor) {
+    const newZoom = clamp(this._targetZoom * factor, 0.35, 3.2);
+    const f = newZoom / this._targetZoom;
+    const centerX = this.w / 2 + this._targetPanX;
+    const centerY = this.h / 2 + this._targetPanY;
+    this._targetPanX = (cx - (cx - centerX) * f) - this.w / 2;
+    this._targetPanY = (cy - (cy - centerY) * f) - this.h / 2;
+    this._targetZoom = newZoom;
+  }
+
+  _smoothCamera() {
+    const dt = 0.016;
+    const friction = 0.88;
+    const stiffness = 0.2;
+    const is3d = this.viewMode === '3d';
+
+    this._targetPitch += this._velPitch * dt;
+    this._targetYaw += this._velYaw * dt;
+    this._targetZoom *= 1 + this._velZoom * dt;
+    this._velPitch *= friction; this._velYaw *= friction; this._velZoom *= friction;
+
+    this._targetPitch = is3d ? clamp(this._targetPitch, 14, 89) : 90;
+    this._targetZoom = clamp(this._targetZoom, 0.35, 3.2);
+
+    this.camPitch += (this._targetPitch - this.camPitch) * stiffness;
+    this.camYaw += (this._targetYaw - this.camYaw) * stiffness;
+    this.camZoom += (this._targetZoom - this.camZoom) * stiffness;
+    this.persp += (this._targetPersp - this.persp) * 0.1;
+    this.panX += (this._targetPanX - this.panX) * stiffness;
+    this.panY += (this._targetPanY - this.panY) * stiffness;
+
+    this.unitScale = this._baseScale * this.camZoom;
+  }
+
+  // ---------------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------------
+
+  initEvents() {
+    const c = this.canvas;
+    c.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+    c.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+    c.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+    c.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
+    c.addEventListener('pointerleave', () => { if (!this._gesture) { this.hoveredNodeId = null; this._setCursor('default'); } });
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('pointerup', (e) => { if (this._gesture) this.handlePointerUp(e); });
+    }
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
+
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = c.getBoundingClientRect ? c.getBoundingClientRect() : { left: 0, top: 0 };
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      if (e.shiftKey) {
+        this._targetPanX -= (e.deltaX || e.deltaY) * 0.6;
+        this._targetPanY -= (e.deltaX ? e.deltaY : 0) * 0.6;
+      } else if ((e.metaKey || e.ctrlKey) && this.viewMode === '3d') {
+        this._targetYaw += e.deltaX * 0.25;
+        this._targetPitch = clamp(this._targetPitch - e.deltaY * 0.2, 14, 89);
       } else {
-        // In 2D, right-click also pans
-        this._targetPanX = this._panStartOffset.x + dx;
-        this._targetPanY = this._panStartOffset.y + dy;
+        const factor = e.deltaY > 0 ? 0.94 : 1.06;
+        this.zoomAt(cx, cy, factor);
+      }
+    }, { passive: false });
+
+    // Drag & drop from the library
+    c.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+    c.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const type = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
+      if (!type) return;
+      const rect = c.getBoundingClientRect();
+      const pos = this.canvasToAudioCoords(e.clientX - rect.left, e.clientY - rect.top, 0);
+      if (this.callbacks.onNodeDropped) {
+        this.callbacks.onNodeDropped(type, clamp(pos.x, -FIELD_RADIUS, FIELD_RADIUS), clamp(pos.y, -FIELD_RADIUS, FIELD_RADIUS));
+      }
+    });
+
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', () => {
+        this._isPaused = !!document.hidden;
+        if (!this._isPaused) { this.resize(); this.draw(); }
+      });
+    }
+  }
+
+  _setCursor(v) { if (this.canvas.style) this.canvas.style.cursor = v; }
+
+  _local(e) {
+    const rect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : { left: 0, top: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  handlePointerDown(e) {
+    const { x: cx, y: cy } = this._local(e);
+    this._pointers.set(e.pointerId ?? 'mouse', { x: cx, y: cy, clientX: e.clientX, clientY: e.clientY });
+    try { this.canvas.setPointerCapture && this.canvas.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+
+    if (this._pointers.size === 2) {
+      this._startPinch();
+      return;
+    }
+
+    if (e.button === 2 || e.button === 1) {
+      e.preventDefault();
+      this._startCameraGesture(e, e.button === 1 ? 'pan' : (this.viewMode === '3d' ? 'orbit' : 'pan'));
+      return;
+    }
+
+    if (this.editLayer === 'speakers') {
+      const idx = this._getSpeakerAtPosition(cx, cy);
+      if (idx >= 0) {
+        this._draggedSpeakerIdx = idx;
+        this._gesture = 'speaker';
+        this._setCursor('grabbing');
       }
       return;
     }
 
-    // Pan (middle-click or left-click on empty)
-    if (this._isPanning) {
-      const dx = e.clientX - this._panStart.x;
-      const dy = e.clientY - this._panStart.y;
-      this._targetPanX = this._panStartOffset.x + dx;
-      this._targetPanY = this._panStartOffset.y + dy;
+    const nodeId = this.getNodeAtPosition(cx, cy);
+    if (nodeId) {
+      const node = this.audioEngine.sources.get(nodeId);
+      this.selectedNodeId = nodeId;
+      if (this.callbacks.onNodeSelected) this.callbacks.onNodeSelected(node);
+      if (node.spatial === false) { this._gesture = null; return; } // head-locked: select only
+
+      this.draggedNodeId = nodeId;
+      const lift = e.altKey || e.metaKey || e.ctrlKey;
+      this._gesture = lift ? 'lift' : 'drag';
+      const plane = this.canvasToAudioCoords(cx, cy, node.z || 0);
+      const vpm = this.camera.verticalPixelsPerMetre(node.x, node.y, node.z || 0);
+      this._gestureData = {
+        offsetX: node.x - plane.x, offsetY: node.y - plane.y,
+        startZ: node.z || 0, startClientY: e.clientY,
+        pxPerMetre: Math.abs(vpm) > 4 ? vpm : this.unitScale * 0.8,
+      };
+      this._dragStartPos = { x: node.x, y: node.y, z: node.z || 0 };
+      this._setCursor(lift ? 'ns-resize' : 'grabbing');
       return;
     }
 
-    // Speaker dragging
-    if (this._draggedSpeakerIdx >= 0) {
-      const audioCoords = this.canvasToAudioCoords(cx, cy);
+    // Empty space: deselect and move the camera
+    if (this.selectedNodeId !== null) {
+      this.selectedNodeId = null;
+      if (this.callbacks.onNodeSelected) this.callbacks.onNodeSelected(null);
+    }
+    this._startCameraGesture(e, this.viewMode === '3d' && !e.shiftKey ? 'orbit' : 'pan');
+  }
+
+  _startCameraGesture(e, kind) {
+    this._gesture = kind;
+    this._isPanning = kind === 'pan';
+    this._isOrbiting = kind === 'orbit';
+    this._gestureData = {
+      startX: e.clientX, startY: e.clientY,
+      panX: this._targetPanX, panY: this._targetPanY,
+      yaw: this._targetYaw, pitch: this._targetPitch,
+    };
+    this._setCursor(kind === 'orbit' ? 'all-scroll' : 'move');
+  }
+
+  _startPinch() {
+    const [a, b] = [...this._pointers.values()];
+    this.draggedNodeId = null;
+    this._gesture = 'pinch';
+    this._gestureData = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      angle: Math.atan2(a.y - b.y, a.x - b.x),
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      zoom: this._targetZoom, yaw: this._targetYaw,
+      panX: this._targetPanX, panY: this._targetPanY,
+    };
+  }
+
+  handlePointerMove(e) {
+    const { x: cx, y: cy } = this._local(e);
+    const key = e.pointerId ?? 'mouse';
+    if (this._pointers.has(key)) this._pointers.set(key, { x: cx, y: cy, clientX: e.clientX, clientY: e.clientY });
+
+    if (this._gesture === 'pinch') {
+      if (this._pointers.size < 2) return;
+      const [a, b] = [...this._pointers.values()];
+      const d = this._gestureData;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d.dist > 10) this._targetZoom = clamp(d.zoom * (dist / d.dist), 0.35, 3.2);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      this._targetPanX = d.panX + (mid.x - d.mid.x);
+      this._targetPanY = d.panY + (mid.y - d.mid.y);
+      if (this.viewMode === '3d') {
+        const angle = Math.atan2(a.y - b.y, a.x - b.x);
+        this._targetYaw = d.yaw + ((angle - d.angle) * 180) / Math.PI;
+      }
+      return;
+    }
+
+    if (this._gesture === 'orbit') {
+      const d = this._gestureData;
+      const dx = e.clientX - d.startX, dy = e.clientY - d.startY;
+      this._targetYaw = d.yaw + dx * 0.4;
+      this._targetPitch = clamp(d.pitch - dy * 0.3, 14, 89);
+      return;
+    }
+    if (this._gesture === 'pan') {
+      const d = this._gestureData;
+      this._targetPanX = d.panX + (e.clientX - d.startX);
+      this._targetPanY = d.panY + (e.clientY - d.startY);
+      return;
+    }
+
+    if (this._gesture === 'speaker' && this._draggedSpeakerIdx >= 0) {
       const sp = this.audioEngine.speakerPositions?.[this._draggedSpeakerIdx];
       if (sp) {
-        sp.x = Math.max(-10, Math.min(10, audioCoords.x));
-        sp.y = Math.max(-10, Math.min(10, audioCoords.y));
-        if (this.audioEngine._speakerConfig) {
-          this.audioEngine._speakerConfig.customSpeakers[this._draggedSpeakerIdx].x = sp.x;
-          this.audioEngine._speakerConfig.customSpeakers[this._draggedSpeakerIdx].y = sp.y;
+        const pos = this.canvasToAudioCoords(cx, cy, 0);
+        sp.x = clamp(pos.x, -FIELD_RADIUS, FIELD_RADIUS);
+        sp.y = clamp(pos.y, -FIELD_RADIUS, FIELD_RADIUS);
+        const cfg = this.audioEngine._speakerConfig;
+        if (cfg && cfg.customSpeakers[this._draggedSpeakerIdx]) {
+          cfg.customSpeakers[this._draggedSpeakerIdx].x = sp.x;
+          cfg.customSpeakers[this._draggedSpeakerIdx].y = sp.y;
         }
         this.audioEngine.setOutputMode(this.audioEngine.outputMode, this.audioEngine.speakerPositions, this.audioEngine.channelCount);
       }
-      this.canvas.style.cursor = 'grabbing';
       return;
     }
-    
-    if (this.draggedNodeId) {
-      // Command+drag (Mac) / Ctrl+drag (Win): adjust Z height
-      if ((e.metaKey || e.ctrlKey) && this.draggedNodeId) {
-        this.canvas.style.cursor = 'row-resize';
-        const node = this.audioEngine.sources.get(this.draggedNodeId);
-        if (node) {
-          const deltaY = (this._dragStartY - e.clientY) * 0.1;
-          const newZ = Math.max(-10, Math.min(10, this._dragStartZ + deltaY));
-          this.audioEngine.updateSourcePosition(this.draggedNodeId, node.x, node.y, newZ);
 
-          const zIndicator = document.getElementById('z-indicator');
-          if (zIndicator) {
-            zIndicator.style.display = 'block';
-            zIndicator.style.left = e.clientX + 'px';
-            zIndicator.style.top = e.clientY + 'px';
-            zIndicator.textContent = `Z: ${newZ.toFixed(1)}m`;
-          }
-
-          if (this.callbacks.onNodeMoved) {
-            this.callbacks.onNodeMoved(node);
-          }
-        }
-        return;
-      }
-
-      // Dragging a node
-      this.canvas.style.cursor = 'grabbing';
-      
-      const targetCx = cx - this.dragOffset.x;
-      const targetCy = cy - this.dragOffset.y;
-      
-      const audioCoords = this.canvasToAudioCoords(targetCx, targetCy);
-      audioCoords.x = Math.max(-10, Math.min(10, audioCoords.x));
-      audioCoords.y = Math.max(-10, Math.min(10, audioCoords.y));
-      
-      this.audioEngine.updateSourcePosition(this.draggedNodeId, audioCoords.x, audioCoords.y);
-      
-      if (this.automations.has(this.draggedNodeId)) {
-        const auto = this.automations.get(this.draggedNodeId);
-        auto.angle = Math.atan2(audioCoords.y, audioCoords.x);
-        auto.radius = Math.hypot(audioCoords.x, audioCoords.y);
-      }
-      
-      if (this.callbacks.onNodeMoved) {
-        const node = this.audioEngine.sources.get(this.draggedNodeId);
-        this.callbacks.onNodeMoved(node);
-      }
-    } else {
-      // Just moving mouse
-      const nodeId = this.getNodeAtPosition(cx, cy);
-      if (nodeId) {
-        this.canvas.style.cursor = 'pointer';
-        this.hoveredNodeId = nodeId;
+    if (this.draggedNodeId && (this._gesture === 'drag' || this._gesture === 'lift')) {
+      const node = this.audioEngine.sources.get(this.draggedNodeId);
+      if (!node) { this.draggedNodeId = null; this._gesture = null; return; }
+      const d = this._gestureData;
+      const lift = this._gesture === 'lift' || e.altKey || e.metaKey || e.ctrlKey;
+      if (lift) {
+        const dz = (d.startClientY - e.clientY) / d.pxPerMetre;
+        const z = clamp(d.startZ + dz, -FIELD_RADIUS, FIELD_RADIUS);
+        this.audioEngine.updateSourcePosition(this.draggedNodeId, node.x, node.y, z);
+        this._showZIndicator(e.clientX, e.clientY, z);
+        this._setCursor('ns-resize');
       } else {
-        this.canvas.style.cursor = this._isPanning || this._isOrbiting ? 'move' : 'default';
-        this.hoveredNodeId = null;
+        const plane = this.canvasToAudioCoords(cx, cy, node.z || 0);
+        const x = clamp(plane.x + d.offsetX, -FIELD_RADIUS, FIELD_RADIUS);
+        const y = clamp(plane.y + d.offsetY, -FIELD_RADIUS, FIELD_RADIUS);
+        this.audioEngine.updateSourcePosition(this.draggedNodeId, x, y);
+        const auto = this.automations.get(this.draggedNodeId);
+        if (auto) {
+          auto.angle = Math.atan2(y, x);
+          auto.radius = clamp(Math.hypot(x, y), 1, 9.5);
+          if (auto.type === 'breathe') { auto.baseX = x; auto.baseY = y; }
+        }
+        this._setCursor('grabbing');
       }
+      if (this.callbacks.onNodeMoved) this.callbacks.onNodeMoved(node);
+      return;
     }
+
+    // Hover
+    const id = this.getNodeAtPosition(cx, cy);
+    this.hoveredNodeId = id;
+    this._setCursor(id ? 'pointer' : 'default');
   }
 
-  handleMouseUp() {
+  handlePointerUp(e) {
+    const key = e && e.pointerId !== undefined ? e.pointerId : 'mouse';
+    this._pointers.delete(key);
+    if (this._gesture === 'pinch') {
+      if (this._pointers.size < 2) { this._gesture = null; this._gestureData = null; }
+      return;
+    }
     if (this.draggedNodeId && this._dragStartPos) {
       const node = this.audioEngine.sources.get(this.draggedNodeId);
       if (node) {
-        const oldPos = this._dragStartPos;
-        const newPos = { x: node.x, y: node.y, z: node.z };
-        const hasMoved = oldPos.x !== newPos.x || oldPos.y !== newPos.y || oldPos.z !== newPos.z;
-        if (hasMoved && this.callbacks.onNodeDragEnd) {
-          this.callbacks.onNodeDragEnd(this.draggedNodeId, oldPos.x, oldPos.y, oldPos.z, newPos.x, newPos.y, newPos.z);
+        const o = this._dragStartPos;
+        const moved = o.x !== node.x || o.y !== node.y || o.z !== node.z;
+        if (moved && this.callbacks.onNodeDragEnd) {
+          this.callbacks.onNodeDragEnd(this.draggedNodeId, o.x, o.y, o.z, node.x, node.y, node.z);
         }
       }
     }
@@ -619,1520 +551,663 @@ export class CanvasGrid {
     this._draggedSpeakerIdx = -1;
     this._isPanning = false;
     this._isOrbiting = false;
-    const zIndicator = document.getElementById('z-indicator');
-    if (zIndicator) zIndicator.style.display = 'none';
-    this._zIndicator = null;
-    this.canvas.style.cursor = 'default';
+    this._gesture = null;
+    this._gestureData = null;
+    this._pointers.clear();
+    this._hideZIndicator();
+    this._setCursor('default');
   }
 
-  /**
-   * Configure node automation pathing
-   */
-  setAutomation(id, type, enabled = true, options = {}) {
-    if (!enabled) {
-      this.automations.delete(id);
+  handleDoubleClick(e) {
+    const { x: cx, y: cy } = this._local(e);
+    const id = this.getNodeAtPosition(cx, cy);
+    if (id) {
+      if (this.callbacks.onNodeActivated) this.callbacks.onNodeActivated(this.audioEngine.sources.get(id));
       return;
     }
-    
+    this.zoomAt(cx, cy, 1.5);
+  }
+
+  // Legacy names kept for external callers
+  handleMouseDown(e) { return this.handlePointerDown(e); }
+  handleMouseMove(e) { return this.handlePointerMove(e); }
+  handleMouseUp(e) { return this.handlePointerUp(e || {}); }
+
+  _showZIndicator(clientX, clientY, z) {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('z-indicator');
+    if (!el) return;
+    el.style.display = 'block';
+    el.style.left = `${clientX + 14}px`;
+    el.style.top = `${clientY - 10}px`;
+    el.textContent = `Z ${z >= 0 ? '+' : ''}${z.toFixed(1)} m`;
+  }
+
+  _hideZIndicator() {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('z-indicator');
+    if (el) el.style.display = 'none';
+  }
+
+  // ---------------------------------------------------------------------
+  // Automations (motion)
+  // ---------------------------------------------------------------------
+
+  setAutomation(id, type, enabled = true, options = {}) {
+    if (!enabled) { this.automations.delete(id); return; }
     const node = this.audioEngine.sources.get(id);
     if (!node) return;
-    
-    const speed = options.speed || 0.015;
     const radius = Math.hypot(node.x, node.y) || 5;
-    const angle = Math.atan2(node.y, node.x);
-    
     const entry = {
       type,
-      speed,
-      radius: Math.max(1.5, Math.min(9, radius)),
-      angle,
-      direction: 1 // for ping-pong
+      speed: options.speed || 0.015,
+      radius: clamp(options.radius || radius, 1.5, 9.5),
+      angle: options.angle !== undefined ? options.angle : Math.atan2(node.y, node.x),
+      direction: 1,
     };
-
     if (type === 'breathe') {
-      entry.baseX = node.x;
-      entry.baseY = node.y;
-      entry.baseVol = node.volume;
+      entry.baseX = options.baseX !== undefined ? options.baseX : node.x;
+      entry.baseY = options.baseY !== undefined ? options.baseY : node.y;
+      entry.baseVol = options.baseVol !== undefined ? options.baseVol : node.volume;
     } else if (type === 'drift') {
       entry.driftTarget = null;
       entry.driftTimeout = 0;
     }
-
     this.automations.set(id, entry);
   }
 
-  /**
-   * Run the rendering and physics animation loops
-   */
-  startAnimation() {
-    const loop = () => {
-      if (!this._isPaused && !document.hidden) {
-        this._smoothCamera();
-        this.updatePhysics();
-        this.updateParticles();
-        this.draw();
-      }
-      this._animationFrameId = requestAnimationFrame(loop);
-    };
-    this._animationFrameId = requestAnimationFrame(loop);
-  }
-
-  /** Smoothly interpolate camera with momentum/inertia */
-  _smoothCamera() {
-    const dt = 0.016;
-    const friction = 0.88;
-    const stiffness = 0.22;
-
-    this._targetPitch += this._velPitch * dt;
-    this._targetYaw += this._velYaw * dt;
-    this._targetZoom *= 1 + this._velZoom * dt;
-
-    this._velPitch *= friction;
-    this._velYaw *= friction;
-    this._velZoom *= friction;
-
-    this._targetPitch = Math.max(2, Math.min(68, this._targetPitch));
-    this._targetZoom = Math.max(0.3, Math.min(3.0, this._targetZoom));
-
-    this.camPitch += (this._targetPitch - this.camPitch) * stiffness;
-    this.camYaw += (this._targetYaw - this.camYaw) * stiffness;
-    this.camZoom += (this._targetZoom - this.camZoom) * stiffness;
-    
-    // Smooth pan
-    this.panX += (this._targetPanX - this.panX) * stiffness;
-    this.panY += (this._targetPanY - this.panY) * stiffness;
-    
-    this.unitScale = (Math.min(this.w, this.h) / 22) * this.camZoom;
-  }
-
-  /** Smooth fly-to animation for camera */
-  flyTo(pitch, yaw, zoom, panX = 0, panY = 0, duration = 600) {
-    const startPitch = this._targetPitch;
-    const startYaw = this._targetYaw;
-    const startZoom = this._targetZoom;
-    const startPanX = this._targetPanX;
-    const startPanY = this._targetPanY;
-    const start = performance.now();
-
-    const animate = (now) => {
-      const elapsed = now - start;
-      const t = Math.min(1, elapsed / duration);
-      const ease = 1 - Math.pow(1 - t, 3);
-
-      this._targetPitch = startPitch + (pitch - startPitch) * ease;
-      this._targetYaw = startYaw + (yaw - startYaw) * ease;
-      this._targetZoom = startZoom + (zoom - startZoom) * ease;
-      this._targetPanX = startPanX + (panX - startPanX) * ease;
-      this._targetPanY = startPanY + (panY - startPanY) * ease;
-
-      if (t < 1) requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  }
-
-  /** Reset view to default */
-  resetView() {
-    this.flyTo(
-      this.viewMode === '3d' ? 30 : 0,
-      0,
-      1.3,
-      0, 0, // reset pan
-      400
-    );
-  }
-
-  /** Zoom toward a specific point on canvas */
-  zoomAt(cx, cy, factor) {
-    const newZoom = Math.max(0.4, Math.min(2.5, this._targetZoom * factor));
-    this._targetZoom = newZoom;
-  }
-
-  /**
-   * Calculate automated movement paths and audio update logic
-   */
   updatePhysics() {
     if (this._isPaused) return;
     const time = Date.now() * 0.001;
-    
+
     for (const [id, auto] of this.automations.entries()) {
       const node = this.audioEngine.sources.get(id);
-      if (!node) {
-        this.automations.delete(id);
-        continue;
-      }
-
-      // While a timeline journey is playing, its keyframes own this source
-      if (node._timelineControlled) continue;
+      if (!node) { this.automations.delete(id); continue; }
+      if (node._timelineControlled || node.spatial === false) continue;
 
       if (auto.type === 'orbit') {
-        // Orbit listener in circular path
         auto.angle += auto.speed;
-        const x = auto.radius * Math.cos(auto.angle);
-        const y = auto.radius * Math.sin(auto.angle);
-        
-        this.audioEngine.updateSourcePosition(id, x, y);
-        if (this.selectedNodeId === id && this.callbacks.onNodeMoved) {
-          this.callbacks.onNodeMoved(node);
-        }
+        this.audioEngine.updateSourcePosition(id, auto.radius * Math.cos(auto.angle), auto.radius * Math.sin(auto.angle));
       } else if (auto.type === 'pingpong') {
-        // Slide left and right
-        const amplitude = auto.radius;
-        const x = amplitude * Math.sin(time * auto.speed * 8);
-        const y = node.y; // Keep current depth
-        
-        this.audioEngine.updateSourcePosition(id, x, y);
-        if (this.selectedNodeId === id && this.callbacks.onNodeMoved) {
-          this.callbacks.onNodeMoved(node);
-        }
+        this.audioEngine.updateSourcePosition(id, auto.radius * Math.sin(time * auto.speed * 8), node.y);
       } else if (auto.type === 'drift') {
-        // Gentle random walk: slowly move in random directions
         if (!auto.driftTarget || Date.now() > auto.driftTimeout) {
-          auto.driftTarget = {
-            x: (Math.random() - 0.5) * auto.radius * 2,
-            y: (Math.random() - 0.5) * auto.radius * 2
-          };
+          auto.driftTarget = { x: (Math.random() - 0.5) * auto.radius * 2, y: (Math.random() - 0.5) * auto.radius * 2 };
           auto.driftTimeout = Date.now() + 2000 + Math.random() * 3000;
         }
-        const dx = auto.driftTarget.x - node.x;
-        const dy = auto.driftTarget.y - node.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 0.1) {
-          const nx = node.x + dx * auto.speed * 0.5;
-          const ny = node.y + dy * auto.speed * 0.5;
-          this.audioEngine.updateSourcePosition(id, 
-            Math.max(-10, Math.min(10, nx)),
-            Math.max(-10, Math.min(10, ny))
-          );
-        }
-        if (this.selectedNodeId === id && this.callbacks.onNodeMoved) {
-          this.callbacks.onNodeMoved(node);
+        const dx = auto.driftTarget.x - node.x, dy = auto.driftTarget.y - node.y;
+        if (Math.hypot(dx, dy) > 0.1) {
+          this.audioEngine.updateSourcePosition(id, clamp(node.x + dx * auto.speed * 0.5, -10, 10), clamp(node.y + dy * auto.speed * 0.5, -10, 10));
         }
       } else if (auto.type === 'breathe') {
-        // Expand and contract from center like breathing
         auto.angle += auto.speed;
         const breathe = 1 + 0.3 * Math.sin(auto.angle * 2);
-        const x = auto.baseX * breathe;
-        const y = auto.baseY * breathe;
-        this.audioEngine.updateSourcePosition(id, 
-          Math.max(-10, Math.min(10, x)),
-          Math.max(-10, Math.min(10, y))
-        );
-        // Modulate volume too for breathing effect — modulate around the captured
-        // base volume; updateSourceVolume mutates node.volume, so using node.volume
-        // here would compound the modulation into silence
+        this.audioEngine.updateSourcePosition(id, clamp(auto.baseX * breathe, -10, 10), clamp(auto.baseY * breathe, -10, 10));
         if (auto.baseVol === undefined) auto.baseVol = node.volume;
         const volMod = 0.5 + 0.5 * Math.sin(auto.angle * 2);
         this.audioEngine.updateSourceVolume(id, auto.baseVol * (0.7 + 0.3 * volMod));
-        if (this.selectedNodeId === id && this.callbacks.onNodeMoved) {
-          this.callbacks.onNodeMoved(node);
-        }
       }
+      if (this.selectedNodeId === id && this.callbacks.onNodeMoved) this.callbacks.onNodeMoved(node);
     }
-    
-    // Update visual sound wave ripples
+
+    // Levels and ripples
     for (const [id, node] of this.audioEngine.sources.entries()) {
-      if (!node.isPlaying) continue;
-      
-      // Initialize ripple array
-      if (!this.ripples.has(id)) {
-        this.ripples.set(id, []);
+      const raw = node.isPlaying && this.audioEngine.getSourceLevel ? this.audioEngine.getSourceLevel(id) : 0;
+      const prev = this._levels.get(id) || 0;
+      const lv = prev + (raw - prev) * (raw > prev ? 0.35 : 0.08);
+      this._levels.set(id, lv);
+      if (!this.ripples.has(id)) this.ripples.set(id, []);
+      const rips = this.ripples.get(id);
+      if (node.isPlaying && rips.length < 4 && Math.random() < 0.01 + lv * 0.12) {
+        rips.push({ radius: 0, alpha: 0.35 + lv * 0.4, speed: 0.5 + lv * 0.8 });
       }
-      
-      const nodeRipples = this.ripples.get(id);
-      
-      // Add ripple based on volume
-      const maxRipples = Math.ceil(node.volume * 5);
-      if (nodeRipples.length < maxRipples && Math.random() < 0.04) {
-        nodeRipples.push({
-          radius: this.getNodeRadius(node.z),
-          opacity: 0.8,
-          speed: 0.8 + (node.volume * 0.8)
-        });
-      }
-      
-      // Update existing ripples
-      for (let i = nodeRipples.length - 1; i >= 0; i--) {
-        const r = nodeRipples[i];
+      for (let i = rips.length - 1; i >= 0; i--) {
+        const r = rips[i];
         r.radius += r.speed;
-        r.opacity -= 0.015;
-        
-        // Remove dead ripples
-        if (r.opacity <= 0) {
-          nodeRipples.splice(i, 1);
-        }
+        r.alpha -= 0.006;
+        if (r.alpha <= 0) rips.splice(i, 1);
       }
     }
+    for (const id of this.ripples.keys()) if (!this.audioEngine.sources.has(id)) this.ripples.delete(id);
   }
 
-  /**
-   * Main render canvas frame function
-   */
+  // ---------------------------------------------------------------------
+  // Render loop
+  // ---------------------------------------------------------------------
+
+  startAnimation() {
+    // The browser already throttles requestAnimationFrame for a hidden tab, so
+    // `_isPaused` (set on visibilitychange) is the only gate needed here.
+    // Reading document.hidden per frame would leave the canvas blank whenever
+    // the page happens to load while it is not on screen.
+    const loop = () => {
+      if (!this._isPaused) {
+        this._smoothCamera();
+        this.updatePhysics();
+        this.draw();
+        this._frame++;
+      }
+      this._animationFrameId = raf(loop);
+    };
+    this._animationFrameId = raf(loop);
+  }
+
   draw() {
-    if (this._isPaused) return;
-    // Clear, then lay a translucent warm wash so the leopard backdrop (a layer
-    // behind the canvas element) reads through as ambient wallpaper.
-    this.ctx.clearRect(0, 0, this.w, this.h);
-    this.ctx.fillStyle = 'rgba(26, 22, 20, 0.78)';
-    this.ctx.fillRect(0, 0, this.w, this.h);
+    if (this._isPaused || !this.ctx) return;
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, this.w, this.h);
+    ctx.fillStyle = 'rgba(11, 10, 10, 0.9)';
+    ctx.fillRect(0, 0, this.w, this.h);
 
-    // Subtle fog gradient from bottom
-    const fogGrad = this.ctx.createLinearGradient(0, this.h * 0.6, 0, this.h);
-    fogGrad.addColorStop(0, 'rgba(40, 28, 20, 0)');
-    fogGrad.addColorStop(1, 'rgba(40, 28, 20, 0.32)');
-    this.ctx.fillStyle = fogGrad;
-    this.ctx.fillRect(0, 0, this.w, this.h);
-
-    // Center glow for listener position
-    const cx = this.w / 2;
-    const cy = this.h / 2;
-    const centerGlow = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, this.unitScale * 3);
-    centerGlow.addColorStop(0, 'rgba(255, 210, 170, 0.05)');
-    centerGlow.addColorStop(1, 'rgba(255, 210, 170, 0)');
-    this.ctx.fillStyle = centerGlow;
-    this.ctx.fillRect(0, 0, this.w, this.h);
-
-    // Draw fog particles (behind grid)
-    this.drawParticles();
-
-    if (this.viewMode === '3d') {
-      const pitchRad = this.camPitch * Math.PI / 180;
-      const yawRad = this.camYaw * Math.PI / 180;
-      const zoom = this.camZoom;
-
-      this.ctx.save();
-      this.ctx.translate(cx, cy);
-      // Isometric projection: yaw rotates horizontally, pitch tilts vertically, zoom scales
-      this.ctx.transform(
-        zoom * Math.cos(yawRad), zoom * Math.sin(yawRad) * 0.35,
-        -zoom * Math.sin(yawRad) * 0.35, zoom * (0.7 + 0.3 * Math.cos(pitchRad)),
-        0, 0
-      );
-      this.ctx.translate(-cx, -cy);
+    // Vignette
+    if (ctx.createRadialGradient) {
+      const vg = ctx.createRadialGradient(this.w / 2, this.h / 2, Math.min(this.w, this.h) * 0.25, this.w / 2, this.h / 2, Math.max(this.w, this.h) * 0.75);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, this.w, this.h);
     }
-    
-    this.drawGrid();
-    this.drawTrails();
-    this._drawKeyframePath();
+
+    this._syncCamera();
+    this._hitRegions = [];
+    if (this.showGrid) this.drawGround();
     this.drawListener();
-    this.drawEmitters();
     this.drawSpeakers();
-
-    if (this.viewMode === '3d') {
-      this.ctx.restore();
-    }
-
-    this._drawZoomHUD();
-    if (this.viewMode === '3d') {
-      this._draw3DAxisWidget();
-    }
+    if (this.showPaths) { this._drawAutomationPath(); this._drawKeyframePath(); }
+    this.drawEmitters();
+    this._drawHUD();
   }
 
-  /** Draw 3D axis indicator widget (bottom-left) */
-  _draw3DAxisWidget() {
-    const ox = 46, oy = this.h - 50;
-    const len = 22;
-    const time = Date.now() * 0.001;
-    const pulse = 0.7 + Math.sin(time * 2) * 0.15;
+  // ---- ground ----
 
-    this.ctx.save();
-    
-    // X-axis (red)
-    this.ctx.strokeStyle = `rgba(255,60,60,${pulse})`;
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    this.ctx.moveTo(ox, oy);
-    this.ctx.lineTo(ox + len, oy);
-    this.ctx.stroke();
-    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    this.ctx.font = '9px sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText('X', ox + len + 10, oy + 4);
-    
-    // Y-axis (green)
-    this.ctx.strokeStyle = `rgba(60,255,60,${pulse})`;
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    this.ctx.moveTo(ox, oy);
-    this.ctx.lineTo(ox, oy - len);
-    this.ctx.stroke();
-    this.ctx.fillText('Y', ox, oy - len - 8);
-    
-    // Z-axis (blue)
-    this.ctx.strokeStyle = `rgba(60,140,255,${pulse})`;
-    this.ctx.lineWidth = 2;
-    this.ctx.setLineDash([2, 2]);
-    this.ctx.beginPath();
-    this.ctx.moveTo(ox, oy);
-    this.ctx.lineTo(ox + len * 0.35, oy - len * 0.85);
-    this.ctx.stroke();
-    this.ctx.setLineDash([]);
-    this.ctx.fillText('Z', ox + len * 0.35 + 10, oy - len * 0.85 + 4);
-    
-    // Origin dot
-    this.ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    this.ctx.beginPath();
-    this.ctx.arc(ox, oy, 3, 0, Math.PI * 2);
-    this.ctx.fill();
-    
-    this.ctx.restore();
+  _fog(depth) {
+    if (this.persp < 0.05) return 1;
+    return clamp(1 - (depth / 70) * this.persp, 0.3, 1);
   }
 
-  /** Draw zoom/controls HUD overlay (2D + 3D) */
-  _drawZoomHUD() {
-    const pad = 14;
-    const y = this.h - 32;
-    const font = '10px ' + this._getUIFont();
-
-    this.ctx.font = font;
-    this.ctx.textAlign = 'left';
-    this.ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    this.ctx.fillText(`${Math.round(this.camZoom * 100)}%`, pad, y + 8);
-
-    if (this.viewMode === '3d') {
-      this.ctx.textAlign = 'right';
-      this.ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      this.ctx.fillText(`↕${Math.round(this.camPitch)}°  ↻${Math.round(this.camYaw)}°`, this.w - pad, y + 8);
-
-      this.ctx.textAlign = 'center';
-      this.ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      this.ctx.font = '9px ' + this._getUIFont();
-      this.ctx.fillText('⌘+scroll orbit · scroll/pinch/dblclick zoom', this.w / 2, y + 8);
-    } else {
-      this.ctx.textAlign = 'center';
-      this.ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      this.ctx.font = '9px ' + this._getUIFont();
-      this.ctx.fillText('scroll/pinch/dblclick zoom', this.w / 2, y + 8);
-    }
-  }
-
-  /**
-   * Draw the visual background grid — Technical spatial display
-   */
-  drawGrid() {
-    const w = this.w;
-    const h = this.h;
-    const cx = w / 2 + this.panX;
-    const cy = h / 2 + this.panY;
-    const time = Date.now() * 0.0005;
-    
-    // 3D mode: perspective grid lines
-    if (this.viewMode === '3d') {
-      this.ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-      this.ctx.lineWidth = 0.5;
-      this.ctx.setLineDash([1, 3]);
-      const step = this.unitScale;
-      for (let i = -12; i <= 12; i++) {
-        const y = cy - i * step * 0.35;
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, y);
-        this.ctx.lineTo(w, y);
-        this.ctx.stroke();
-      }
-      this.ctx.setLineDash([]);
-    }
-    
-    // Concentric distance rings — clearly visible
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    this.ctx.lineWidth = 1;
-    for (let r = 1; r <= 10; r++) {
-      const baseRadius = r * this.unitScale;
-      const pulse = Math.sin(time * 0.5 + r * 0.3) * 0.02 + 1;
-      const radius = baseRadius * pulse;
-      
-      this.ctx.beginPath();
-      this.ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      this.ctx.stroke();
-      
-      // Distance labels every 2 meters
-      if (r % 2 === 0) {
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-        this.ctx.font = '9px -apple-system, sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(`${r}m`, cx + radius + 8, cy - 2);
-      }
-    }
-    
-    // Cardinal crosshairs — solid and visible
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    this.ctx.lineWidth = 1;
-    this.ctx.beginPath();
-    this.ctx.moveTo(cx, 0);
-    this.ctx.lineTo(cx, h);
-    this.ctx.stroke();
-    this.ctx.beginPath();
-    this.ctx.moveTo(0, cy);
-    this.ctx.lineTo(w, cy);
-    this.ctx.stroke();
-    
-    // Axis tick marks every unit
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-    this.ctx.lineWidth = 0.5;
-    for (let i = -10; i <= 10; i++) {
-      if (i === 0) continue;
-      const tickLen = 3;
-      const pos = i * this.unitScale;
-      // X-axis ticks
-      this.ctx.beginPath();
-      this.ctx.moveTo(cx + pos, cy - tickLen);
-      this.ctx.lineTo(cx + pos, cy + tickLen);
-      this.ctx.stroke();
-      // Y-axis ticks
-      this.ctx.beginPath();
-      this.ctx.moveTo(cx - tickLen, cy - pos);
-      this.ctx.lineTo(cx + tickLen, cy - pos);
-      this.ctx.stroke();
-    }
-    
-    // Compass Labels
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.30)';
-    this.ctx.font = 'bold 10px -apple-system, sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText('FRONT', cx, cy - this.unitScale * 10 - 8);
-    this.ctx.fillText('BACK', cx, cy + this.unitScale * 10 + 16);
-    this.ctx.textAlign = 'left';
-    this.ctx.fillText('LEFT', cx - this.unitScale * 10 - 32, cy + 4);
-    this.ctx.textAlign = 'right';
-    this.ctx.fillText('RIGHT', cx + this.unitScale * 10 + 32, cy + 4);
-    
-    // Center indicator
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    this.ctx.beginPath();
-    this.ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    this.ctx.fill();
-  }
-
-  /**
-   * Draw soft, glowing trail lines from sounds to listener
-   */
-  drawTrails() {
-    const cx = this.w / 2;
-    const cy = this.h / 2;
-    
-    for (const [id, src] of this.audioEngine.sources.entries()) {
-      if (!src.isPlaying) continue;
-      
-      const pos = this.audioToCanvasCoords(src.x, src.y);
-      const color = this.themeColors[src.type] || this.themeColors.custom;
-      const isSelected = this.selectedNodeId === id;
-      const isHovered = this.hoveredNodeId === id;
-      
-      // Only apply shadow for selected/hovered sources
-      if (isSelected || isHovered) {
-        this.ctx.shadowColor = color;
-        this.ctx.shadowBlur = 4;
-      }
-      this.ctx.strokeStyle = this._withAlpha(color, 0.12);
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.moveTo(cx, cy);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
-      this.ctx.shadowBlur = 0;
-      
-      // Inner bright line
-      this.ctx.strokeStyle = this._withAlpha(color, 0.08);
-      this.ctx.lineWidth = 0.8;
-      this.ctx.beginPath();
-      this.ctx.moveTo(cx, cy);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
-    }
-  }
-
-  /**
-   * Draw the listener figure at center — always fixed in center.
-   * Schematic/technical blueprint style. Shows headphones or speakers.
-   */
-  drawListener() {
-    const cx = this.w / 2;
-    const cy = this.h / 2;
-    const levels = this.audioEngine.getLeftRightLevels();
-    const posture = this.audioEngine.posture;
-    const headTilt = this.audioEngine.headTilt;
-    const tiltRad = (headTilt * Math.PI) / 180;
-    const outputMode = this.audioEngine.outputMode || 'hrtf';
-
-    this.ctx.save();
-    this.ctx.translate(cx, cy);
-
-    // Schematic style — blueprint/cad look
-    this.ctx.lineCap = 'round';
-    this.ctx.lineJoin = 'round';
-
-    if (posture === 'standing') {
-      this._drawSchematicStanding(levels, tiltRad, outputMode);
-    } else if (posture === 'lying-back') {
-      this._drawSchematicLyingBack(levels, tiltRad, outputMode);
-    } else {
-      this._drawSchematicLyingSide(levels, tiltRad, outputMode);
-    }
-
-    this.ctx.restore();
-  }
-
-  /**
-   * Schematic standing figure — blueprint/technical style
-   */
-  _drawSchematicStanding(levels, tiltRad, outputMode) {
-    const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
-    const secondaryColor = isHeadphones ? 'rgba(242, 111, 59, 0.5)' : 'rgba(0, 153, 51, 0.5)';
-    
-    this.ctx.save();
-    this.ctx.rotate(tiltRad);
-    
-    // Technical blueprint outline — body as simple geometric shapes
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    this.ctx.lineWidth = 1.2;
-    this.ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    
-    // Body — rounded rectangle (torso)
-    this.ctx.beginPath();
-    this.ctx.roundRect(-10, -18, 20, 36, 6);
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Shoulders line
-    this.ctx.beginPath();
-    this.ctx.moveTo(-16, -8);
-    this.ctx.lineTo(16, -8);
-    this.ctx.stroke();
-    
-    // Head — circle with tech styling
-    this.ctx.beginPath();
-    this.ctx.arc(0, -28, 12, 0, Math.PI * 2);
-    this.ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Direction indicator (arrow pointing forward/up)
-    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    this.ctx.beginPath();
-    this.ctx.moveTo(0, -42);
-    this.ctx.lineTo(-3, -36);
-    this.ctx.lineTo(3, -36);
-    this.ctx.closePath();
-    this.ctx.fill();
-    
-    // Ears / Headphone or Speaker indicators
-    const earGlowL = levels.left > 0.03;
-    const earGlowR = levels.right > 0.03;
-    
-    if (isHeadphones) {
-      // Headphone arch
-      this.ctx.strokeStyle = primaryColor;
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.arc(0, -28, 18, Math.PI * 0.8, Math.PI * 0.2, true);
-      this.ctx.stroke();
-      
-      // Left ear cup
-      this.ctx.fillStyle = earGlowL ? secondaryColor : 'rgba(255,255,255,0.08)';
-      this.ctx.beginPath();
-      this.ctx.arc(-14, -28, 4, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.strokeStyle = earGlowL ? primaryColor : 'rgba(255,255,255,0.2)';
-      this.ctx.stroke();
-      
-      // Right ear cup
-      this.ctx.fillStyle = earGlowR ? secondaryColor : 'rgba(255,255,255,0.08)';
-      this.ctx.beginPath();
-      this.ctx.arc(14, -28, 4, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.strokeStyle = earGlowR ? primaryColor : 'rgba(255,255,255,0.2)';
-      this.ctx.stroke();
-    } else {
-      // Speaker indicators — small triangles at ears
-      this.ctx.fillStyle = earGlowL ? primaryColor : 'rgba(255,255,255,0.15)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(-18, -28);
-      this.ctx.lineTo(-14, -31);
-      this.ctx.lineTo(-14, -25);
-      this.ctx.closePath();
-      this.ctx.fill();
-      
-      this.ctx.fillStyle = earGlowR ? primaryColor : 'rgba(255,255,255,0.15)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(18, -28);
-      this.ctx.lineTo(14, -31);
-      this.ctx.lineTo(14, -25);
-      this.ctx.closePath();
-      this.ctx.fill();
-    }
-    
-    // Audio level rings
-    const maxLevel = Math.max(levels.left, levels.right);
-    if (maxLevel > 0.02) {
-      const time = Date.now() * 0.005;
-      const ringR = 24 + maxLevel * 8 + Math.sin(time) * 2;
-      
-      this.ctx.strokeStyle = primaryColor;
-      this.ctx.lineWidth = 1.5;
-      this.ctx.globalAlpha = 0.3 + maxLevel * 0.4;
-      this.ctx.beginPath();
-      this.ctx.arc(0, -28, ringR, 0, Math.PI * 2);
-      this.ctx.stroke();
-      this.ctx.globalAlpha = 1;
-      
-      // Pulsing glow
-      const glowGrad = this.ctx.createRadialGradient(0, -28, 15, 0, -28, ringR + 4);
-      glowGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      glowGrad.addColorStop(0.5, this._withAlpha(primaryColor, 0.15));
-      glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      this.ctx.fillStyle = glowGrad;
-      this.ctx.beginPath();
-      this.ctx.arc(0, -28, ringR + 4, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-    
-    // Label: H (headphones) or S (speakers)
-    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    this.ctx.font = 'bold 8px sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText(isHeadphones ? '🎧' : '🔊', 0, 8);
-    
-    this.ctx.restore();
-  }
-
-  /**
-   * Schematic lying-on-back figure
-   */
-  _drawSchematicLyingBack(levels, tiltRad, outputMode) {
-    const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
-    const earGlowL = levels.left > 0.03;
-    const earGlowR = levels.right > 0.03;
-    
-    this.ctx.save();
-    this.ctx.rotate(tiltRad);
-    
-    // Body horizontal — simple rounded rect
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    this.ctx.lineWidth = 1.2;
-    this.ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    
-    this.ctx.beginPath();
-    this.ctx.roundRect(-40, -10, 80, 20, 8);
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Head at top
-    this.ctx.beginPath();
-    this.ctx.arc(44, 0, 10, 0, Math.PI * 2);
-    this.ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Direction arrow
-    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    this.ctx.beginPath();
-    this.ctx.moveTo(56, 0);
-    this.ctx.lineTo(50, -3);
-    this.ctx.lineTo(50, 3);
-    this.ctx.closePath();
-    this.ctx.fill();
-    
-    // Ears
-    if (isHeadphones) {
-      this.ctx.strokeStyle = primaryColor;
-      this.ctx.lineWidth = 1.5;
-      this.ctx.beginPath();
-      this.ctx.arc(44, 0, 14, Math.PI * 0.3, -Math.PI * 0.3, true);
-      this.ctx.stroke();
-      
-      this.ctx.fillStyle = earGlowL ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
-      this.ctx.beginPath();
-      this.ctx.arc(40, -10, 3, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.fillStyle = earGlowR ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
-      this.ctx.beginPath();
-      this.ctx.arc(40, 10, 3, 0, Math.PI * 2);
-      this.ctx.fill();
-    } else {
-      this.ctx.fillStyle = earGlowL ? primaryColor : 'rgba(255,255,255,0.15)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(38, -12);
-      this.ctx.lineTo(42, -10);
-      this.ctx.lineTo(42, -14);
-      this.ctx.closePath();
-      this.ctx.fill();
-      this.ctx.fillStyle = earGlowR ? primaryColor : 'rgba(255,255,255,0.15)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(38, 12);
-      this.ctx.lineTo(42, 10);
-      this.ctx.lineTo(42, 14);
-      this.ctx.closePath();
-      this.ctx.fill();
-    }
-    
-    // Label
-    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    this.ctx.font = 'bold 8px sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText(isHeadphones ? '🎧' : '🔊', 0, 6);
-    
-    this.ctx.restore();
-  }
-
-  /**
-   * Schematic lying-on-side figure
-   */
-  _drawSchematicLyingSide(levels, tiltRad, outputMode) {
-    const isHeadphones = outputMode === 'hrtf' || !outputMode;
-    const primaryColor = isHeadphones ? 'rgba(255, 139, 89, 0.8)' : 'rgba(0, 204, 102, 0.8)';
-    const earGlow = levels.left > 0.03;
-    
-    this.ctx.save();
-    this.ctx.rotate(tiltRad);
-    
-    // Body vertical — rounded rect
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    this.ctx.lineWidth = 1.2;
-    this.ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    
-    this.ctx.beginPath();
-    this.ctx.roundRect(-8, -35, 16, 70, 6);
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Head at top
-    this.ctx.beginPath();
-    this.ctx.arc(0, -42, 10, 0, Math.PI * 2);
-    this.ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    this.ctx.fill();
-    this.ctx.stroke();
-    
-    // Direction arrow (facing right)
-    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    this.ctx.beginPath();
-    this.ctx.moveTo(14, -42);
-    this.ctx.lineTo(8, -45);
-    this.ctx.lineTo(8, -39);
-    this.ctx.closePath();
-    this.ctx.fill();
-    
-    // Ear (single, on top side)
-    if (isHeadphones) {
-      this.ctx.strokeStyle = primaryColor;
-      this.ctx.lineWidth = 1.5;
-      this.ctx.beginPath();
-      this.ctx.arc(0, -42, 14, -Math.PI * 0.7, Math.PI * 0.7, false);
-      this.ctx.stroke();
-      
-      this.ctx.fillStyle = earGlow ? 'rgba(255, 139, 89,0.3)' : 'rgba(255,255,255,0.08)';
-      this.ctx.beginPath();
-      this.ctx.arc(0, -54, 3.5, 0, Math.PI * 2);
-      this.ctx.fill();
-    } else {
-      this.ctx.fillStyle = earGlow ? primaryColor : 'rgba(255,255,255,0.15)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(-4, -56);
-      this.ctx.lineTo(0, -54);
-      this.ctx.lineTo(0, -58);
-      this.ctx.closePath();
-      this.ctx.fill();
-    }
-    
-    // Label
-    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    this.ctx.font = 'bold 8px sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText(isHeadphones ? '🎧' : '🔊', 0, 12);
-    
-    this.ctx.restore();
-  }
-
-  /**
-   * Draw a glass-style figure with common pattern: save/translate, body, head, ears, visualizer, restore.
-   * @param {CanvasRenderingContext2D} ctx
-   * @param {Object} config
-   * @param {Object} config.tint - Color palette {body, outline, earFill, glow}
-   * @param {Object} config.groundShadow - {x, y, rx, ry} for ground shadow ellipse
-   * @param {Function} config.drawBody - Callback to draw body parts (ctx, tint) => void
-   * @param {Object} config.head - {x, y, rx, ry, rotation, faceDrawFn}
-   * @param {Array} config.ears - Array of {x, y, rx, ry, levelKey} for each ear
-   * @param {Object} config.visualizer - {radius, arcStart, arcSweep} for audio visualizer
-   * @param {Array} config.levelBars - Array of {x, y, levelKey, width} for ear level bars
-   */
-  _drawGlassFigure(ctx, config) {
-    const { tint, groundShadow, drawBody, head, ears, visualizer, levelBars } = config;
-    const levels = this.audioEngine.getLeftRightLevels();
-
-    ctx.save();
-
-    // Ground shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.20)';
+  _strokeWorldPoly(points, closed = false) {
+    const ctx = this.ctx;
     ctx.beginPath();
-    ctx.ellipse(groundShadow.x, groundShadow.y, groundShadow.rx, groundShadow.ry, 0, 0, Math.PI * 2);
-    ctx.fill();
+    points.forEach((p, i) => {
+      const s = this.camera.project(p[0], p[1], p[2] || 0);
+      if (i === 0) ctx.moveTo(s.sx, s.sy); else ctx.lineTo(s.sx, s.sy);
+    });
+    if (closed) ctx.closePath();
+    ctx.stroke();
+  }
 
-    // Body parts (caller-defined)
-    drawBody(ctx, tint);
+  _ringPoints(r, z = 0, n = 72) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pts.push([Math.cos(a) * r, Math.sin(a) * r, z]);
+    }
+    return pts;
+  }
 
-    // Head section
-    ctx.save();
-    ctx.translate(head.x, head.y);
-    ctx.rotate(head.rotation);
+  drawGround() {
+    const ctx = this.ctx;
+    const cam = this.camera;
+    ctx.lineWidth = 1;
 
-    // Head shape
-    ctx.fillStyle = '#1c1c1e';
-    ctx.strokeStyle = tint.outline;
+    // Ground plane wash (3D)
+    if (this.persp > 0.05 && ctx.fill) {
+      ctx.fillStyle = `rgba(255, 244, 232, ${0.018 * this.persp})`;
+      ctx.beginPath();
+      this._ringPoints(FIELD_RADIUS, 0, 96).forEach((p, i) => { const s = cam.project(p[0], p[1], 0); if (i === 0) ctx.moveTo(s.sx, s.sy); else ctx.lineTo(s.sx, s.sy); });
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Rings
+    for (let r = 1; r <= FIELD_RADIUS; r++) {
+      const major = r % 5 === 0;
+      const depth = cam.project(0, r, 0).depth;
+      ctx.strokeStyle = `rgba(255, 246, 236, ${(major ? 0.11 : 0.045) * this._fog(depth)})`;
+      ctx.lineWidth = major ? 1 : 0.75;
+      this._strokeWorldPoly(this._ringPoints(r), true);
+    }
+
+    // Spokes every 30 degrees
+    for (let a = 0; a < 360; a += 30) {
+      const rad = (a * Math.PI) / 180;
+      const cardinal = a % 90 === 0;
+      ctx.strokeStyle = `rgba(255, 246, 236, ${cardinal ? 0.08 : 0.035})`;
+      ctx.lineWidth = cardinal ? 1 : 0.75;
+      this._strokeWorldPoly([[Math.cos(rad) * 0.9, Math.sin(rad) * 0.9, 0], [Math.cos(rad) * FIELD_RADIUS, Math.sin(rad) * FIELD_RADIUS, 0]]);
+    }
+
+    // Distance ticks and labels along +X
+    ctx.font = `10px ${this._mono()}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (let r = 2; r <= FIELD_RADIUS; r += 2) {
+      const s = cam.project(r, 0, 0);
+      const fog = this._fog(s.depth);
+      ctx.fillStyle = `rgba(255, 246, 236, ${0.38 * fog})`;
+      ctx.fillText(`${r} m`, s.sx + 5, s.sy - 8);
+    }
+
+    // Cardinal labels
+    ctx.font = `600 9px ${this._uiFont()}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255, 246, 236, 0.32)';
+    const lab = [['FRONT', 0, FIELD_RADIUS + 0.9], ['BACK', 0, -FIELD_RADIUS - 0.9], ['RIGHT', FIELD_RADIUS + 1.2, 0], ['LEFT', -FIELD_RADIUS - 1.2, 0]];
+    for (const [text, x, y] of lab) {
+      const s = cam.project(x, y, 0);
+      ctx.fillText(text, s.sx, s.sy);
+    }
+
+    // Centre crosshair
+    const o = cam.project(0, 0, 0);
+    ctx.strokeStyle = 'rgba(255, 246, 236, 0.28)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(o.sx - 14, o.sy); ctx.lineTo(o.sx - 5, o.sy);
+    ctx.moveTo(o.sx + 5, o.sy); ctx.lineTo(o.sx + 14, o.sy);
+    ctx.moveTo(o.sx, o.sy - 14); ctx.lineTo(o.sx, o.sy - 5);
+    ctx.moveTo(o.sx, o.sy + 5); ctx.lineTo(o.sx, o.sy + 14);
+    ctx.stroke();
+  }
+
+  // ---- listener ----
+
+  drawListener() {
+    const ctx = this.ctx;
+    const cam = this.camera;
+    const levels = this.audioEngine.getLeftRightLevels ? this.audioEngine.getLeftRightLevels() : { left: 0, right: 0 };
+    const posture = this.audioEngine.posture || 'standing';
+    const tilt = ((this.audioEngine.headTilt || 0) * Math.PI) / 180;
+    const outputMode = this.audioEngine.outputMode || 'hrtf';
+    const headphones = outputMode === 'hrtf';
+
+    // Figure geometry in metres, top-down. Head centre at (0, 0).
+    let head = { x: 0, y: 0, r: 0.3 };
+    let body = [];
+    let earL = { x: -0.32, y: 0 }, earR = { x: 0.32, y: 0 };
+    let nose = [[0, 0.3], [0, 0.55]];
+    if (posture === 'lying-back') {
+      head = { x: 0, y: 0.75, r: 0.3 };
+      body = [[-0.42, 0.35], [0.42, 0.35], [0.3, -1.4], [-0.3, -1.4]];
+      earL = { x: -0.32, y: 0.75 }; earR = { x: 0.32, y: 0.75 };
+      nose = [[0, 1.05], [0, 1.25]];
+    } else if (posture === 'lying-side') {
+      head = { x: 0.75, y: 0, r: 0.3 };
+      body = [[0.35, 0.36], [0.35, -0.36], [-1.4, -0.26], [-1.4, 0.26]];
+      earL = { x: 0.75, y: 0.32 }; earR = { x: 0.75, y: -0.32 };
+      nose = [[1.05, 0], [1.25, 0]];
+    } else {
+      body = [[-0.62 * this.shoulderWidth, -0.28], [0.62 * this.shoulderWidth, -0.28]];
+    }
+
+    const rot = (p) => {
+      const c = Math.cos(tilt), s = Math.sin(tilt);
+      const dx = p[0] - head.x, dy = p[1] - head.y;
+      return [head.x + dx * c - dy * s, head.y + dx * s + dy * c, 0];
+    };
+
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Body: kept quieter than the head so the head reads as the listener.
+    if (body.length) {
+      ctx.strokeStyle = 'rgba(255, 246, 236, 0.3)';
+      ctx.fillStyle = 'rgba(255, 246, 236, 0.03)';
+      ctx.lineWidth = 1.2;
+      if (body.length > 2 && ctx.fill) {
+        ctx.beginPath();
+        body.forEach((p, i) => { const s = cam.project(p[0], p[1], 0); if (i === 0) ctx.moveTo(s.sx, s.sy); else ctx.lineTo(s.sx, s.sy); });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        this._strokeWorldPoly(body.map(p => [p[0], p[1], 0]));
+      }
+    }
+
+    // Head (filled ellipse via projected ring)
+    const headPts = this._ringPoints(head.r, 0, 36).map(p => rot([p[0] + head.x, p[1] + head.y]));
+    ctx.fillStyle = '#0f1013';
+    ctx.strokeStyle = 'rgba(255, 246, 236, 0.75)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.ellipse(0, 0, head.rx, head.ry, 0, 0, Math.PI * 2);
-    ctx.fill();
+    headPts.forEach((p, i) => { const s = cam.project(p[0], p[1], 0); if (i === 0) ctx.moveTo(s.sx, s.sy); else ctx.lineTo(s.sx, s.sy); });
+    ctx.closePath();
+    if (ctx.fill) ctx.fill();
     ctx.stroke();
 
-    // Face features (caller-defined)
-    if (head.faceDrawFn) {
-      head.faceDrawFn(ctx, tint);
-    }
+    // Facing tick
+    ctx.strokeStyle = 'rgba(255, 246, 236, 0.75)';
+    this._strokeWorldPoly(nose.map(rot));
 
-    // Ears
-    for (const ear of ears) {
-      const levelValue = levels[ear.levelKey] || 0;
-      ctx.fillStyle = tint.earFill;
-      ctx.strokeStyle = levelValue > 0.03 ? 'rgba(242, 111, 59, 0.6)' : tint.outline;
-      ctx.beginPath();
-      ctx.ellipse(ear.x, ear.y, ear.rx, ear.ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Headphone arch
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(0, 0, visualizer.radius - 2, visualizer.arcStart, visualizer.arcStart + visualizer.arcSweep, visualizer.arcCounterClockwise);
-    ctx.stroke();
-
-    // Audio visualizer
-    const maxLevel = Math.max(levels.left, levels.right);
-    if (maxLevel > 0.02) {
-      ctx.strokeStyle = 'rgba(242, 111, 59, 0.5)';
+    // Ears / headphone cups with level glow
+    const maxLevel = Math.max(levels.left || 0, levels.right || 0);
+    for (const [ear, lv] of [[earL, levels.left || 0], [earR, levels.right || 0]]) {
+      const e = cam.project(...rot([ear.x, ear.y]));
+      const rr = Math.max(3, 0.1 * e.k);
+      if (lv > 0.02 && ctx.createRadialGradient) {
+        const g = ctx.createRadialGradient(e.sx, e.sy, rr, e.sx, e.sy, rr + 10 + lv * 26);
+        g.addColorStop(0, `rgba(${ACCENT_RGB}, ${0.35 * lv})`);
+        g.addColorStop(1, `rgba(${ACCENT_RGB}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(e.sx, e.sy, rr + 10 + lv * 26, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = lv > 0.02 ? `rgba(${ACCENT_RGB}, ${0.35 + lv * 0.6})` : 'rgba(255, 246, 236, 0.12)';
+      ctx.strokeStyle = headphones ? `rgba(${ACCENT_RGB}, 0.85)` : 'rgba(255, 246, 236, 0.5)';
       ctx.lineWidth = 1.5;
-      ctx.shadowColor = 'rgba(242, 111, 59, 0.4)';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(0, 0, visualizer.radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * maxLevel);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Glow
-      const pulseR = visualizer.radius + maxLevel * 5;
-      const glowGrad = ctx.createRadialGradient(0, 0, visualizer.radius - 2, 0, 0, pulseR);
-      glowGrad.addColorStop(0, 'rgba(242, 111, 59, 0)');
-      glowGrad.addColorStop(0.7, `rgba(242, 111, 59, ${maxLevel * 0.15})`);
-      glowGrad.addColorStop(1, 'rgba(242, 111, 59, 0)');
-      ctx.fillStyle = glowGrad;
-      ctx.beginPath();
-      ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(e.sx, e.sy, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
 
-    // Ear level bars
-    for (const bar of levelBars) {
-      const levelValue = levels[bar.levelKey] || 0;
-      if (levelValue > 0.03) {
-        const barH = Math.min(levelValue * bar.maxHeight, bar.maxHeight);
-        ctx.fillStyle = levelValue > 0.3 ? 'rgba(242, 111, 59, 0.8)' : 'rgba(255,255,255,0.12)';
-        ctx.fillRect(bar.x, bar.y - barH / 2, bar.width, Math.max(barH, 1));
+    // Headphone band
+    if (headphones) {
+      const band = [];
+      const from = posture === 'lying-side' ? -Math.PI / 2 : Math.PI;
+      for (let i = 0; i <= 18; i++) {
+        const a = from + (i / 18) * Math.PI;
+        band.push(rot([head.x + Math.cos(a) * 0.4, head.y + Math.sin(a) * 0.4]));
       }
+      ctx.strokeStyle = `rgba(${ACCENT_RGB}, 0.7)`;
+      ctx.lineWidth = 2;
+      this._strokeWorldPoly(band);
     }
 
-    ctx.restore(); // head rotation
-    ctx.restore(); // main
-  }
-
-  /**
-   * Draw realistic lying-on-back figure (supine)
-   */
-  _drawLyingBackFigure(levels, tiltRad) {
-    const tint = {
-      body: 'rgba(100,160,240,0.12)',
-      outline: 'rgba(135,200,255,0.30)',
-      earFill: 'rgba(100,160,240,0.10)',
-      glow: 'rgba(100,160,240,0.06)'
-    };
-
-    this._drawGlassFigure(this.ctx, {
-      tint,
-      groundShadow: { x: 0, y: 8, rx: 75, ry: 14 },
-      drawBody: (ctx, tint) => {
-        ctx.fillStyle = tint.body;
-        ctx.strokeStyle = tint.outline;
-        ctx.lineWidth = 1.3;
-
-        // Left leg
-        ctx.beginPath();
-        ctx.moveTo(-50, 8);
-        ctx.lineTo(-55, 8);
-        ctx.lineTo(-58, 6);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(-60, 5, 4, 3, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Right leg
-        ctx.beginPath();
-        ctx.moveTo(50, 8);
-        ctx.lineTo(55, 8);
-        ctx.lineTo(58, 6);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(60, 5, 4, 3, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Hips
-        ctx.beginPath();
-        ctx.ellipse(-45, 8, 7, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(45, 8, 7, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Waist
-        ctx.beginPath();
-        ctx.roundRect(-38, 2, 76, 12, 6);
-        ctx.fill();
-        ctx.stroke();
-
-        // Chest
-        ctx.beginPath();
-        ctx.roundRect(-32, -6, 64, 12, 8);
-        ctx.fill();
-        ctx.stroke();
-
-        // Shoulders
-        ctx.beginPath();
-        ctx.ellipse(-30, -6, 10, 8, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(30, -6, 10, 8, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Left arm
-        ctx.beginPath();
-        ctx.moveTo(-30, -6);
-        ctx.lineTo(-38, 4);
-        ctx.lineTo(-38, 14);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(-38, 16, 3.5, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Right arm
-        ctx.beginPath();
-        ctx.moveTo(30, -6);
-        ctx.lineTo(38, 4);
-        ctx.lineTo(38, 14);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(38, 16, 3.5, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Neck
-        ctx.beginPath();
-        ctx.moveTo(0, -8);
-        ctx.lineTo(0, -12);
-        ctx.stroke();
-      },
-      head: {
-        x: 0, y: -20, rx: 11, ry: 13, rotation: tiltRad,
-        faceDrawFn: (ctx, tint) => {
-          ctx.fillStyle = tint.outline;
-          ctx.beginPath();
-          ctx.arc(0, -12, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = 'rgba(255,255,255,0.35)';
-          ctx.beginPath();
-          ctx.arc(-4, -7, 1, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(4, -7, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      },
-      ears: [
-        { x: -14, y: 0, rx: 3, ry: 5.5, levelKey: 'left' },
-        { x: 14, y: 0, rx: 3, ry: 5.5, levelKey: 'right' }
-      ],
-      visualizer: { radius: 22, arcStart: Math.PI * 0.85, arcSweep: Math.PI * 0.7, arcCounterClockwise: true },
-      levelBars: [
-        { x: -20, y: 0, levelKey: 'left', width: 2, maxHeight: 22 },
-        { x: 18, y: 0, levelKey: 'right', width: 2, maxHeight: 22 }
-      ]
-    });
-  }
-
-  /**
-   * Draw realistic lying-on-side figure (lateral)
-   */
-  _drawLyingSideFigure(levels, tiltRad) {
-    const tint = {
-      body: 'rgba(220,170,40,0.12)',
-      outline: 'rgba(255,200,100,0.30)',
-      earFill: 'rgba(220,170,40,0.10)',
-      glow: 'rgba(220,170,40,0.06)'
-    };
-
-    this._drawGlassFigure(this.ctx, {
-      tint,
-      groundShadow: { x: 0, y: 52, rx: 22, ry: 5 },
-      drawBody: (ctx, tint) => {
-        ctx.fillStyle = tint.body;
-        ctx.strokeStyle = tint.outline;
-        ctx.lineWidth = 1.3;
-
-        // Left leg (lower, bent)
-        ctx.beginPath();
-        ctx.moveTo(-3, 42);
-        ctx.lineTo(-4, 50);
-        ctx.lineTo(-2, 56);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(-1, 58, 3, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Right leg (upper, straight-ish)
-        ctx.beginPath();
-        ctx.moveTo(3, 42);
-        ctx.lineTo(4, 52);
-        ctx.lineTo(6, 58);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(7, 60, 3, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Hips
-        ctx.beginPath();
-        ctx.ellipse(0, 38, 8, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Waist
-        ctx.beginPath();
-        ctx.roundRect(-7, 24, 14, 14, 5);
-        ctx.fill();
-        ctx.stroke();
-
-        // Chest
-        ctx.beginPath();
-        ctx.roundRect(-9, 10, 18, 16, 7);
-        ctx.fill();
-        ctx.stroke();
-
-        // Lower arm
-        ctx.beginPath();
-        ctx.moveTo(-8, 16);
-        ctx.lineTo(-12, 24);
-        ctx.lineTo(-8, 32);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(-7, 34, 3, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Upper arm
-        ctx.beginPath();
-        ctx.moveTo(8, 14);
-        ctx.lineTo(12, 22);
-        ctx.lineTo(10, 30);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(9, 32, 3, 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Neck
-        ctx.beginPath();
-        ctx.moveTo(0, 6);
-        ctx.lineTo(0, 2);
-        ctx.stroke();
-      },
-      head: {
-        x: 0, y: -6, rx: 10, ry: 12, rotation: -Math.PI / 2 + tiltRad,
-        faceDrawFn: (ctx, tint) => {
-          ctx.fillStyle = tint.outline;
-          ctx.beginPath();
-          ctx.moveTo(9, -2);
-          ctx.lineTo(13, -1);
-          ctx.lineTo(9, 2);
-          ctx.fill();
-          ctx.fillStyle = 'rgba(255,255,255,0.35)';
-          ctx.beginPath();
-          ctx.arc(5, -4, 1.2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      },
-      ears: [
-        { x: 0, y: -14, rx: 3, ry: 5.5, levelKey: 'left' }
-      ],
-      visualizer: { radius: 20, arcStart: Math.PI * 0.2, arcSweep: Math.PI * 0.6, arcCounterClockwise: false },
-      levelBars: [
-        { x: -2, y: -18, levelKey: 'left', width: 2, maxHeight: 20 }
-      ]
-    });
-  }
-
-  /**
-   * Draw sound sources with glow effects and soft wave ripples
-   */
-  /**
-   * Order sources back-to-front so nearer nodes overlap farther ones
-   * (painter's algorithm). Depth uses the projected screen-Y: in 3D this
-   * matches the iso transform's vertical mapping, in 2D it's just lower = nearer.
-   */
-  _depthSortedSources() {
-    const entries = [...this.audioEngine.sources.entries()];
-    const cx = this.w / 2;
-    const cy = this.h / 2;
-    let b = 0;
-    let d = 1;
-    if (this.viewMode === '3d') {
-      const yawRad = this.camYaw * Math.PI / 180;
-      const pitchRad = this.camPitch * Math.PI / 180;
-      const zoom = this.camZoom;
-      b = zoom * Math.sin(yawRad) * 0.35;
-      d = zoom * (0.7 + 0.3 * Math.cos(pitchRad));
-    }
-    return entries
-      .map(entry => {
-        const pos = this.audioToCanvasCoords(entry[1].x, entry[1].y);
-        return { entry, depth: b * (pos.x - cx) + d * (pos.y - cy) };
-      })
-      .sort((a, z) => a.depth - z.depth)
-      .map(o => o.entry);
-  }
-
-  drawEmitters() {
-    for (const [id, src] of this._depthSortedSources()) {
-      const pos = this.audioToCanvasCoords(src.x, src.y);
-      const color = this.themeColors[src.type] || this.themeColors.custom;
-      const isSelected = this.selectedNodeId === id;
-      const isHovered = this.hoveredNodeId === id;
-      const radius = this.getNodeRadius(src.z);
-      
-      const emoji = this.emojiMap[src.type] || this.emojiMap.custom;
-
-      // Calculate visual position with Z offset
-      const heightOffset = src.z * 0.8;
-      const nodeY = pos.y - heightOffset;
-      const shadowY = pos.y + 12;
-
-      // 0. 3D mode elevation stalk
-      if (this.viewMode === '3d') {
-        const stalkLen = src.z * this.unitScale * 0.15;
-        const groundY = pos.y + Math.abs(stalkLen);
-        const topY = pos.y - Math.max(0, stalkLen);
-        const bottomY = pos.y + Math.max(0, -stalkLen);
-
-        // Ground shadow
-        this.ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        this.ctx.beginPath();
-        this.ctx.ellipse(pos.x, groundY, radius * 0.7, 3, 0, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        // Gradient stalk
-        if (Math.abs(stalkLen) > 2) {
-          const grad = this.ctx.createLinearGradient(pos.x, topY, pos.x, bottomY);
-          grad.addColorStop(0, `rgba(255,255,255,0.02)`);
-          grad.addColorStop(0.5, `rgba(255,255,255,0.12)`);
-          grad.addColorStop(1, `rgba(255,255,255,0.02)`);
-          this.ctx.strokeStyle = grad;
-          this.ctx.lineWidth = 2;
-          this.ctx.beginPath();
-          this.ctx.moveTo(pos.x, topY);
-          this.ctx.lineTo(pos.x, bottomY);
-          this.ctx.stroke();
-        }
-
-        // Z height label
-        const zText = `${src.z > 0 ? '+' : ''}${src.z.toFixed(1)}m`;
-        this.ctx.font = '9px ' + this._getUIFont();
-        const tw = this.ctx.measureText(zText).width;
-        const labelY = stalkLen > 0 ? topY - 10 : bottomY + 12;
-        this.ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        this.ctx.beginPath();
-        this.ctx.roundRect(pos.x - tw / 2 - 5, labelY - 8, tw + 10, 15, 6);
-        this.ctx.fill();
-        this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(zText, pos.x, labelY + 4);
-      }
-
-      // 1. Soft ground shadow (diffuse, elliptical)
-      const shadowRadius = Math.max(5, radius - (src.z * 0.6));
-      const shadowGrad = this.ctx.createRadialGradient(pos.x, shadowY, 0, pos.x, shadowY, shadowRadius * 1.5);
-      shadowGrad.addColorStop(0, `rgba(0, 0, 0, ${0.25 - src.z * 0.02})`);
-      shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      this.ctx.fillStyle = shadowGrad;
-      this.ctx.beginPath();
-      this.ctx.ellipse(pos.x, shadowY, shadowRadius * 1.5, shadowRadius * 0.4, 0, 0, Math.PI * 2);
-      this.ctx.fill();
-
-      // 2. Z-Height connection line (gradient, not dashed)
-      if (Math.abs(src.z) > 0.5) {
-        const lineGrad = this.ctx.createLinearGradient(pos.x, nodeY, pos.x, shadowY);
-        lineGrad.addColorStop(0, `rgba(255, 255, 255, 0.08)`);
-        lineGrad.addColorStop(0.5, `rgba(255, 255, 255, 0.15)`);
-        lineGrad.addColorStop(1, `rgba(255, 255, 255, 0.05)`);
-        this.ctx.strokeStyle = lineGrad;
-        this.ctx.lineWidth = 1.5;
-        this.ctx.beginPath();
-        this.ctx.moveTo(pos.x, nodeY);
-        this.ctx.lineTo(pos.x, shadowY);
-        this.ctx.stroke();
-      }
-
-      // 3. Glow ripples (soft, luminous waves)
-      const ripples = this.ripples.get(id) || [];
-      for (const r of ripples) {
-        const rippleGrad = this.ctx.createRadialGradient(pos.x, nodeY, r.radius * 0.8, pos.x, nodeY, r.radius * 1.1);
-        rippleGrad.addColorStop(0, `rgba(0, 0, 0, 0)`);
-        rippleGrad.addColorStop(0.5, this._withAlpha(color, r.opacity * 0.4));
-        rippleGrad.addColorStop(1, `rgba(0, 0, 0, 0)`);
-        
-        this.ctx.fillStyle = rippleGrad;
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x, nodeY, r.radius * 1.1, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        // Inner bright ring
-        this.ctx.strokeStyle = this._withAlpha(color, r.opacity * 0.6);
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x, nodeY, r.radius, 0, Math.PI * 2);
-        this.ctx.stroke();
-      }
-
-      // 4. Outer glow ring
-      if (isSelected || isHovered) {
-        const glowRadius = radius + (isSelected ? 10 : 6);
-        const glowOpacity = isSelected ? 0.3 : 0.15;
-        const glowColor = isSelected ? 'rgba(242, 111, 59' : this._withAlpha(color, 0).replace(/, 0\)$/, '');
-        const glowGrad = this.ctx.createRadialGradient(pos.x, nodeY, radius, pos.x, nodeY, glowRadius + 5);
-        glowGrad.addColorStop(0, `${glowColor}, 0)`);
-        glowGrad.addColorStop(0.5, `${glowColor}, ${glowOpacity})`);
-        glowGrad.addColorStop(1, `${glowColor}, 0)`);
-        this.ctx.fillStyle = glowGrad;
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x, nodeY, glowRadius + 5, 0, Math.PI * 2);
-        this.ctx.fill();
-      }
-
-      // 5. Selected pulse ring
-      if (isSelected) {
-        const pulseTime = Date.now() * 0.003;
-        const pulseRadius = radius + 8 + Math.sin(pulseTime) * 3;
-        this.ctx.strokeStyle = `rgba(242, 111, 59, ${0.2 + Math.sin(pulseTime) * 0.1})`;
-        this.ctx.lineWidth = 1.5;
-        this.ctx.shadowColor = 'rgba(242, 111, 59, 0.3)';
-        this.ctx.shadowBlur = 10;
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x, nodeY, pulseRadius, 0, Math.PI * 2);
-        this.ctx.stroke();
-        this.ctx.shadowBlur = 0;
-      }
-      
-      // 6. Node circle
-      this.ctx.fillStyle = '#1c1c1e';
-      this.ctx.strokeStyle = isSelected ? 'rgba(242, 111, 59, 0.8)' : (isHovered ? 'rgba(255, 255, 255, 0.5)' : color);
-      this.ctx.lineWidth = isSelected ? 2 : 1;
-      this.ctx.beginPath();
-      this.ctx.arc(pos.x, nodeY, radius, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.stroke();
-      
-      // 7. Emoji with soft shadow for depth
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.font = `${radius * 1.1}px -apple-system, sans-serif`;
-      this.ctx.textAlign = 'center';
-      this.ctx.textBaseline = 'middle';
-      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-      this.ctx.shadowBlur = 4;
-      this.ctx.fillText(emoji, pos.x, nodeY);
-      this.ctx.shadowBlur = 0;
-      
-      // 8. Pause badge
-      if (!src.isPlaying) {
-        this.ctx.fillStyle = 'rgba(28, 28, 30, 0.85)';
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x + radius - 4, nodeY - radius + 4, 6, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.fillStyle = '#ff453a';
-        this.ctx.font = '7px -apple-system, sans-serif';
-        this.ctx.fillText('⏸', pos.x + radius - 4, nodeY - radius + 4);
-      }
-      
-      // 9. Label with soft shadow
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-      this.ctx.font = '9px -apple-system, sans-serif';
-      this.ctx.textAlign = 'center';
-      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      this.ctx.shadowBlur = 3;
-      this.ctx.fillText(src.name, pos.x, nodeY - radius - 6);
-      this.ctx.shadowBlur = 0;
-
-      // Z height label
-      if (Math.abs(src.z) > 0.3) {
-        this.ctx.fillStyle = 'rgba(255,255,255,0.45)';
-        this.ctx.font = '8px ' + this._getUIFont();
-        this.ctx.fillText(`${src.z > 0 ? '+' : ''}${src.z.toFixed(1)}m`, pos.x, nodeY - radius - 17);
-      }
+    // Level ring around the head
+    if (maxLevel > 0.02) {
+      const s = cam.project(head.x, head.y, 0);
+      const rr = 0.55 * s.k + maxLevel * 0.35 * s.k;
+      ctx.strokeStyle = `rgba(${ACCENT_RGB}, ${0.18 + maxLevel * 0.35})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(s.sx, s.sy, rr, 0, Math.PI * 2); ctx.stroke();
     }
   }
+
+  // ---- speakers ----
 
   drawSpeakers() {
-    const config = this.audioEngine.speakerConfig || {};
     const mode = this.audioEngine.outputMode || 'hrtf';
-
-    if (mode === 'hrtf') {
-      const cp = this.audioToCanvasCoords(0, 0);
-      this.ctx.font = '22px sans-serif';
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText('🎧', cp.x, cp.y);
-      return;
-    }
-
+    if (mode === 'hrtf') return;
     const positions = this.audioEngine.speakerPositions;
     if (!positions || positions.length === 0) return;
-
+    const ctx = this.ctx;
+    const editing = this.editLayer === 'speakers';
     positions.forEach((sp, i) => {
-      const pos = this.audioToCanvasCoords(sp.x, sp.y);
-      const isEditMode = this.editLayer === 'speakers';
-      const isDragging = this._draggedSpeakerIdx === i;
-
-      this.ctx.fillStyle = isDragging ? 'rgba(242, 111, 59, 0.30)' : 'rgba(242, 111, 59, 0.12)';
-      this.ctx.strokeStyle = isEditMode ? '#ff8b59' : '#f26f3b';
-      this.ctx.lineWidth = isEditMode ? 2 : 1.5;
-      this.ctx.beginPath();
-      this.ctx.roundRect(pos.x - 12, pos.y - 9, 24, 18, 5);
-      this.ctx.fill();
-      this.ctx.stroke();
-
-      this.ctx.fillStyle = isEditMode ? '#ff8b59' : '#f26f3b';
-      this.ctx.font = '9px -apple-system, sans-serif';
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText(sp.label, pos.x, pos.y + 4);
-
-      if (sp.angle !== undefined) {
-        this.ctx.strokeStyle = 'rgba(242, 111, 59, 0.15)';
-        this.ctx.setLineDash([2, 3]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(pos.x, pos.y);
-        const rad = sp.angle * Math.PI / 180;
-        this.ctx.lineTo(pos.x + Math.sin(rad) * 18, pos.y - Math.cos(rad) * 18);
-        this.ctx.stroke();
-        this.ctx.setLineDash([]);
-      }
+      const p = this.project(sp.x, sp.y, sp.z || 0);
+      const dragging = this._draggedSpeakerIdx === i;
+      ctx.fillStyle = dragging ? `rgba(${ACCENT_RGB}, 0.3)` : `rgba(${ACCENT_RGB}, 0.1)`;
+      ctx.strokeStyle = editing ? '#ff8b59' : ACCENT;
+      ctx.lineWidth = editing ? 2 : 1.2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(p.sx - 13, p.sy - 9, 26, 18, 4); else ctx.rect(p.sx - 13, p.sy - 9, 26, 18);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = ACCENT;
+      ctx.font = `9px ${this._mono()}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sp.label || `S${i + 1}`, p.sx, p.sy);
     });
-
-    for (const [id, src] of this.audioEngine.sources.entries()) {
-      if (!src.isPlaying) continue;
-      const sp = this.audioToCanvasCoords(src.x, src.y);
-      const color = this.themeColors[src.type] || this.themeColors.custom;
-
-      let nearest = null, nearestDist = Infinity;
-      positions.forEach(p => {
-        const rp = this.audioToCanvasCoords(p.x, p.y);
-        const d = Math.hypot(sp.x - rp.x, sp.y - rp.y);
-        if (d < nearestDist) { nearestDist = d; nearest = rp; }
-      });
-
-      if (nearest) {
-        this.ctx.strokeStyle = color;
-        this.ctx.globalAlpha = 0.12;
-        this.ctx.lineWidth = 0.8;
-        this.ctx.setLineDash([3, 5]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(sp.x, sp.y);
-        this.ctx.lineTo(nearest.x, nearest.y);
-        this.ctx.stroke();
-        this.ctx.setLineDash([]);
-        this.ctx.globalAlpha = 1;
-      }
-    }
   }
 
-  /**
-   * Draw the keyframe movement path for the currently selected node.
-   * Renders a dashed polyline through each keyframe position plus a dot
-   * per keyframe, using the node's theme colour at reduced opacity so it
-   * sits subtly behind the emitter node without cluttering the view.
-   */
-  _drawKeyframePath() {
-    // Guard: needs timeline, a selection, and at least 2 keyframes
-    if (!this.timeline) return;
+  // ---- paths ----
+
+  _drawAutomationPath() {
     if (!this.selectedNodeId) return;
-
-    const kfs = this.timeline.keyframes && this.timeline.keyframes.get
-      ? this.timeline.keyframes.get(this.selectedNodeId)
-      : null;
-    if (!kfs || kfs.length < 2) return;
-
-    // Determine the colour from the selected source's type
-    const src = this.audioEngine.sources && this.audioEngine.sources.get
-      ? this.audioEngine.sources.get(this.selectedNodeId)
-      : null;
-    const type = src ? src.type : null;
-    const color = (type && this.themeColors[type]) ? this.themeColors[type] : '#ffffff';
-
+    const auto = this.automations.get(this.selectedNodeId);
+    const src = this.audioEngine.sources.get(this.selectedNodeId);
+    if (!auto || !src) return;
     const ctx = this.ctx;
+    const color = this.colorFor(src.type);
     ctx.save();
-
-    // --- Dashed polyline ---
-    ctx.beginPath();
-    ctx.setLineDash([5, 6]);
-    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 5]);
     ctx.strokeStyle = this._withAlpha(color, 0.35);
-
-    for (let i = 0; i < kfs.length; i++) {
-      const kf = kfs[i];
-      const pos = this.audioToCanvasCoords(kf.x, kf.y);
-      // Apply the same z-based vertical offset used when drawing nodes
-      const screenY = pos.y - (kf.z || 0) * 0.8;
-
-      if (i === 0) {
-        ctx.moveTo(pos.x, screenY);
-      } else {
-        ctx.lineTo(pos.x, screenY);
-      }
+    ctx.lineWidth = 1;
+    if (auto.type === 'orbit') {
+      this._strokeWorldPoly(this._ringPoints(auto.radius, src.z || 0), true);
+    } else if (auto.type === 'pingpong') {
+      this._strokeWorldPoly([[-auto.radius, src.y, src.z || 0], [auto.radius, src.y, src.z || 0]]);
+    } else if (auto.type === 'breathe') {
+      const r = Math.hypot(auto.baseX, auto.baseY);
+      this._strokeWorldPoly(this._ringPoints(r * 0.7, src.z || 0), true);
+      this._strokeWorldPoly(this._ringPoints(r * 1.3, src.z || 0), true);
+    } else if (auto.type === 'drift') {
+      this._strokeWorldPoly(this._ringPoints(auto.radius, src.z || 0), true);
     }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // --- Dots at each keyframe position ---
-    for (let i = 0; i < kfs.length; i++) {
-      const kf = kfs[i];
-      const pos = this.audioToCanvasCoords(kf.x, kf.y);
-      const screenY = pos.y - (kf.z || 0) * 0.8;
-
-      const isFirst = i === 0;
-      const dotRadius = isFirst ? 4.5 : 3;
-      const dotAlpha = isFirst ? 0.7 : 0.55;
-
-      ctx.beginPath();
-      ctx.arc(pos.x, screenY, dotRadius, 0, Math.PI * 2);
-      ctx.fillStyle = this._withAlpha(color, dotAlpha);
-      ctx.fill();
-
-      // Thin border ring for contrast
-      ctx.strokeStyle = this._withAlpha(color, dotAlpha * 0.5);
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
-    }
-
     ctx.restore();
   }
+
+  _drawKeyframePath() {
+    if (!this.timeline || !this.selectedNodeId) return;
+    const kfs = this.timeline.keyframes && this.timeline.keyframes.get ? this.timeline.keyframes.get(this.selectedNodeId) : null;
+    if (!kfs || kfs.length < 2) return;
+    const src = this.audioEngine.sources && this.audioEngine.sources.get ? this.audioEngine.sources.get(this.selectedNodeId) : null;
+    if (src && src.spatial === false) return;
+    const color = src ? this.colorFor(src.type) : '#ffffff';
+    const ctx = this.ctx;
+    ctx.save();
+    this._syncCamera();
+    ctx.setLineDash([5, 6]);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = this._withAlpha(color, 0.45);
+    this._strokeWorldPoly(kfs.map(k => [k.x, k.y, k.z || 0]));
+    ctx.setLineDash([]);
+    ctx.font = `9px ${this._mono()}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    kfs.forEach((k, i) => {
+      const s = this.camera.project(k.x, k.y, k.z || 0);
+      const d = i === 0 ? 5 : 4;
+      ctx.fillStyle = this._withAlpha(color, i === 0 ? 0.85 : 0.6);
+      ctx.beginPath();
+      ctx.moveTo(s.sx, s.sy - d); ctx.lineTo(s.sx + d, s.sy); ctx.lineTo(s.sx, s.sy + d); ctx.lineTo(s.sx - d, s.sy);
+      ctx.closePath();
+      ctx.fill();
+      if (ctx.fillText) {
+        ctx.fillStyle = 'rgba(255, 246, 236, 0.45)';
+        ctx.fillText(formatTime(k.time), s.sx + 7, s.sy - 7);
+      }
+    });
+    ctx.restore();
+  }
+
+  // ---- emitters ----
+
+  drawEmitters() {
+    const ctx = this.ctx;
+    const cam = this.camera;
+    const now = Date.now();
+    const timing = this.timeline && this.timeline.sourceTimings;
+    const playhead = this.timeline ? this.timeline.playheadTime : 0;
+
+    for (const [id, src] of this._depthSortedSources()) {
+      const wp = this._sourceWorldPos(src);
+      const p = cam.project(wp.x, wp.y, wp.z);
+      const g = cam.project(wp.x, wp.y, 0);
+      const color = this.colorFor(src.type);
+      const def = getSound(src.type);
+      const isSelected = this.selectedNodeId === id;
+      const isHovered = this.hoveredNodeId === id;
+      const headLocked = src.spatial === false;
+      const r = this._nodeRadius(src, p.k);
+      const fog = this._fog(p.depth);
+      const level = this._levels.get(id) || 0;
+
+      let inactive = false;
+      if (timing && timing.get && timing.get(id)) {
+        const t = timing.get(id);
+        inactive = playhead < t.startTime || playhead > t.startTime + t.duration;
+      }
+      const baseAlpha = (inactive ? 0.4 : 1) * fog;
+
+      // Ground shadow + stalk
+      if (!headLocked) {
+        const zAbs = Math.abs(wp.z);
+        if (this.persp > 0.05 || zAbs > 0.05) {
+          ctx.fillStyle = `rgba(0, 0, 0, ${0.35 * baseAlpha})`;
+          ctx.beginPath();
+          if (ctx.ellipse) ctx.ellipse(g.sx, g.sy, r * 0.9, r * 0.9 * (0.25 + 0.75 * (1 - this.persp * 0.6)), 0, 0, Math.PI * 2);
+          else ctx.arc(g.sx, g.sy, r * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (this.persp > 0.05 && zAbs > 0.05) {
+          ctx.strokeStyle = this._withAlpha(color, 0.4 * baseAlpha);
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 3]);
+          ctx.beginPath(); ctx.moveTo(g.sx, g.sy); ctx.lineTo(p.sx, p.sy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.strokeStyle = this._withAlpha(color, 0.6 * baseAlpha);
+          ctx.beginPath(); ctx.moveTo(g.sx - 4, g.sy); ctx.lineTo(g.sx + 4, g.sy); ctx.moveTo(g.sx, g.sy - 3); ctx.lineTo(g.sx, g.sy + 3); ctx.stroke();
+        }
+      }
+
+      // Ripples
+      const rips = this.ripples.get(id) || [];
+      for (const rp of rips) {
+        ctx.strokeStyle = this._withAlpha(color, rp.alpha * 0.6 * baseAlpha);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, r + rp.radius, 0, Math.PI * 2); ctx.stroke();
+      }
+
+      // Level halo
+      if (level > 0.02 && ctx.createRadialGradient) {
+        const hr = r * (1.6 + level * 1.2);
+        const grad = ctx.createRadialGradient(p.sx, p.sy, r * 0.8, p.sx, p.sy, hr);
+        grad.addColorStop(0, this._withAlpha(color, 0.28 * level * baseAlpha));
+        grad.addColorStop(1, this._withAlpha(color, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, hr, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Selection ring + brackets
+      if (isSelected) {
+        const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+        ctx.strokeStyle = `rgba(${ACCENT_RGB}, ${0.35 + pulse * 0.3})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, r + 7, 0, Math.PI * 2); ctx.stroke();
+        const b = r + 12, l = 6;
+        ctx.strokeStyle = `rgba(${ACCENT_RGB}, 0.9)`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(p.sx - b, p.sy - b + l); ctx.lineTo(p.sx - b, p.sy - b); ctx.lineTo(p.sx - b + l, p.sy - b);
+        ctx.moveTo(p.sx + b - l, p.sy - b); ctx.lineTo(p.sx + b, p.sy - b); ctx.lineTo(p.sx + b, p.sy - b + l);
+        ctx.moveTo(p.sx - b, p.sy + b - l); ctx.lineTo(p.sx - b, p.sy + b); ctx.lineTo(p.sx - b + l, p.sy + b);
+        ctx.moveTo(p.sx + b - l, p.sy + b); ctx.lineTo(p.sx + b, p.sy + b); ctx.lineTo(p.sx + b, p.sy + b - l);
+        ctx.stroke();
+      }
+
+      // Node body
+      ctx.fillStyle = headLocked ? '#15161a' : '#111215';
+      ctx.strokeStyle = this._withAlpha(color, (isSelected || isHovered ? 1 : 0.8) * baseAlpha);
+      ctx.lineWidth = isSelected ? 2 : 1.4;
+      if (!src.isPlaying) ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Volume gauge
+      const vol = clamp(src.volume || 0, 0, 1);
+      if (vol > 0) {
+        ctx.strokeStyle = this._withAlpha(color, 0.95 * baseAlpha);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, r + 3.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * vol); ctx.stroke();
+      }
+
+      // Glyph
+      ctx.strokeStyle = src.isPlaying ? this._withAlpha(color, baseAlpha) : this._withAlpha(color, 0.4 * baseAlpha);
+      drawGlyph(ctx, def.glyph || 'file', p.sx, p.sy, r * 1.15, 1.5);
+
+      // Lock badge for head-locked sources
+      if (headLocked) {
+        ctx.fillStyle = '#15161a';
+        ctx.beginPath(); ctx.arc(p.sx + r * 0.75, p.sy - r * 0.75, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 246, 236, 0.7)';
+        drawGlyph(ctx, 'lock', p.sx + r * 0.75, p.sy - r * 0.75, 8, 1.4);
+      }
+
+      // Labels
+      if (this.showLabels && ctx.fillText) {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.font = `500 11px ${this._uiFont()}`;
+        ctx.fillStyle = `rgba(255, 246, 236, ${(isSelected || isHovered ? 0.9 : 0.62) * baseAlpha})`;
+        ctx.fillText(src.name || src.type, p.sx, p.sy + r + 8);
+        if (isSelected || isHovered) {
+          ctx.font = `10px ${this._mono()}`;
+          ctx.fillStyle = `rgba(255, 246, 236, ${0.45 * baseAlpha})`;
+          ctx.fillText(this._readout(src), p.sx, p.sy + r + 22);
+        }
+      }
+
+      this._hitRegions.push({ id, sx: p.sx, sy: p.sy, r });
+    }
+  }
+
+  _readout(src) {
+    if (src.spatial === false) {
+      const beat = src.params && src.params.beat !== undefined ? src.params.beat : src._bwFreq;
+      return beat !== undefined ? `head-locked · ${Number(beat).toFixed(1)} Hz` : 'head-locked';
+    }
+    const dist = Math.hypot(src.x, src.y, src.z || 0);
+    let s = `${dist.toFixed(1)} m`;
+    if (Math.abs(src.z || 0) > 0.05) s += ` · ${src.z > 0 ? '+' : ''}${src.z.toFixed(1)} m`;
+    if (src.params && src.params.beat !== undefined) s += ` · ${Number(src.params.beat).toFixed(1)} Hz`;
+    else if (src.params && src.params.freq !== undefined) s += ` · ${Number(src.params.freq).toFixed(0)} Hz`;
+    return s;
+  }
+
+  // ---- HUD (screen space) ----
+
+  _drawHUD() {
+    const ctx = this.ctx;
+    if (!ctx.fillText) return;
+    const pad = 16;
+    const y = this.h - 22;
+    ctx.font = `10px ${this._mono()}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 246, 236, 0.38)';
+    const parts = [`ZOOM ${Math.round(this.camZoom * 100)}%`];
+    if (this.viewMode === '3d') parts.push(`YAW ${fmtDeg(this.camYaw)}`, `PITCH ${fmtDeg(this.camPitch)}`);
+    ctx.fillText(parts.join('   '), pad, y);
+
+    // Scale bar (2 m) bottom-right
+    const barW = 2 * this.unitScale;
+    const bx = this.w - pad - barW;
+    ctx.strokeStyle = 'rgba(255, 246, 236, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx, y); ctx.lineTo(bx + barW, y);
+    ctx.moveTo(bx, y - 4); ctx.lineTo(bx, y + 4);
+    ctx.moveTo(bx + barW, y - 4); ctx.lineTo(bx + barW, y + 4);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText('2 m', bx - 8, y);
+
+    // Axis gizmo (3D)
+    if (this.viewMode === '3d' && this.persp > 0.1) {
+      const ox = pad + 22, oy = this.h - 62;
+      const len = 18;
+      const axes = [['X', 1, 0, 0, 'rgba(255, 110, 110, 0.8)'], ['Y', 0, 1, 0, 'rgba(120, 220, 140, 0.8)'], ['Z', 0, 0, 1, 'rgba(120, 170, 255, 0.8)']];
+      ctx.textAlign = 'center';
+      for (const [name, x, yv, z, col] of axes) {
+        const c = this.camera.toCamera(x, yv, z);
+        const ex = ox + c.right * len, ey = oy - c.up * len;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.fillText(name, ox + c.right * (len + 9), oy - c.up * (len + 9));
+      }
+      ctx.fillStyle = 'rgba(255, 246, 236, 0.6)';
+      ctx.beginPath(); ctx.arc(ox, oy, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function fmtDeg(v) {
+  const d = Math.round(((v % 360) + 360) % 360);
+  return `${String(d).padStart(3, '0')}°`;
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }

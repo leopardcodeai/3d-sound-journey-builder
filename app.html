@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sound Journey" />
+    <meta name="theme-color" content="#0b0a0a" />
+    <meta name="description" content="Place sounds around your head, move them over time, and layer in frequency tools. Runs entirely in the browser." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <title>Sound Journey Builder</title>
+  </head>
+  <body class="pre-start">
+    <div class="app-backdrop" aria-hidden="true">
+      <div class="app-backdrop-texture"></div>
+      <div class="app-backdrop-grain"></div>
+    </div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <a class="brand" href="/" title="Sound Journey Builder">
+        <span class="brand-mark" data-icon="logo" data-size="18"></span>
+        <span class="brand-text">
+          <span class="brand-name" data-i18n="appTitle">Sound Journey Builder</span>
+          <span class="brand-sub" data-i18n="appSubtitle">Spatial audio studio</span>
+        </span>
+      </a>
+
+      <nav class="viewswitch" role="tablist" aria-label="View">
+        <button class="viewswitch-btn is-on" data-view="field" role="tab" aria-selected="true">
+          <span data-icon="map" data-size="14"></span><span data-i18n="mapView">Field</span>
+        </button>
+        <button class="viewswitch-btn" data-view="focus" role="tab" aria-selected="false">
+          <span data-icon="focus" data-size="14"></span><span data-i18n="focusView">Focus</span>
+        </button>
+      </nav>
+
+      <div class="topbar-right">
+        <div class="meter" id="master-meter" aria-hidden="true"><i class="meter-l"></i><i class="meter-r"></i></div>
+        <label class="master">
+          <span class="master-label" data-i18n="master">Master</span>
+          <input type="range" id="master-volume" min="0" max="1" step="0.01" value="0.8" />
+          <output class="master-value mono" id="master-volume-val">80%</output>
+        </label>
+        <button class="icon-btn" id="mute-btn" data-i18n-title="mute"><span data-icon="volume" data-size="15"></span></button>
+        <button class="icon-btn" id="undo-btn" data-i18n-title="undo"><span data-icon="undo" data-size="15"></span></button>
+        <button class="icon-btn" id="redo-btn" data-i18n-title="redo"><span data-icon="redo" data-size="15"></span></button>
+        <button class="icon-btn" id="settings-btn" data-i18n-title="settings"><span data-icon="settings" data-size="15"></span></button>
+        <span class="status" id="audio-status"><i class="status-dot"></i><span class="status-text" data-i18n="audioInactive">Audio inactive</span></span>
+      </div>
+    </header>
+
+    <!-- Field view -->
+    <main class="view view-field is-visible" id="view-field">
+      <canvas id="field-canvas" width="800" height="600" aria-label="Sound field"></canvas>
+      <div class="field-hint" id="field-hint" data-i18n="dragHint"></div>
+      <div class="z-readout mono" id="z-indicator" hidden></div>
+
+      <div class="field-tools">
+        <button class="icon-btn" id="view-2d-btn" title="2D">2D</button>
+        <button class="icon-btn" id="view-3d-btn" title="3D">3D</button>
+        <span class="tool-sep"></span>
+        <button class="icon-btn" id="reset-view-btn" data-i18n-title="reset"><span data-icon="home" data-size="15"></span></button>
+        <button class="icon-btn" id="north-btn" title="North"><span data-icon="compass" data-size="15"></span></button>
+        <span class="tool-sep"></span>
+        <button class="icon-btn" id="labels-btn" title="Labels"><span data-icon="info" data-size="15"></span></button>
+        <button class="icon-btn" id="grid-btn" title="Grid"><span data-icon="grid" data-size="15"></span></button>
+      </div>
+
+      <aside class="panel panel-left" id="panel-library"></aside>
+      <aside class="panel panel-right" id="panel-inspector"></aside>
+
+      <section class="dock" id="timeline-dock"></section>
+      <button class="dock-tab" id="timeline-toggle">
+        <span data-icon="clock" data-size="13"></span><span data-i18n="timeline">Timeline</span>
+      </button>
+
+      <nav class="tabbar" aria-label="Panels">
+        <button class="tabbar-btn" data-panel="library"><span data-icon="layers" data-size="18"></span><span data-i18n="library">Library</span></button>
+        <button class="tabbar-btn is-on" data-panel="field"><span data-icon="map" data-size="18"></span><span data-i18n="mapView">Field</span></button>
+        <button class="tabbar-btn" data-panel="inspector"><span data-icon="settings" data-size="18"></span><span data-i18n="inspector">Inspector</span></button>
+        <button class="tabbar-btn" data-panel="timeline"><span data-icon="clock" data-size="18"></span><span data-i18n="timeline">Timeline</span></button>
+      </nav>
+    </main>
+
+    <!-- Focus view -->
+    <main class="view view-focus" id="view-focus" hidden></main>
+
+    <!-- Settings drawer -->
+    <aside class="drawer" id="settings-drawer" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title" data-i18n="settings">Settings</h2>
+        <button class="icon-btn" id="settings-close" data-i18n-title="close"><span data-icon="close" data-size="14"></span></button>
+      </div>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="output">Output</h3>
+        <p class="note" data-i18n="outputHelp"></p>
+        <select class="input" id="speaker-config">
+          <option value="stereo-headphones" data-i18n="stereoHeadphones">Headphones (3D HRTF)</option>
+          <option value="stereo-speakers" data-i18n="stereoSpeakers">Stereo speakers</option>
+          <option value="surround-5.1" data-i18n="surround51">5.1 surround</option>
+          <option value="custom" data-i18n="customSpeakers">Custom speakers</option>
+        </select>
+        <div id="custom-speakers" hidden>
+          <div class="row-2">
+            <button class="btn btn-ghost" id="add-speaker-btn"><span data-icon="plus" data-size="13"></span><span data-i18n="addSpeaker">Add speaker</span></button>
+            <button class="btn btn-ghost" id="edit-speakers-btn"><span data-icon="move" data-size="13"></span><span data-i18n="editSpeakers">Move speakers</span></button>
+          </div>
+          <div class="speaker-list" id="speaker-list"></div>
+        </div>
+        <label class="ctl">
+          <span class="ctl-label" data-i18n="reverb">Room</span>
+          <span class="ctl-row"><input type="range" id="reverb-level" min="0" max="1" step="0.01" value="0.3" /><output class="ctl-value mono">30%</output></span>
+        </label>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="listener">Listener</h3>
+        <div class="seg" id="posture-seg">
+          <button class="seg-btn is-on" data-posture="standing"><span data-icon="person" data-size="15"></span><span data-i18n="standing">Standing</span></button>
+          <button class="seg-btn" data-posture="lying-back"><span data-icon="bed" data-size="15"></span><span data-i18n="lyingBack">Lying on back</span></button>
+          <button class="seg-btn" data-posture="lying-side"><span data-icon="side" data-size="15"></span><span data-i18n="lyingSide">Lying on side</span></button>
+        </div>
+        <label class="ctl">
+          <span class="ctl-label" data-i18n="headTilt">Head tilt</span>
+          <span class="ctl-row"><input type="range" id="head-tilt" min="-90" max="90" step="1" value="0" /><output class="ctl-value mono">0°</output></span>
+        </label>
+        <label class="ctl">
+          <span class="ctl-label" data-i18n="shoulderReflection">Shoulder reflection</span>
+          <span class="ctl-row"><input type="range" id="shoulder-strength" min="0" max="1" step="0.05" value="0.5" /><output class="ctl-value mono">50%</output></span>
+        </label>
+        <label class="ctl">
+          <span class="ctl-label" data-i18n="earFilter">Ear filter</span>
+          <span class="ctl-row"><input type="range" id="pinna-strength" min="0" max="1" step="0.05" value="0.5" /><output class="ctl-value mono">50%</output></span>
+        </label>
+        <button class="btn btn-ghost" id="head-tracker-btn"><span data-icon="headphones" data-size="14"></span><span data-i18n="enableHeadTracking">Enable head tracking</span></button>
+        <p class="note" id="head-tracker-status"></p>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="journeys">Journeys</h3>
+        <div class="journey-list" id="journey-list"></div>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="scenes">Saved scenes</h3>
+        <div class="row-2">
+          <button class="btn btn-ghost" id="save-scene-btn"><span data-icon="save" data-size="13"></span><span data-i18n="save">Save</span></button>
+          <button class="btn btn-ghost" id="share-scene-btn"><span data-icon="share" data-size="13"></span><span data-i18n="share">Share</span></button>
+        </div>
+        <div class="scene-list" id="scene-list"></div>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="timer">Timer</h3>
+        <div class="chips" id="timer-chips">
+          <button class="chip" data-minutes="15">15</button>
+          <button class="chip" data-minutes="30">30</button>
+          <button class="chip" data-minutes="60">60</button>
+          <button class="chip" data-minutes="120">120</button>
+        </div>
+        <div class="timer-readout mono" id="timer-display">--:--</div>
+        <button class="btn btn-ghost" id="timer-cancel" hidden data-i18n="cancelTimer">Cancel timer</button>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="language">Language</h3>
+        <select class="input" id="lang-select">
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+        </select>
+        <div class="row-2" style="margin-top:12px">
+          <button class="btn btn-ghost" id="new-session-btn"><span data-icon="plus" data-size="13"></span><span data-i18n="newSession">New session</span></button>
+          <button class="btn btn-danger" id="clear-all-btn"><span data-icon="trash" data-size="13"></span><span data-i18n="clearAll">Clear all</span></button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Welcome -->
+    <div class="overlay" id="welcome">
+      <div class="modal">
+        <span class="modal-mark" data-icon="logo" data-size="30"></span>
+        <h1 data-i18n="welcome">Sound Journey Builder</h1>
+        <p data-i18n="welcomeDesc"></p>
+        <p class="modal-hint"><span data-icon="headphones" data-size="14"></span><span data-i18n="headphonesRecommended"></span></p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="start-journey" data-i18n="startJourney">Start a journey</button>
+          <button class="btn btn-ghost" id="start-focus" data-i18n="startFocus">Frequencies only</button>
+          <button class="btn btn-ghost" id="start-empty" data-i18n="startEmpty">Start empty</button>
+        </div>
+        <p class="modal-foot">Open source. <a href="https://github.com/leopardcodeai/3d-sound-journey-builder" target="_blank" rel="noreferrer">Source on GitHub</a> · built by <a href="https://leopardcode.ai" target="_blank" rel="noreferrer">LeopardCode.AI</a></p>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

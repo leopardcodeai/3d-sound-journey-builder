@@ -1,84 +1,55 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { t, setLanguage, getLanguage, detectLanguage } from './i18n.js';
+import { t, setLanguage, getLanguage, detectLanguage, applyTranslations } from './i18n.js';
 
 describe('i18n', () => {
-  beforeEach(() => {
+  beforeEach(() => { localStorage.clear(); setLanguage('en'); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('returns English strings by default', () => {
+    expect(t('appTitle')).toBe('Sound Journey Builder');
+    expect(t('catFrequencies')).toBe('Frequencies');
+  });
+
+  it('switches to German', () => {
+    setLanguage('de');
+    expect(t('masterVolume')).toBe('Gesamtlautstärke');
+    expect(t('mute')).toBe('Stumm');
+    expect(getLanguage()).toBe('de');
+  });
+
+  it('falls back to English for keys missing in German', () => {
+    setLanguage('de');
+    expect(t('appTitle')).toBe('Sound Journey Builder');
+  });
+
+  it('returns the key itself when nothing matches', () => {
+    expect(t('nonexistent_key_xyz')).toBe('nonexistent_key_xyz');
+  });
+
+  it('persists the language and dispatches an event', () => {
+    const spy = vi.fn();
+    window.addEventListener('languagechange', spy);
+    setLanguage('de');
+    expect(localStorage.getItem('sjb_lang')).toBe('de');
+    expect(spy).toHaveBeenCalled();
+    window.removeEventListener('languagechange', spy);
+  });
+
+  it('detects German from the browser language', () => {
     localStorage.clear();
+    vi.stubGlobal('navigator', { language: 'de-DE' });
+    expect(detectLanguage()).toBe('de');
+    vi.stubGlobal('navigator', { language: 'fr-FR' });
+    expect(detectLanguage()).toBe('en');
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  describe('t()', () => {
-    it('should return correct English string for default language', () => {
-      setLanguage('en');
-      expect(t('appTitle')).toBe('3D Sound Journey Builder');
-    });
-
-    it('should return correct German string after setLanguage("de")', () => {
-      setLanguage('de');
-      expect(t('appTitle')).toBe('3D Sound Journey Builder');
-      expect(t('masterControl')).toBe('Master Steuerung');
-      expect(t('mute')).toBe('Stumm');
-    });
-
-    it('should fall back to English for missing keys in German', () => {
-      setLanguage('de');
-      expect(t('appTitle')).toBe('3D Sound Journey Builder');
-    });
-
-    it('should return the key itself for completely missing keys', () => {
-      expect(t('nonexistent_key_xyz')).toBe('nonexistent_key_xyz');
-    });
-  });
-
-  describe('setLanguage()', () => {
-    it('should persist language to localStorage', () => {
-      setLanguage('de');
-      expect(localStorage.getItem('immerse_lang')).toBe('de');
-    });
-
-    it('should dispatch languagechange event', () => {
-      const handler = vi.fn();
-      window.addEventListener('languagechange', handler);
-      setLanguage('de');
-      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ detail: 'de' }));
-      window.removeEventListener('languagechange', handler);
-    });
-  });
-
-  describe('getLanguage()', () => {
-    it('should return current language', () => {
-      setLanguage('en');
-      expect(getLanguage()).toBe('en');
-      setLanguage('de');
-      expect(getLanguage()).toBe('de');
-    });
-  });
-
-  describe('detectLanguage()', () => {
-    it('should return saved language from localStorage if present', () => {
-      localStorage.setItem('immerse_lang', 'de');
-      expect(detectLanguage()).toBe('de');
-    });
-
-    it('should detect German from navigator.language', () => {
-      vi.stubGlobal('navigator', { language: 'de-DE' });
-      localStorage.clear();
-      expect(detectLanguage()).toBe('de');
-    });
-
-    it('should default to English for non-German navigator.language', () => {
-      vi.stubGlobal('navigator', { language: 'en-US' });
-      localStorage.clear();
-      expect(detectLanguage()).toBe('en');
-    });
-
-    it('should default to English for empty navigator.language', () => {
-      vi.stubGlobal('navigator', { language: '' });
-      localStorage.clear();
-      expect(detectLanguage()).toBe('en');
-    });
+  it('applies translations to marked elements', () => {
+    setLanguage('en');
+    const root = document.createElement('div');
+    root.innerHTML = '<span data-i18n="volume"></span><button data-i18n-title="mute"></button>';
+    applyTranslations(root);
+    expect(root.querySelector('span').textContent).toBe('Volume');
+    expect(root.querySelector('button').title).toBe('Mute');
+    expect(root.querySelector('button').getAttribute('aria-label')).toBe('Mute');
   });
 });

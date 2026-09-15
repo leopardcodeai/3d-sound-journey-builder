@@ -1,78 +1,94 @@
-export function initKeyboardShortcuts({ canvasGrid, audioEngine, controlPanel, undoManager }) {
-  function showToast(message) {
-    let toast = document.getElementById('kb-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'kb-toast';
-      toast.className = 'kb-toast';
-      document.body.appendChild(toast);
-    }
-    toast.textContent = message;
-    toast.classList.add('visible');
-    clearTimeout(toast._timeout);
-    toast._timeout = setTimeout(() => { toast.classList.remove('visible'); }, 1500);
+/**
+ * KeyboardShortcuts
+ * Global keys for the field view. Ignored while a text field has focus.
+ */
+import { t } from '../i18n.js';
+
+export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, timeline, inspector, onToggleView, onToast }) {
+  const toast = (msg) => { if (onToast) onToast(msg); };
+
+  function isTyping() {
+    const el = document.activeElement;
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
   }
 
-  function isInputFocused() {
-    const el = document.activeElement;
-    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  function refresh() {
+    if (timeline) timeline._render();
+    if (inspector) inspector.show(canvasGrid.selectedNodeId ? audioEngine.sources.get(canvasGrid.selectedNodeId) : null);
   }
 
   document.addEventListener('keydown', (e) => {
-    if (isInputFocused()) return;
-
+    if (isTyping()) return;
     const cmd = e.metaKey || e.ctrlKey;
 
-    if (cmd && e.key === 'z' && !e.shiftKey) {
+    if (cmd && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
-      if (undoManager?.canUndo) { undoManager.undo(); showToast('↩ Undo'); }
+      if (undoManager && undoManager.canUndo) { undoManager.undo(); refresh(); toast(t('undo')); }
       return;
     }
-    if (cmd && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    if (cmd && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
       e.preventDefault();
-      if (undoManager?.canRedo) { undoManager.redo(); showToast('↪ Redo'); }
+      if (undoManager && undoManager.canRedo) { undoManager.redo(); refresh(); toast(t('redo')); }
       return;
     }
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault();
-      const id = canvasGrid?.selectedNodeId;
-      if (id) {
-        audioEngine?.removeSource(id);
-        canvasGrid?.automations.delete(id);
+
+    switch (e.key) {
+      case 'Delete':
+      case 'Backspace': {
+        e.preventDefault();
+        const id = canvasGrid.selectedNodeId;
+        if (!id) return;
+        audioEngine.removeSource(id);
+        canvasGrid.automations.delete(id);
         canvasGrid.selectedNodeId = null;
-        controlPanel?.showSelectedDetails(null);
-        showToast('🗑️ Node deleted');
+        refresh();
+        toast(t('removeSound'));
+        return;
       }
-      return;
-    }
-    if (e.key === ' ') {
-      e.preventDefault();
-      const id = canvasGrid?.selectedNodeId;
-      if (id) {
-        const playing = audioEngine?.toggleSource(id);
-        showToast(playing ? '▶ Playing' : '⏸ Paused');
+      case ' ': {
+        e.preventDefault();
+        if (timeline && timeline.visible) { timeline.togglePlay(); toast(timeline.isPlaying ? t('play') : t('pause')); return; }
+        const id = canvasGrid.selectedNodeId;
+        if (id) toast(audioEngine.toggleSource(id) ? t('play') : t('pause'));
+        return;
       }
-      return;
+      case 'Escape':
+        canvasGrid.selectedNodeId = null;
+        if (inspector) inspector.show(null);
+        document.querySelectorAll('.drawer.is-open').forEach(d => { d.hidden = true; d.classList.remove('is-open'); });
+        return;
+      case 'Tab':
+        if (onToggleView) { e.preventDefault(); onToggleView(); }
+        return;
+      case '2': canvasGrid.setViewMode('2d'); toast('2D'); return;
+      case '3': canvasGrid.setViewMode('3d'); toast('3D'); return;
+      case '0': canvasGrid.resetView(); toast(t('reset')); return;
+      case '+': case '=': canvasGrid._targetZoom = Math.min(3.2, canvasGrid._targetZoom * 1.2); return;
+      case '-': canvasGrid._targetZoom = Math.max(0.35, canvasGrid._targetZoom / 1.2); return;
+      case 'ArrowLeft': e.preventDefault(); nudge(canvasGrid, audioEngine, -0.25, 0); return;
+      case 'ArrowRight': e.preventDefault(); nudge(canvasGrid, audioEngine, 0.25, 0); return;
+      case 'ArrowUp': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, 0.25); return;
+      case 'ArrowDown': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, -0.25); return;
+      default:
+        if (e.key.toLowerCase() === 'k' && timeline && canvasGrid.selectedNodeId) {
+          timeline.addKeyframeAt(canvasGrid.selectedNodeId, timeline.playheadTime);
+          toast(t('addKeyframe'));
+        }
     }
-    if (e.key === 'Escape') {
-      canvasGrid.selectedNodeId = null;
-      controlPanel?.showSelectedDetails(null);
-      document.querySelectorAll('.flyout').forEach(f => f.classList.remove('open'));
-      document.querySelectorAll('.toolbar-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-expanded', 'false'); });
-      const dd = document.getElementById('settings-dropdown');
-      if (dd) dd.style.display = 'none';
-      showToast('✕ Cleared');
-      return;
-    }
-    if (e.key === 'ArrowLeft') { e.preventDefault(); canvasGrid._targetPanX += 40; showToast('← Pan'); return; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); canvasGrid._targetPanX -= 40; showToast('→ Pan'); return; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); canvasGrid._targetPanY += 40; showToast('↑ Pan'); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); canvasGrid._targetPanY -= 40; showToast('↓ Pan'); return; }
-    if (e.key === '=' || e.key === '+') { e.preventDefault(); canvasGrid._targetZoom = Math.min(3, canvasGrid._targetZoom * 1.2); showToast('🔍+ Zoom'); return; }
-    if (e.key === '-') { e.preventDefault(); canvasGrid._targetZoom = Math.max(0.3, canvasGrid._targetZoom / 1.2); showToast('🔍- Zoom'); return; }
-    if (e.key === '0') { e.preventDefault(); canvasGrid?.resetView(); showToast('🏠 Reset view'); return; }
-    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); canvasGrid?.flyTo(canvasGrid._targetPitch, 0, canvasGrid._targetZoom, 0, 0, 300); showToast('🧭 North'); return; }
-    if (e.key === '2') { e.preventDefault(); canvasGrid.viewMode = '2d'; canvasGrid.resetView(); showToast('2D View'); return; }
-    if (e.key === '3') { e.preventDefault(); canvasGrid.viewMode = '3d'; canvasGrid.resetView(); showToast('3D View'); return; }
   });
 }
+
+/** Arrow keys move the selected sound, or pan the camera when nothing is selected. */
+function nudge(canvasGrid, audioEngine, dx, dy) {
+  const id = canvasGrid.selectedNodeId;
+  const node = id ? audioEngine.sources.get(id) : null;
+  if (!node || node.spatial === false) {
+    canvasGrid._targetPanX -= dx * 120;
+    canvasGrid._targetPanY += dy * 120;
+    return;
+  }
+  audioEngine.updateSourcePosition(id, clamp(node.x + dx), clamp(node.y + dy), node.z);
+  if (canvasGrid.callbacks.onNodeMoved) canvasGrid.callbacks.onNodeMoved(node);
+}
+
+function clamp(v) { return Math.max(-10, Math.min(10, Math.round(v * 100) / 100)); }

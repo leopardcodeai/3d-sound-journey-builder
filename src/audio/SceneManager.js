@@ -3,6 +3,8 @@
  * (timeline keyframes + clip timings). Uses localStorage for persistence and
  * URL hash for sharing.
  */
+const STORAGE_KEY = 'spatializer_scenes';
+
 export class SceneManager {
   constructor(audioEngine, canvasGrid, timeline = null) {
     this.audioEngine = audioEngine;
@@ -18,7 +20,11 @@ export class SceneManager {
       sources.push({
         id, type: src.type, name: src.name,
         x: src.x, y: src.y, z: src.z, volume: src.volume,
-        isPlaying: src.isPlaying
+        isPlaying: src.isPlaying,
+        // Generators are rebuilt from their parameters, not from a buffer.
+        gen: src.gen || null,
+        params: src.params ? { ...src.params } : null,
+        inserts: src.inserts ? { ...src.inserts } : null,
       });
     }
     const automations = {};
@@ -54,7 +60,11 @@ export class SceneManager {
     this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
     // Recreate sources
     for (const s of scene.sources) {
-      const src = this.audioEngine.addSource(s.id, s.type, s.name, s.x, s.y, s.z, s.volume);
+      const src = this.audioEngine.addSource(s.id, s.type, s.name, s.x, s.y, s.z, s.volume, {
+        gen: s.gen || undefined,
+        params: s.params || undefined,
+        inserts: s.inserts || undefined,
+      });
       if (src && !s.isPlaying) {
         this.audioEngine.toggleSource(s.id);
       }
@@ -79,10 +89,18 @@ export class SceneManager {
     for (const [id, kfs] of this.timeline.keyframes.entries()) {
       if (this.audioEngine.sources.has(id)) keyframes[id] = kfs.map(kf => ({ ...kf }));
     }
+    const tracks = {};
+    if (this.timeline.trackState) {
+      for (const [id, state] of this.timeline.trackState.entries()) {
+        if (this.audioEngine.sources.has(id)) tracks[id] = { ...state };
+      }
+    }
     return {
       totalDuration: this.timeline.totalDuration,
       timings,
-      keyframes
+      keyframes,
+      tracks,
+      sections: (this.timeline.sections || []).map(s => ({ ...s })),
     };
   }
 
@@ -92,6 +110,7 @@ export class SceneManager {
     this.timeline.playheadTime = 0;
     this.timeline.sourceTimings.clear();
     this.timeline.keyframes.clear();
+    if (this.timeline.trackState) this.timeline.trackState.clear();
     if (data) {
       if (data.totalDuration) this.timeline.setTotalDuration(data.totalDuration);
       for (const [id, t] of Object.entries(data.timings || {})) {
@@ -100,6 +119,12 @@ export class SceneManager {
       for (const [id, kfs] of Object.entries(data.keyframes || {})) {
         this.timeline.setKeyframes(id, kfs);
       }
+      if (this.timeline.trackState) {
+        for (const [id, state] of Object.entries(data.tracks || {})) {
+          this.timeline.trackState.set(id, { ...state });
+        }
+      }
+      if (this.timeline.setSections) this.timeline.setSections(data.sections || []);
     }
     if (this.timeline.visible) this.timeline._render();
   }
@@ -147,12 +172,12 @@ export class SceneManager {
     for (const [name, scene] of this.scenes.entries()) {
       data[name] = scene;
     }
-    localStorage.setItem('spatializer_scenes', JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }
   
   loadScenes() {
     try {
-      const data = JSON.parse(localStorage.getItem('spatializer_scenes') || '{}');
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       return new Map(Object.entries(data));
     } catch(e) {
       return new Map();

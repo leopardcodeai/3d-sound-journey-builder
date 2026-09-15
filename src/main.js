@@ -1,291 +1,642 @@
+/**
+ * main
+ * Wires the app together: audio engine, the two views (field and focus), the
+ * library, the inspector, the timeline, and the settings drawer.
+ */
 import './style.css';
 import { SpatialAudioEngine } from './audio/AudioEngine.js';
 import { HeadTracker } from './audio/HeadTracker.js';
+import { SpeakerConfig, SPEAKER_PRESETS } from './audio/SpeakerConfig.js';
+import { SceneManager } from './audio/SceneManager.js';
+import { InstrumentSynth } from './audio/InstrumentSynth.js';
 import { CanvasGrid } from './ui/CanvasGrid.js';
 import { Timeline } from './ui/Timeline.js';
-import { ControlPanel } from './ui/ControlPanel.js';
-import { SceneManager } from './audio/SceneManager.js';
+import { Library } from './ui/Library.js';
+import { Inspector } from './ui/Inspector.js';
+import { FocusView } from './ui/FocusView.js';
 import { SoundscapeTimer } from './ui/Timer.js';
-import { SpeakerConfig } from './audio/SpeakerConfig.js';
-import { SOUND_URLS } from './data/SoundUrls.js';
-import { InstrumentSynth } from './audio/InstrumentSynth.js';
-import { bindEvents } from './ui/EventBindings.js';
-import { UndoManager, createMoveCommand, createAddCommand, createDeleteCommand, createVolumeCommand } from './core/UndoManager.js';
 import { initKeyboardShortcuts } from './ui/KeyboardShortcuts.js';
+import { hydrateIcons, icon } from './ui/Icons.js';
+import { watchRangeFills, syncRangeFills, setRangeFill } from './ui/sliders.js';
+import { getSound, soundName, SOUND_URLS } from './data/SoundLibrary.js';
+import { JOURNEYS, JOURNEY_ORDER, MODES } from './data/Presets.js';
+import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoManager.js';
+import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
 
-// DOM Element references
-const elements = {
-  startBtn: document.getElementById('start-btn'),
-  welcomeModal: document.getElementById('welcome-modal'),
-  audioStatus: document.getElementById('audio-status'),
-  presetList: document.getElementById('preset-list'),
-  masterVolume: document.getElementById('master-volume'),
-  masterVolumeVal: document.getElementById('master-volume-val'),
-  headerMasterVolume: document.getElementById('header-master-volume'),
-  headerMasterVolumeVal: document.getElementById('header-master-vol-val'),
-  masterMuteBtn: document.getElementById('master-mute-btn'),
-  clearAllBtn: document.getElementById('clear-all-btn'),
-  fileInput: document.getElementById('file-upload'),
-  soundscapeCanvas: document.getElementById('soundscape-canvas'),
-  panelRight: document.getElementById('panel-right'),
-  detailsEmptyState: document.getElementById('details-empty-state'),
-  selectedDetailsPanel: document.getElementById('selected-details-panel'),
-  nodeName: document.getElementById('node-name'),
-  nodeTypeLabel: document.getElementById('node-type-label'),
-  nodeVolume: document.getElementById('node-volume'),
-  nodeVolumeVal: document.getElementById('node-volume-val'),
-  nodeHeight: document.getElementById('node-height'),
-  nodeHeightVal: document.getElementById('node-height-val'),
-  nodeCoords: document.getElementById('node-coords'),
-  nodePlayToggle: document.getElementById('node-play-toggle'),
-  nodeDelete: document.getElementById('node-delete'),
-  autoOrbitBtn: document.getElementById('auto-orbit-btn'),
-  autoPingpongBtn: document.getElementById('auto-pingpong-btn'),
-  autoDriftBtn: document.getElementById('auto-drift-btn'),
-  autoBreatheBtn: document.getElementById('auto-breathe-btn'),
-  listenerPosture: document.getElementById('listener-posture'),
-  headTilt: document.getElementById('head-tilt'),
-  headTiltVal: document.getElementById('head-tilt-val'),
-  shoulderStrength: document.getElementById('shoulder-strength'),
-  shoulderStrengthVal: document.getElementById('shoulder-strength-val'),
-  pinnaStrength: document.getElementById('pinna-strength'),
-  pinnaStrengthVal: document.getElementById('pinna-strength-val'),
-  postureHeadTilt: document.getElementById('posture-head-tilt'),
-  postureHeadTiltVal: document.getElementById('posture-head-tilt-val'),
-  postureShoulderWidth: document.getElementById('posture-shoulder-width'),
-  postureShoulderWidthVal: document.getElementById('posture-shoulder-width-val'),
-  posturePinnaSize: document.getElementById('posture-pinna-size'),
-  posturePinnaSizeVal: document.getElementById('posture-pinna-size-val'),
-  postureListenerX: document.getElementById('posture-listener-x'),
-  postureListenerXVal: document.getElementById('posture-listener-x-val'),
-  postureListenerY: document.getElementById('posture-listener-y'),
-  postureListenerYVal: document.getElementById('posture-listener-y-val'),
-  nodeRampup: document.getElementById('node-rampup'),
-  nodeRampupVal: document.getElementById('node-rampup-val'),
-  nodeRampdown: document.getElementById('node-rampdown'),
-  nodeRampdownVal: document.getElementById('node-rampdown-val'),
-  nodeRepeat: document.getElementById('node-repeat'),
-  nodeRepeatVal: document.getElementById('node-repeat-val'),
-};
+const $ = (sel) => document.querySelector(sel);
 
-// 1. Instantiate the spatial audio engine
+// ---------------------------------------------------------------------------
+// Core objects
+// ---------------------------------------------------------------------------
+
 const audioEngine = new SpatialAudioEngine();
+const undoManager = new UndoManager(40);
+let inspector = null;
+let library = null;
+let focusView = null;
 
-// 1.5. Instantiate UndoManager
-const undoManager = new UndoManager(20);
-
-// 2. Define canvas interaction callbacks
-let controlPanel = null;
-
-const canvasCallbacks = {
+const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
   onNodeSelected: (node) => {
-    if (controlPanel) {
-      controlPanel.showSelectedDetails(node);
-    }
+    if (inspector) inspector.show(node);
+    if (node) openMobilePanel('inspector');
+    if (timeline && timeline.visible) timeline._render();
   },
-
-  onNodeMoved: (node) => {
-    if (controlPanel) {
-      controlPanel.updateCoordLabels(node.x, node.y);
-    }
+  onNodeMoved: (node) => { if (inspector) inspector.update(node); },
+  onNodeDragEnd: (id, ox, oy, oz, nx, ny, nz) => {
+    undoManager.execute(createMoveCommand(audioEngine, canvasGrid, id, ox, oy, oz, nx, ny, nz, timeline));
   },
+  onNodeDropped: (type, x, y) => addSound(type, { x, y }),
+  onNodeActivated: (node) => { if (node) audioEngine.toggleSource(node.id); },
+});
 
-  onNodeDragEnd: (nodeId, oldX, oldY, oldZ, newX, newY, newZ) => {
-    const tl = canvasCallbacks.getTimeline?.();
-    undoManager.execute(
-      createMoveCommand(audioEngine, canvasGrid, nodeId, oldX, oldY, oldZ, newX, newY, newZ, tl)
-    );
-  },
-
-  onNodeDropped: async (type, x, y) => {
-    if (!audioEngine.isInitialized) {
-      audioEngine.init();
-    }
-    const id = 'source_' + Date.now();
-    const name = type;
-    const volume = 0.6;
-
-    let newSource = audioEngine.addSource(id, type, name, x, y, 0, volume);
-
-    if (!newSource) {
-      const url = SOUND_URLS[type];
-      if (url) {
-        const instr = document.getElementById('canvas-instructions');
-        const originalText = instr ? instr.textContent : '';
-        if (instr) {
-          instr.classList.remove('faded');
-          instr.textContent = 'Loading sound...';
-        }
-
-        await audioEngine.preloadSound(type, url);
-
-        if (instr) {
-          instr.textContent = originalText;
-          setTimeout(() => instr.classList.add('faded'), 3000);
-        }
-
-        newSource = audioEngine.addSource(id, type, name, x, y, 0, volume);
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        newSource = audioEngine.addSource(id, type, name, x, y, 0, volume);
-      }
-    }
-
-    if (newSource) {
-      canvasGrid.selectedNodeId = id;
-      if (controlPanel) {
-        controlPanel.showSelectedDetails(newSource);
-      }
-      const sourceData = { id, type, name, x, y, z: 0, volume };
-      const tl = canvasCallbacks.getTimeline?.();
-      undoManager.execute(createAddCommand(audioEngine, canvasGrid, sourceData, tl));
-
-      // Auto-show timeline when first source is added
-      if (tl && !tl.visible) {
-        tl.show();
-        document.getElementById('timeline-toggle-btn')?.classList.add('active');
-      }
-    }
-  }
+const timeline = new Timeline($('#timeline-dock'), audioEngine, canvasGrid);
+timeline.undoManager = undoManager;
+canvasGrid.timeline = timeline;
+timeline.onSelect = (id) => {
+  canvasGrid.selectedNodeId = id;
+  if (inspector) inspector.show(audioEngine.sources.get(id));
 };
-
-// 3. Instantiate canvas grid renderer
-const canvasGrid = new CanvasGrid(elements.soundscapeCanvas, audioEngine, canvasCallbacks);
-
-// 4. Instantiate sidebar control panel
-controlPanel = new ControlPanel(elements, audioEngine, canvasGrid);
-controlPanel.undoManager = undoManager;
 
 const speakerConfig = new SpeakerConfig(audioEngine, canvasGrid);
-controlPanel.speakerConfig = speakerConfig;
 audioEngine._speakerConfig = speakerConfig;
-
-// Timeline
-const timeline = new Timeline(document.getElementById('timeline-panel'), audioEngine, canvasGrid);
-timeline.undoManager = undoManager;
-controlPanel.timeline = timeline;
-canvasGrid.timeline = timeline;
-
-// Inject timeline reference into callbacks (created after canvasCallbacks)
-canvasCallbacks.getTimeline = () => controlPanel?.timeline;
-
-// 5. Initialize Scene Manager
 const sceneManager = new SceneManager(audioEngine, canvasGrid, timeline);
 
-// Check for shared scene in URL
-sceneManager.importFromURL();
-
-// 5. Instantiate Timer
 const soundscapeTimer = new SoundscapeTimer(audioEngine, {
-  onComplete: () => {},
   onTick: (remaining) => {
-    const display = document.getElementById('timer-display');
-    if (display) {
-      const h = Math.floor(remaining / 3600);
-      const m = Math.floor((remaining % 3600) / 60);
-      const s = remaining % 60;
-      display.textContent = h > 0
-        ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-        : `${m}:${String(s).padStart(2, '0')}`;
-    }
-  }
+    const el = $('#timer-display');
+    if (!el) return;
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const s = remaining % 60;
+    el.textContent = h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+      : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  },
+  onStop: () => { $('#timer-display').textContent = '--:--'; $('#timer-cancel').hidden = true; },
 });
-controlPanel.timer = soundscapeTimer;
 
-// Head tracker for AirPods spatial audio
 const headTracker = new HeadTracker(audioEngine, {
-  onStart: () => {
-    const btn = document.getElementById('head-tracker-btn');
-    const status = document.getElementById('head-tracker-status');
-    if (btn) { btn.textContent = '🎧 Head Tracking active'; btn.classList.add('active'); }
-    if (status) status.textContent = 'Move your head — the sound follows!';
-  },
-  onStop: () => {
-    const btn = document.getElementById('head-tracker-btn');
-    const status = document.getElementById('head-tracker-status');
-    if (btn) { btn.textContent = '🎧 Enable Head Tracking'; btn.classList.remove('active'); }
-    if (status) status.textContent = 'Ready';
-    audioEngine.updateListenerPose(audioEngine.posture, audioEngine.headTilt);
-  },
-  onUpdate: () => {}
+  onStart: () => setHeadTrackerUI(true),
+  onStop: () => { setHeadTrackerUI(false); audioEngine.updateListenerPose(audioEngine.posture, audioEngine.headTilt); },
+});
+audioEngine.headTracker = headTracker;
+
+// ---------------------------------------------------------------------------
+// Panels
+// ---------------------------------------------------------------------------
+
+library = new Library($('#panel-library'), audioEngine, {
+  onAdd: (type) => addSound(type),
+  onUpload: (file) => importAudioFile(file),
 });
 
-audioEngine.headTracker = headTracker;
-controlPanel.headTracker = headTracker;
+inspector = new Inspector($('#panel-inspector'), audioEngine, canvasGrid, timeline, undoManager);
 
-// 6. Onboarding / Initialization
-async function initAudioEngine(loadDefaults = true) {
-  audioEngine.init();
+focusView = new FocusView($('#view-focus'), audioEngine, {
+  onOpenField: () => setView('field'),
+  onSourcesChanged: () => { timeline._render(); refreshPanels(); },
+});
 
-  const statusDot = elements.audioStatus.querySelector('.status-dot');
-  const statusText = elements.audioStatus.querySelector('.status-text');
-  if (statusDot) { statusDot.classList.remove('offline'); statusDot.classList.add('online'); }
-  if (statusText) { statusText.textContent = 'Audio active'; }
-
-  const instrumentSynth = new InstrumentSynth(audioEngine);
-  instrumentSynth.preloadAll('C4');
-  instrumentSynth.preloadChakraBowls();
-
-  if (loadDefaults) await loadDefaultSoundscape();
-
-  // The journey is the app: open the timeline and let it run on launch.
-  if (loadDefaults && timeline) {
-    timeline.show();
-    document.getElementById('timeline-toggle-btn')?.classList.add('active');
-    timeline.playheadTime = 0;
-    timeline._applyKeyframes();
-    timeline.play();
-  }
-
-  document.body.classList.remove('pre-start');
-  if (elements.welcomeModal) elements.welcomeModal.classList.add('hidden');
-
-  const instr = document.getElementById('canvas-instructions');
-  if (instr) {
-    setTimeout(() => instr.classList.add('faded'), 8000);
-    const fadeOnInteract = () => {
-      instr.classList.add('faded');
-      document.removeEventListener('pointerdown', fadeOnInteract);
-    };
-    document.addEventListener('pointerdown', fadeOnInteract, { once: true });
-  }
-}
+// ---------------------------------------------------------------------------
+// Adding sounds
+// ---------------------------------------------------------------------------
 
 /**
- * Creates the initial tutorial soundscape setup
+ * Add a sound to the field. Samples are preloaded on demand; generators start
+ * immediately. Head-locked sounds ignore the position.
  */
-async function loadDefaultSoundscape() {
-  const defaultTypes = ['birds', 'campfire', 'singing-bowl', 'gong'];
-  await Promise.all(
-    defaultTypes.map(type => audioEngine.preloadSound(type, SOUND_URLS[type]))
-  );
+async function addSound(type, opts = {}) {
+  if (!audioEngine.isInitialized) audioEngine.init();
+  await audioEngine.resume();
 
-  const birdId = 'source_default_birds';
-  audioEngine.addSource(birdId, 'birds', 'Birdsong', 3.0, 2.0, 1.0, 0.45);
-  canvasGrid.setAutomation(birdId, 'orbit', true, { speed: 0.0003, radius: 3.0 });
+  const def = getSound(type);
+  if (def.kind === 'sample' && !audioEngine.hasBuffer(type)) {
+    setHint(t('loadingAudio'));
+    const ok = await audioEngine.preloadSound(type, def.url || SOUND_URLS[type]);
+    setHint('');
+    if (!ok) { showToast(t('decodeError')); return null; }
+  }
 
-  const fireId = 'source_default_campfire';
-  const fireNode = audioEngine.addSource(fireId, 'campfire', 'Campfire', -2.5, 2.5, 0, 0.55);
-  canvasGrid.setAutomation(fireId, 'breathe', true, { speed: 0.0005, radius: 0.5 });
+  const id = `src_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
+  const angle = opts.x !== undefined ? null : Math.random() * Math.PI * 2;
+  const dist = 3 + Math.random() * 3;
+  const x = opts.x !== undefined ? opts.x : Math.cos(angle) * dist;
+  const y = opts.y !== undefined ? opts.y : Math.sin(angle) * dist;
+  const volume = opts.volume !== undefined ? opts.volume : 0.55;
 
-  const bowlId = 'source_default_singingbowl';
-  const bowlNode = audioEngine.addSource(bowlId, 'singing-bowl', 'Singing Bowl (Deep)', -1.5, -3.0, 2.5, 0.35);
-  canvasGrid.setAutomation(bowlId, 'drift', true, { speed: 0.001, radius: 2.0 });
+  const source = audioEngine.addSource(id, type, soundName(type), round(x), round(y), opts.z || 0, volume, { params: opts.params });
+  if (!source) return null;
 
-  const gongId = 'source_default_gong';
-  const gongNode = audioEngine.addSource(gongId, 'gong', 'Gong', -3.5, 3.5, 3.0, 0.25);
-  canvasGrid.setAutomation(gongId, 'drift', true, { speed: 0.001, radius: 2.5 });
+  canvasGrid.selectedNodeId = id;
+  inspector.show(source);
+  undoManager.execute(createAddCommand(audioEngine, canvasGrid, {
+    id, type, name: source.name, x: source.x, y: source.y, z: source.z, volume, gen: source.gen, params: { ...source.params },
+  }, timeline));
 
-  canvasGrid.selectedNodeId = fireId;
-  controlPanel.showSelectedDetails(fireNode || bowlNode || gongNode);
+  if (!timeline.visible && audioEngine.sources.size > 0) showTimeline(true);
+  timeline._render();
+  return source;
 }
 
-// Bind all UI events
-bindEvents(elements, audioEngine, canvasGrid, controlPanel, timeline, sceneManager, soundscapeTimer, headTracker, speakerConfig, initAudioEngine);
+function round(v) { return Math.round(v * 100) / 100; }
 
-initKeyboardShortcuts({ canvasGrid, audioEngine, controlPanel, undoManager });
+async function importAudioFile(file) {
+  if (!audioEngine.isInitialized) audioEngine.init();
+  setHint(t('decoding'));
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const decoded = await audioEngine.ctx.decodeAudioData(arrayBuffer);
+    const type = `custom_${Date.now().toString(36)}`;
+    const name = file.name.replace(/\.[^/.]+$/, '').slice(0, 28);
+    audioEngine.addAudioBuffer(type, decoded);
+    canvasGrid.themeColors[type] = '#ff7b7b';
+    library.addCustomSound({ type, kind: 'sample', category: 'custom', glyph: 'file', color: '#ff7b7b', spatial: true, name, desc: `${Math.round(decoded.duration)} s` });
+    setHint('');
+    await addSound(type);
+  } catch (err) {
+    console.error(err);
+    setHint('');
+    showToast(t('decodeError'));
+  }
+}
 
-// Dev-only handle for tooling (e.g. scripts/shoot.mjs); stripped from production builds.
-if (import.meta.env.DEV) {
-  window.__app = { canvasGrid, audioEngine, timeline, sceneManager, controlPanel };
+// ---------------------------------------------------------------------------
+// Journeys
+// ---------------------------------------------------------------------------
+
+async function loadJourney(id) {
+  const journey = JOURNEYS[id];
+  if (!journey) return;
+  if (!audioEngine.isInitialized) audioEngine.init();
+  await audioEngine.resume();
+
+  for (const sid of [...audioEngine.sources.keys()]) audioEngine.removeSource(sid);
+  canvasGrid.automations.clear();
+  canvasGrid.selectedNodeId = null;
+  timeline.pause();
+  timeline.playheadTime = 0;
+  timeline.keyframes.clear();
+  timeline.sourceTimings.clear();
+  timeline.trackState.clear();
+
+  audioEngine.setMasterVolume(journey.masterVolume);
+  syncMasterUI(journey.masterVolume);
+  if (journey.posture) { audioEngine.applyPosturePreset(journey.posture); syncPostureUI(journey.posture); }
+  timeline.setTotalDuration(journey.duration);
+  timeline.setSections(journey.sections || []);
+
+  setHint(t('loadingAudio'));
+  const needed = [...new Set(journey.sources.map(s => s.type))]
+    .filter(type => getSound(type).kind === 'sample' && !audioEngine.hasBuffer(type));
+  await Promise.all(needed.map(type => audioEngine.preloadSound(type, getSound(type).url)));
+  setHint('');
+
+  for (const s of journey.sources) {
+    const source = audioEngine.addSource(s.id, s.type, s.name, s.x, s.y, s.z, s.volume);
+    if (!source) continue;
+    timeline.ensureTiming(s.id);
+    const timing = timeline.sourceTimings.get(s.id);
+    timing.startTime = s.startTime;
+    timing.duration = s.duration;
+    if (s.keyframes) timeline.setKeyframes(s.id, s.keyframes);
+  }
+
+  showTimeline(true);
+  timeline.fit();
+  timeline.playheadTime = 0;
+  timeline._applyKeyframes();
+  timeline._updatePlayhead();
+  timeline.play();
+  inspector.show(null);
+  refreshPanels();
+  showToast(journey.name);
+}
+
+// ---------------------------------------------------------------------------
+// Views
+// ---------------------------------------------------------------------------
+
+let currentView = 'field';
+
+function setView(view) {
+  currentView = view;
+  const field = $('#view-field');
+  const focus = $('#view-focus');
+  field.hidden = view !== 'field';
+  focus.hidden = view !== 'focus';
+  field.classList.toggle('is-visible', view === 'field');
+  document.body.classList.toggle('view-focus-active', view === 'focus');
+  document.querySelectorAll('.viewswitch-btn').forEach(b => {
+    const on = b.dataset.view === view;
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  if (view === 'focus') focusView.show(); else focusView.hide();
+  if (view === 'field') { canvasGrid.resize(); timeline._render(); }
+}
+
+function showTimeline(show) {
+  if (show) timeline.show(); else timeline.hide();
+  $('#timeline-toggle').classList.toggle('is-on', timeline.visible);
+}
+
+function openMobilePanel(panel) {
+  if (window.innerWidth > 900) return;
+  document.body.dataset.panel = panel;
+  document.querySelectorAll('.tabbar-btn').forEach(b => b.classList.toggle('is-on', b.dataset.panel === panel));
+}
+
+/** The tab bar toggles: tapping the open panel again returns to the field. */
+function toggleMobilePanel(panel) {
+  if (panel === 'timeline') {
+    showTimeline(!timeline.visible);
+    openMobilePanel('field');
+    return;
+  }
+  openMobilePanel(document.body.dataset.panel === panel ? 'field' : panel);
+}
+
+function refreshPanels() {
+  if (library) library.refresh();
+  if (focusView && focusView.visible) { focusView.renderLayers(); focusView.renderReadout(); }
+  renderSceneList();
+}
+
+// ---------------------------------------------------------------------------
+// UI helpers
+// ---------------------------------------------------------------------------
+
+function setHint(text) {
+  const el = $('#field-hint');
+  if (!el) return;
+  if (text) { el.textContent = text; el.classList.add('is-loud'); }
+  else { el.textContent = t('dragHint'); el.classList.remove('is-loud'); }
+}
+
+let toastTimer = null;
+function showToast(message) {
+  const el = $('#toast');
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = false;
+  el.classList.add('is-visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.remove('is-visible'); setTimeout(() => { el.hidden = true; }, 250); }, 1800);
+}
+
+function syncMasterUI(value) {
+  const slider = $('#master-volume');
+  if (slider) { slider.value = value; setRangeFill(slider); }
+  const out = $('#master-volume-val');
+  if (out) out.textContent = `${Math.round(value * 100)}%`;
+}
+
+function syncPostureUI(posture) {
+  document.querySelectorAll('#posture-seg .seg-btn').forEach(b => b.classList.toggle('is-on', b.dataset.posture === posture));
+  const tilt = $('#head-tilt');
+  if (tilt) { tilt.value = audioEngine.headTilt; tilt.nextElementSibling.textContent = `${audioEngine.headTilt}°`; }
+  const sh = $('#shoulder-strength');
+  if (sh) { sh.value = audioEngine.shoulderStrength; sh.nextElementSibling.textContent = `${Math.round(audioEngine.shoulderStrength * 100)}%`; }
+  const pi = $('#pinna-strength');
+  if (pi) { pi.value = audioEngine.pinnaStrength; pi.nextElementSibling.textContent = `${Math.round(audioEngine.pinnaStrength * 100)}%`; }
+  updateSliderFills();
+}
+
+function setHeadTrackerUI(active) {
+  const btn = $('#head-tracker-btn');
+  const status = $('#head-tracker-status');
+  if (btn) {
+    btn.classList.toggle('is-on', active);
+    btn.querySelector('span:last-child').textContent = active ? t('headTrackerActive') : t('enableHeadTracking');
+  }
+  if (status) status.textContent = active ? t('headTrackerMove') : t('headTrackerReady');
+}
+
+function updateSliderFills(root) { syncRangeFills(root); }
+
+function renderSceneList() {
+  const container = $('#scene-list');
+  if (!container) return;
+  const names = sceneManager.getSceneNames();
+  if (!names.length) { container.innerHTML = `<p class="note">${t('scenes')}: 0</p>`; return; }
+  container.innerHTML = names.map(name => `
+    <div class="scene-item" data-scene="${escapeAttr(name)}">
+      <span>${escapeHtml(name)}</span>
+      <button class="icon-btn scene-del" data-scene="${escapeAttr(name)}">${icon('trash', { size: 12 })}</button>
+    </div>`).join('');
+}
+
+function renderSpeakerList() {
+  const container = $('#speaker-list');
+  if (!container) return;
+  container.innerHTML = speakerConfig.customSpeakers.map((sp, i) => `
+    <div class="scene-item">
+      <span class="mono">${escapeHtml(sp.label)} · ${sp.x.toFixed(1)}, ${sp.y.toFixed(1)}</span>
+      <button class="icon-btn speaker-del" data-index="${i}">${icon('close', { size: 12 })}</button>
+    </div>`).join('');
+}
+
+function renderJourneyList() {
+  const container = $('#journey-list');
+  if (!container) return;
+  container.innerHTML = JOURNEY_ORDER.map(id => {
+    const j = JOURNEYS[id];
+    return `<button class="journey-btn" data-journey="${id}">
+      <span class="journey-icon">${icon(j.icon, { size: 16 })}</span>
+      <span class="journey-text"><strong>${escapeHtml(j.name)}</strong><span>${escapeHtml(j.summary)}</span></span>
+      <span class="journey-len mono">${Math.round(j.duration / 60)} ${t('minutesShort')}</span>
+    </button>`;
+  }).join('');
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+// ---------------------------------------------------------------------------
+// Event wiring
+// ---------------------------------------------------------------------------
+
+function bindUI() {
+  // View switch
+  document.querySelectorAll('.viewswitch-btn').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+  // Master
+  const master = $('#master-volume');
+  master.addEventListener('input', () => {
+    const v = parseFloat(master.value);
+    audioEngine.setMasterVolume(v);
+    syncMasterUI(v);
+  });
+  $('#mute-btn').addEventListener('click', () => {
+    const muted = audioEngine.toggleMasterMute();
+    $('#mute-btn').classList.toggle('is-on', muted);
+    $('#mute-btn').innerHTML = icon(muted ? 'mute' : 'volume', { size: 15 });
+  });
+  $('#undo-btn').addEventListener('click', () => { undoManager.undo(); afterUndo(); });
+  $('#redo-btn').addEventListener('click', () => { undoManager.redo(); afterUndo(); });
+
+  // Settings drawer
+  const drawer = $('#settings-drawer');
+  $('#settings-btn').addEventListener('click', () => {
+    drawer.hidden = !drawer.hidden;
+    drawer.classList.toggle('is-open', !drawer.hidden);
+  });
+  $('#settings-close').addEventListener('click', () => { drawer.hidden = true; drawer.classList.remove('is-open'); });
+
+  // Field tools
+  $('#view-2d-btn').addEventListener('click', () => setFieldMode('2d'));
+  $('#view-3d-btn').addEventListener('click', () => setFieldMode('3d'));
+  $('#reset-view-btn').addEventListener('click', () => canvasGrid.resetView());
+  $('#north-btn').addEventListener('click', () => canvasGrid.flyTo(canvasGrid._targetPitch, 0, canvasGrid._targetZoom, 0, 0, 350));
+  $('#labels-btn').addEventListener('click', (e) => {
+    canvasGrid.showLabels = !canvasGrid.showLabels;
+    e.currentTarget.classList.toggle('is-on', canvasGrid.showLabels);
+  });
+  $('#grid-btn').addEventListener('click', (e) => {
+    canvasGrid.showGrid = !canvasGrid.showGrid;
+    e.currentTarget.classList.toggle('is-on', canvasGrid.showGrid);
+  });
+
+  // Timeline dock
+  $('#timeline-toggle').addEventListener('click', () => showTimeline(!timeline.visible));
+
+  // Mobile tab bar
+  document.querySelectorAll('.tabbar-btn').forEach(b => b.addEventListener('click', () => toggleMobilePanel(b.dataset.panel)));
+
+  // Output
+  const speakerSelect = $('#speaker-config');
+  speakerSelect.addEventListener('change', () => {
+    const key = speakerSelect.value;
+    speakerConfig.setConfig(key);
+    $('#custom-speakers').hidden = key !== 'custom';
+    showToast(SPEAKER_PRESETS[key].name);
+  });
+  $('#add-speaker-btn').addEventListener('click', () => {
+    speakerConfig.addCustomSpeaker((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0, `S${speakerConfig.customSpeakers.length + 1}`);
+    renderSpeakerList();
+  });
+  $('#edit-speakers-btn').addEventListener('click', (e) => {
+    const editing = canvasGrid.editLayer === 'speakers';
+    canvasGrid.editLayer = editing ? 'sources' : 'speakers';
+    e.currentTarget.classList.toggle('is-on', !editing);
+  });
+  $('#speaker-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.speaker-del');
+    if (!btn) return;
+    speakerConfig.removeCustomSpeaker(parseInt(btn.dataset.index, 10));
+    renderSpeakerList();
+  });
+  const reverb = $('#reverb-level');
+  reverb.addEventListener('input', () => {
+    const v = parseFloat(reverb.value);
+    audioEngine.setReverbLevel(v);
+    reverb.nextElementSibling.textContent = `${Math.round(v * 100)}%`;
+  });
+
+  // Listener
+  $('#posture-seg').addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    audioEngine.applyPosturePreset(btn.dataset.posture);
+    syncPostureUI(btn.dataset.posture);
+  });
+  bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v); return `${v}°`; });
+  bindRange('#shoulder-strength', (v) => { audioEngine.updateShoulderStrength(v); return `${Math.round(v * 100)}%`; });
+  bindRange('#pinna-strength', (v) => { audioEngine.updatePinnaStrength(v); return `${Math.round(v * 100)}%`; });
+
+  $('#head-tracker-btn').addEventListener('click', async () => {
+    if (!headTracker.isAvailable()) { showToast(t('headTrackerNotAvailable')); return; }
+    if (headTracker.active) { headTracker.stop(); return; }
+    const granted = await headTracker.requestPermission();
+    if (granted) { headTracker.start(); headTracker.calibrate(); }
+    else $('#head-tracker-status').textContent = t('headTrackerPermission');
+  });
+
+  // Journeys
+  $('#journey-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.journey-btn');
+    if (btn) loadJourney(btn.dataset.journey);
+  });
+
+  // Scenes
+  $('#save-scene-btn').addEventListener('click', () => {
+    const name = prompt(t('sceneName'));
+    if (!name) return;
+    sceneManager.saveScene(name);
+    renderSceneList();
+    showToast(`${t('savedAs')}: ${name}`);
+  });
+  $('#share-scene-btn').addEventListener('click', async () => {
+    const url = sceneManager.exportToURL();
+    try { await navigator.clipboard.writeText(url); showToast(t('linkCopied')); }
+    catch (e) { prompt(t('copyLink'), url); }
+  });
+  $('#scene-list').addEventListener('click', (e) => {
+    const del = e.target.closest('.scene-del');
+    if (del) { sceneManager.deleteScene(del.dataset.scene); renderSceneList(); return; }
+    const item = e.target.closest('.scene-item');
+    if (!item) return;
+    sceneManager.loadScene(item.dataset.scene);
+    canvasGrid.selectedNodeId = null;
+    inspector.show(null);
+    timeline._render();
+  });
+
+  // Timer
+  $('#timer-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#timer-chips .chip').forEach(c => c.classList.toggle('is-on', c === chip));
+    soundscapeTimer.start(parseInt(chip.dataset.minutes, 10));
+    $('#timer-cancel').hidden = false;
+  });
+  $('#timer-cancel').addEventListener('click', () => {
+    soundscapeTimer.stop();
+    document.querySelectorAll('#timer-chips .chip').forEach(c => c.classList.remove('is-on'));
+  });
+
+  // Session
+  $('#new-session-btn').addEventListener('click', () => {
+    for (const id of [...audioEngine.sources.keys()]) audioEngine.removeSource(id);
+    canvasGrid.automations.clear();
+    canvasGrid.selectedNodeId = null;
+    timeline.keyframes.clear();
+    timeline.sourceTimings.clear();
+    timeline.trackState.clear();
+    timeline.stop();
+    inspector.show(null);
+    timeline._render();
+  });
+  $('#clear-all-btn').addEventListener('click', () => {
+    for (const id of [...audioEngine.sources.keys()]) audioEngine.removeSource(id);
+    canvasGrid.automations.clear();
+    canvasGrid.selectedNodeId = null;
+    inspector.show(null);
+    timeline._render();
+  });
+
+  // Language
+  const lang = $('#lang-select');
+  lang.value = getLanguage();
+  lang.addEventListener('change', () => {
+    setLanguage(lang.value);
+    applyTranslations(document);
+    renderJourneyList();
+    refreshPanels();
+    inspector.show(canvasGrid.selectedNodeId ? audioEngine.sources.get(canvasGrid.selectedNodeId) : null);
+  });
+
+  // Welcome
+  $('#start-journey').addEventListener('click', () => startApp('journey'));
+  $('#start-focus').addEventListener('click', () => startApp('focus'));
+  $('#start-empty').addEventListener('click', () => startApp('empty'));
+}
+
+function bindRange(selector, handler) {
+  const el = $(selector);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    const text = handler(v);
+    const out = el.nextElementSibling;
+    if (out && text !== undefined) out.textContent = text;
+  });
+}
+
+function setFieldMode(mode) {
+  canvasGrid.setViewMode(mode);
+  $('#view-2d-btn').classList.toggle('is-on', mode === '2d');
+  $('#view-3d-btn').classList.toggle('is-on', mode === '3d');
+}
+
+function afterUndo() {
+  timeline._render();
+  const sel = canvasGrid.selectedNodeId;
+  inspector.show(sel ? audioEngine.sources.get(sel) : null);
+}
+
+// ---------------------------------------------------------------------------
+// Start-up
+// ---------------------------------------------------------------------------
+
+async function startApp(mode) {
+  audioEngine.init();
+  await audioEngine.resume();
+
+  const dot = $('#audio-status');
+  dot.classList.add('is-on');
+  dot.querySelector('.status-text').textContent = t('audioActive');
+
+  const synth = new InstrumentSynth(audioEngine);
+  synth.preloadAll('C4');
+
+  document.body.classList.remove('pre-start');
+  $('#welcome').classList.add('is-hidden');
+  setTimeout(() => { $('#welcome').style.display = 'none'; }, 400);
+
+  if (mode === 'journey') {
+    await loadJourney('meditate');
+  } else if (mode === 'focus') {
+    setView('focus');
+    await focusView.applyMode('focus');
+  } else {
+    showTimeline(false);
+  }
+  canvasGrid.resize();
+}
+
+function boot() {
+  hydrateIcons(document);
+  applyTranslations(document);
+  renderJourneyList();
+  renderSceneList();
+  renderSpeakerList();
+  syncMasterUI(0.8);
+  watchRangeFills(document);
+  bindUI();
+  setFieldMode('2d');
+  setHint('');
+  document.body.dataset.panel = 'field';
+
+  initKeyboardShortcuts({
+    canvasGrid, audioEngine, undoManager, timeline,
+    inspector,
+    onToggleView: () => setView(currentView === 'field' ? 'focus' : 'field'),
+    onToast: showToast,
+  });
+
+  // Head tracker availability text
+  $('#head-tracker-status').textContent = headTracker.isAvailable() ? t('headTrackerAvailable') : t('headTrackerNotAvailable');
+
+  // Shared scene in the URL skips the welcome screen
+  if (window.location.hash.startsWith('#scene=')) {
+    audioEngine.init();
+    const name = sceneManager.importFromURL();
+    if (name) {
+      document.body.classList.remove('pre-start');
+      $('#welcome').style.display = 'none';
+      showTimeline(true);
+      timeline._render();
+    }
+  }
+
+  // Focus view visuals ride the animation loop
+  const tick = () => { focusView.update(); updateMeter(); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+
+  window.addEventListener('languagechange', () => applyTranslations(document));
+}
+
+function updateMeter() {
+  const meter = $('#master-meter');
+  if (!meter || !audioEngine.isInitialized) return;
+  const { left, right } = audioEngine.getLeftRightLevels();
+  meter.firstElementChild.style.height = `${Math.min(100, left * 130)}%`;
+  meter.lastElementChild.style.height = `${Math.min(100, right * 130)}%`;
+}
+
+boot();
+
+if (import.meta.env && import.meta.env.DEV) {
+  window.__app = { audioEngine, canvasGrid, timeline, sceneManager, library, inspector, focusView, loadJourney, addSound, setView, MODES };
 }

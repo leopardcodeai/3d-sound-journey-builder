@@ -4,14 +4,21 @@ import { CanvasGrid } from './CanvasGrid.js';
 function createMockCanvas() {
   const canvas = {
     width: 800, height: 600,
-    getContext: () => ({
-      fillRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(),
-      stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), save: vi.fn(),
-      restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(), setTransform: vi.fn(),
-      setLineDash: vi.fn(),
-      createRadialGradient: () => ({ addColorStop: vi.fn() }),
-      createLinearGradient: () => ({ addColorStop: vi.fn() }),
-    }),
+    getContext() {
+      if (!this._ctx) {
+        this._ctx = {
+          fillRect: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), closePath: vi.fn(),
+          arc: vi.fn(), ellipse: vi.fn(), rect: vi.fn(), roundRect: vi.fn(),
+          fill: vi.fn(), stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+          save: vi.fn(), restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
+          scale: vi.fn(), setTransform: vi.fn(), setLineDash: vi.fn(),
+          fillText: vi.fn(), measureText: () => ({ width: 10 }),
+          createRadialGradient: () => ({ addColorStop: vi.fn() }),
+          createLinearGradient: () => ({ addColorStop: vi.fn() }),
+        };
+      }
+      return this._ctx;
+    },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
     addEventListener: vi.fn(),
     style: {},
@@ -96,5 +103,33 @@ describe('CanvasGrid _drawKeyframePath', () => {
     grid.selectedNodeId = 'node-1';
     grid.timeline = { keyframes: new Map() };
     expect(() => grid._drawKeyframePath()).not.toThrow();
+  });
+});
+
+describe('CanvasGrid render loop', () => {
+  let canvas, engine, grid;
+
+  beforeEach(() => {
+    canvas = createMockCanvas();
+    engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 800, innerHeight: 600, addEventListener: vi.fn(), devicePixelRatio: 1 });
+    grid = new CanvasGrid(canvas, engine);
+  });
+
+  it('paints once during construction so a hidden tab does not leave it blank', () => {
+    expect(canvas.getContext().fillRect).toBeDefined();
+    expect(grid._frame).toBe(0);
+    // draw() ran in the constructor: the ground wash was filled at least once
+    expect(grid.ctx.fillRect).toHaveBeenCalled();
+  });
+
+  it('keeps drawing while _isPaused is false, and stops when it is true', () => {
+    grid.ctx.fillRect.mockClear();
+    grid.draw();
+    expect(grid.ctx.fillRect).toHaveBeenCalled();
+    grid._isPaused = true;
+    grid.ctx.fillRect.mockClear();
+    grid.draw();
+    expect(grid.ctx.fillRect).not.toHaveBeenCalled();
   });
 });

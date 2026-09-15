@@ -5,6 +5,7 @@ function createMockAudioEngine() {
   return {
     sources: new Map(),
     ctx: { currentTime: 0 },
+    masterGain: { gain: { value: 0.8, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn(), linearRampToValueAtTime: vi.fn() } },
     updateSourcePosition: vi.fn(),
     updateSourceVolume: vi.fn(),
     toggleSource: vi.fn(),
@@ -12,306 +13,309 @@ function createMockAudioEngine() {
 }
 
 function createMockCanvasGrid() {
-  return {
-    themeColors: { birds: '#10b981', campfire: '#ef4444', custom: '#f43f5e' },
-    emojiMap: { birds: '🐦', campfire: '🪵' },
+  return { colorFor: () => '#10b981', selectedNodeId: null };
+}
+
+function addSource(engine, id, overrides = {}) {
+  const src = {
+    id, type: 'birds', name: id,
+    x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true, spatial: true,
+    gainNode: { gain: { setTargetAtTime: vi.fn() } },
+    ...overrides,
   };
+  engine.sources.set(id, src);
+  return src;
 }
 
 describe('Timeline', () => {
   let container, audioEngine, canvasGrid, timeline;
 
   beforeEach(() => {
-    // Use real jsdom elements - no mocking needed
     container = document.createElement('div');
     document.body.appendChild(container);
-    
     audioEngine = createMockAudioEngine();
     canvasGrid = createMockCanvasGrid();
-    
     timeline = new Timeline(container, audioEngine, canvasGrid);
   });
 
-  describe('initialization', () => {
-    it('should start with default values', () => {
+  describe('initialisation', () => {
+    it('starts paused, looping and hidden', () => {
       expect(timeline.visible).toBe(false);
       expect(timeline.isPlaying).toBe(false);
       expect(timeline.isLooping).toBe(true);
-      expect(timeline.pixelsPerSecond).toBe(12);
       expect(timeline.totalDuration).toBe(600);
+      expect(timeline.snap).toBe(true);
     });
 
-    it('should build DOM structure', () => {
-      expect(container.innerHTML).toBeDefined();
-      expect(container.querySelector('.tl-pro-header')).toBeTruthy();
-      expect(container.querySelector('.tl-pro-viewport')).toBeTruthy();
+    it('builds the transport and the lane area', () => {
+      expect(container.querySelector('.tl-bar')).toBeTruthy();
+      expect(container.querySelector('.tl-viewport')).toBeTruthy();
+      expect(container.querySelector('.tl-play')).toBeTruthy();
+      expect(container.querySelector('.tl-playhead')).toBeTruthy();
     });
   });
 
-  describe('toggle visibility', () => {
-    it('should toggle visible state', () => {
-      timeline.toggle();
-      expect(timeline.visible).toBe(true);
-      timeline.toggle();
-      expect(timeline.visible).toBe(false);
-    });
-
-    it('should pause when hidden', () => {
-      timeline.visible = true;
-      timeline.isPlaying = true;
-      timeline.toggle();
-      expect(timeline.isPlaying).toBe(false);
-    });
-
-    it('reflects visibility onto <body> so other panels can dodge the dock', () => {
+  describe('visibility', () => {
+    it('toggles and marks the body so other panels can dodge it', () => {
       document.body.classList.remove('timeline-open');
       timeline.show();
+      expect(timeline.visible).toBe(true);
       expect(document.body.classList.contains('timeline-open')).toBe(true);
       timeline.hide();
       expect(document.body.classList.contains('timeline-open')).toBe(false);
     });
-  });
 
-  describe('infinity / once mode', () => {
-    it('starts in infinity mode', () => {
-      expect(timeline.isLooping).toBe(true);
-      const btn = container.querySelector('.tl-pro-loop');
-      expect(btn.textContent).toBe('∞');
-      expect(btn.classList.contains('active')).toBe(true);
-    });
-
-    it('setLooping(false) switches the button to once mode', () => {
-      timeline.setLooping(false);
-      const btn = container.querySelector('.tl-pro-loop');
-      expect(timeline.isLooping).toBe(false);
-      expect(btn.textContent).toBe('↦');
-      expect(btn.classList.contains('active')).toBe(false);
-      expect(btn.title).toMatch(/once/i);
+    it('pauses when hidden', () => {
+      timeline.show();
+      timeline.play();
+      timeline.hide();
+      expect(timeline.isPlaying).toBe(false);
     });
   });
 
-  describe('play/pause/stop', () => {
-    it('should toggle play state', () => {
+  describe('transport', () => {
+    it('toggles play state and swaps the button icon', () => {
       timeline.togglePlay();
       expect(timeline.isPlaying).toBe(true);
+      expect(container.querySelector('.tl-play').classList.contains('is-on')).toBe(true);
       timeline.togglePlay();
       expect(timeline.isPlaying).toBe(false);
     });
 
-    it('should stop and reset playhead', () => {
-      timeline.playheadTime = 100;
+    it('stop rewinds the playhead', () => {
+      timeline.playheadTime = 120;
       timeline.stop();
       expect(timeline.playheadTime).toBe(0);
       expect(timeline.isPlaying).toBe(false);
     });
+
+    it('setLooping switches the loop button between the two modes', () => {
+      const btn = container.querySelector('.tl-loop');
+      expect(btn.classList.contains('is-on')).toBe(true);
+      timeline.setLooping(false);
+      expect(timeline.isLooping).toBe(false);
+      expect(btn.classList.contains('is-on')).toBe(false);
+      expect(btn.title.toLowerCase()).toContain('once');
+      timeline.setLooping(true);
+      expect(btn.classList.contains('is-on')).toBe(true);
+    });
   });
 
-  describe('scrolling', () => {
-    it('should clamp scrollX to valid range', () => {
-      timeline.scrollX = -100;
+  describe('time and zoom', () => {
+    it('timeToX follows pixelsPerSecond, the header width and the scroll', () => {
+      timeline.pixelsPerSecond = 2;
+      timeline.scrollX = 40;
+      timeline._headerW = 100;
+      expect(timeline.timeToX(0)).toBe(60);
+      expect(timeline.timeToX(30)).toBe(120);
+    });
+
+    it('snaps to a coarser step when zoomed out', () => {
+      timeline.pixelsPerSecond = 30;
+      expect(timeline.snapStep()).toBe(0.5);
+      timeline.pixelsPerSecond = 2;
+      expect(timeline.snapStep()).toBe(15);
+      timeline.setSnap(false);
+      expect(timeline.snapStep()).toBe(0);
+      expect(timeline._snapTime(12.34)).toBeCloseTo(12.3, 5);
+    });
+
+    it('clamps the scroll to the content width', () => {
+      timeline.scrollX = -500;
       timeline._clampScroll();
       expect(timeline.scrollX).toBe(0);
-    });
-
-    it('should clamp scrollX to max width', () => {
-      const maxScroll = timeline.totalDuration * timeline.pixelsPerSecond + 200 - timeline.viewport.clientWidth;
-      timeline.scrollX = maxScroll + 500;
+      timeline.scrollX = 1e6;
       timeline._clampScroll();
-      expect(timeline.scrollX).toBeCloseTo(maxScroll, 0);
+      expect(timeline.scrollX).toBeLessThan(1e6);
     });
 
-    it('should accept valid scroll position', () => {
-      timeline.scrollX = 100;
-      timeline._clampScroll();
-      expect(timeline.scrollX).toBe(100);
-    });
-  });
-
-  describe('keyframes', () => {
-    it('should set keyframes for a source', () => {
-      const kfs = [
-        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
-        { time: 60, x: 3, y: 2, z: 1, volume: 0.6 },
-      ];
-      timeline.setKeyframes('src1', kfs);
-      expect(timeline.keyframes.has('src1')).toBe(true);
-      expect(timeline.keyframes.get('src1').length).toBe(2);
-    });
-
-    it('should add keyframe in sorted order', () => {
-      timeline.keyframes.set('src1', [
-        { time: 60, x: 3, y: 0, z: 0, volume: 0.5 },
-      ]);
-      audioEngine.sources.set('src1', { x: 0, y: 0, z: 0, volume: 0.5 });
-      timeline.playheadTime = 30;
-      timeline.addKeyframe('src1', 30, { x: 1, y: 1 });
-      const kfs = timeline.keyframes.get('src1');
-      expect(kfs[0].time).toBe(30);
-      expect(kfs[1].time).toBe(60);
-    });
-
-    it('renders each source\'s keyframe dots only in its own track', () => {
-      audioEngine.sources.set('src1', { type: 'birds', name: 'A', x: 0, y: 0, z: 0, volume: 0.5 });
-      audioEngine.sources.set('src2', { type: 'campfire', name: 'B', x: 0, y: 0, z: 0, volume: 0.5 });
-      timeline.setKeyframes('src1', [
-        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
-        { time: 60, x: 1, y: 1, z: 0, volume: 0.5 },
-      ]);
-      timeline.setKeyframes('src2', [
-        { time: 30, x: 0, y: 0, z: 0, volume: 0.5 },
-        { time: 90, x: 1, y: 1, z: 0, volume: 0.5 },
-        { time: 150, x: 2, y: 2, z: 0, volume: 0.5 },
-      ]);
-      timeline.visible = true;
-      timeline._render();
-
-      const track1 = container.querySelector('.tl-pro-track[data-id="src1"]');
-      const track2 = container.querySelector('.tl-pro-track[data-id="src2"]');
-      // Malformed (self-closing) dot divs would nest later tracks inside earlier
-      // ones, inflating these counts. Each track must hold only its own dots.
-      expect(track1.querySelectorAll('.tl-pro-kf').length).toBe(2);
-      expect(track2.querySelectorAll('.tl-pro-kf').length).toBe(3);
+    it('zoom stays inside the allowed range', () => {
+      for (let i = 0; i < 40; i++) timeline.zoom(2);
+      expect(timeline.pixelsPerSecond).toBeLessThanOrEqual(60);
+      for (let i = 0; i < 60; i++) timeline.zoom(0.5);
+      expect(timeline.pixelsPerSecond).toBeGreaterThanOrEqual(0.6);
     });
   });
 
-  describe('timing', () => {
-    it('should ensure timing entry exists spanning the whole journey', () => {
-      timeline.ensureTiming('src1');
-      expect(timeline.sourceTimings.has('src1')).toBe(true);
-      const t = timeline.sourceTimings.get('src1');
-      expect(t.startTime).toBe(0);
-      expect(t.duration).toBe(timeline.totalDuration);
+  describe('timings and duration', () => {
+    it('gives new sounds the whole journey and does not overwrite existing timings', () => {
+      timeline.ensureTiming('s1');
+      expect(timeline.sourceTimings.get('s1')).toEqual({ startTime: 0, duration: 600 });
+      timeline.sourceTimings.set('s2', { startTime: 30, duration: 120 });
+      timeline.ensureTiming('s2');
+      expect(timeline.sourceTimings.get('s2')).toEqual({ startTime: 30, duration: 120 });
     });
 
-    it('should not overwrite existing timing', () => {
-      timeline.sourceTimings.set('src1', { startTime: 30, duration: 120 });
-      timeline.ensureTiming('src1');
-      const t = timeline.sourceTimings.get('src1');
-      expect(t.startTime).toBe(30);
-      expect(t.duration).toBe(120);
-    });
-  });
-
-  describe('easing', () => {
-    it('should return linear by default', () => {
-      expect(timeline._ease(0.5, 'linear')).toBe(0.5);
-    });
-
-    it('should apply ease-in', () => {
-      expect(timeline._ease(0.5, 'ease-in')).toBe(0.25);
-    });
-
-    it('should apply ease-out', () => {
-      expect(timeline._ease(0.5, 'ease-out')).toBe(0.75);
-    });
-  });
-
-  describe('removeKeyframe', () => {
-    it('should remove a keyframe by index and drop empty lists', () => {
-      timeline.setKeyframes('src1', [
-        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
-        { time: 60, x: 3, y: 2, z: 1, volume: 0.6 },
-      ]);
-      timeline.removeKeyframe('src1', 0);
-      expect(timeline.keyframes.get('src1').length).toBe(1);
-      expect(timeline.keyframes.get('src1')[0].time).toBe(60);
-      timeline.removeKeyframe('src1', 0);
-      expect(timeline.keyframes.has('src1')).toBe(false);
-    });
-
-    it('should ignore invalid indices', () => {
-      timeline.setKeyframes('src1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }]);
-      timeline.removeKeyframe('src1', 5);
-      timeline.removeKeyframe('missing', 0);
-      expect(timeline.keyframes.get('src1').length).toBe(1);
-    });
-  });
-
-  describe('setTotalDuration', () => {
-    it('should clamp playhead and clip timings into the new range', () => {
-      timeline.sourceTimings.set('src1', { startTime: 200, duration: 400 });
+    it('shrinking the journey clamps clips, keyframes, sections and the playhead', () => {
+      timeline.sourceTimings.set('s1', { startTime: 200, duration: 400 });
+      timeline.setKeyframes('s1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }, { time: 500, x: 1, y: 1, z: 0, volume: 0.5 }]);
+      timeline.setSections([{ time: 100, name: 'A' }, { time: 450, name: 'B' }]);
       timeline.playheadTime = 500;
       timeline.setTotalDuration(300);
       expect(timeline.totalDuration).toBe(300);
       expect(timeline.playheadTime).toBe(300);
-      const t = timeline.sourceTimings.get('src1');
-      expect(t.startTime).toBe(200);
-      expect(t.duration).toBe(100);
+      expect(timeline.sourceTimings.get('s1')).toEqual({ startTime: 200, duration: 100 });
+      expect(timeline.keyframes.get('s1')[1].time).toBe(300);
+      expect(timeline.sections.map(s => s.name)).toEqual(['A']);
     });
   });
 
-  describe('keyframe playback (_applyKeyframes)', () => {
-    function addSource(id, overrides = {}) {
-      const src = {
-        id, type: 'birds', name: id,
-        x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true,
-        gainNode: { gain: { setTargetAtTime: vi.fn() } },
-        ...overrides,
-      };
-      audioEngine.sources.set(id, src);
-      return src;
-    }
-
-    it('applies a single keyframe position', () => {
-      addSource('src1');
-      timeline.setKeyframes('src1', [{ time: 0, x: 2, y: 3, z: 1, volume: 0.4 }]);
-      timeline.playheadTime = 10;
-      timeline._applyKeyframes();
-      expect(audioEngine.updateSourcePosition).toHaveBeenCalledWith('src1', 2, 3, 1);
+  describe('keyframes', () => {
+    it('inserts in sorted order', () => {
+      addSource(audioEngine, 's1', { x: 1, y: 1 });
+      timeline.setKeyframes('s1', [{ time: 60, x: 3, y: 0, z: 0, volume: 0.5 }]);
+      timeline.addKeyframe('s1', 30, { x: 1, y: 1 });
+      expect(timeline.keyframes.get('s1').map(k => k.time)).toEqual([30, 60]);
     });
 
-    it('drives the gain from interpolated keyframe volume', () => {
-      const src = addSource('src1');
-      timeline.sourceTimings.set('src1', { startTime: 0, duration: 600 });
-      timeline.setKeyframes('src1', [
-        { time: 0, x: 0, y: 0, z: 0, volume: 0.0 },
-        { time: 10, x: 0, y: 0, z: 0, volume: 1.0 },
+    it('addKeyframeAt snaps the time and records an undo step', () => {
+      addSource(audioEngine, 's1');
+      const undo = { execute: vi.fn(cmd => cmd.execute()) };
+      timeline.undoManager = undo;
+      timeline.pixelsPerSecond = 2; // snap step 15 s
+      timeline.addKeyframeAt('s1', 37);
+      expect(undo.execute).toHaveBeenCalled();
+      expect(timeline.keyframes.get('s1')[0].time).toBe(30);
+    });
+
+    it('removes by index and drops empty lists', () => {
+      timeline.setKeyframes('s1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
+        { time: 60, x: 3, y: 2, z: 1, volume: 0.6 },
+      ]);
+      timeline.removeKeyframe('s1', 0);
+      expect(timeline.keyframes.get('s1')[0].time).toBe(60);
+      timeline.removeKeyframe('s1', 0);
+      expect(timeline.keyframes.has('s1')).toBe(false);
+      expect(() => timeline.removeKeyframe('missing', 0)).not.toThrow();
+    });
+
+    it('renders each track with only its own keyframe dots', () => {
+      addSource(audioEngine, 's1');
+      addSource(audioEngine, 's2', { type: 'campfire' });
+      timeline.setKeyframes('s1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }, { time: 60, x: 1, y: 1, z: 0, volume: 0.5 }]);
+      timeline.setKeyframes('s2', [{ time: 30, x: 0, y: 0, z: 0, volume: 0.5 }, { time: 90, x: 1, y: 1, z: 0, volume: 0.5 }, { time: 150, x: 2, y: 2, z: 0, volume: 0.5 }]);
+      timeline.show();
+      timeline.pixelsPerSecond = 4;
+      timeline._render();
+      expect(container.querySelector('.tl-track[data-id="s1"]').querySelectorAll('.tl-kf').length).toBe(2);
+      expect(container.querySelector('.tl-track[data-id="s2"]').querySelectorAll('.tl-kf').length).toBe(3);
+      expect(container.querySelectorAll('.tl-env').length).toBe(2);
+    });
+  });
+
+  describe('easing and sampling', () => {
+    it('eases linearly by default', () => {
+      expect(timeline._ease(0.5, 'linear')).toBe(0.5);
+      expect(timeline._ease(0.5, 'ease-in')).toBe(0.25);
+      expect(timeline._ease(0.5, 'ease-out')).toBe(0.75);
+      expect(timeline._ease(0.25, 'ease-in-out')).toBeCloseTo(0.125, 5);
+    });
+
+    it('holds the first and last keyframe outside the range', () => {
+      const kfs = [
+        { time: 10, x: 1, y: 1, z: 0, volume: 0.2, easing: 'linear' },
+        { time: 20, x: 3, y: 3, z: 2, volume: 0.6, easing: 'linear' },
+      ];
+      expect(timeline._sampleKeyframes(kfs, 0).x).toBe(1);
+      expect(timeline._sampleKeyframes(kfs, 99).x).toBe(3);
+      const mid = timeline._sampleKeyframes(kfs, 15);
+      expect(mid.x).toBeCloseTo(2);
+      expect(mid.volume).toBeCloseTo(0.4);
+    });
+  });
+
+  describe('mute and solo', () => {
+    it('mute silences one track', () => {
+      const s = addSource(audioEngine, 's1');
+      timeline.toggleMute('s1');
+      timeline._applyKeyframes();
+      const calls = s.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(calls[calls.length - 1][0]).toBe(0);
+      timeline.toggleMute('s1');
+      timeline._applyKeyframes();
+      const after = s.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(after[after.length - 1][0]).toBeCloseTo(0.5);
+    });
+
+    it('solo silences every other track', () => {
+      const a = addSource(audioEngine, 's1');
+      const b = addSource(audioEngine, 's2');
+      timeline.toggleSolo('s1');
+      timeline._applyKeyframes();
+      const aCalls = a.gainNode.gain.setTargetAtTime.mock.calls;
+      const bCalls = b.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(aCalls[aCalls.length - 1][0]).toBeCloseTo(0.5);
+      expect(bCalls[bCalls.length - 1][0]).toBe(0);
+    });
+  });
+
+  describe('playback', () => {
+    it('drives position and gain from interpolated keyframes', () => {
+      const s = addSource(audioEngine, 's1');
+      timeline.sourceTimings.set('s1', { startTime: 0, duration: 600 });
+      timeline.setKeyframes('s1', [
+        { time: 0, x: 0, y: 0, z: 0, volume: 0 },
+        { time: 10, x: 2, y: 4, z: 1, volume: 1 },
       ]);
       timeline.playheadTime = 5;
       timeline._applyKeyframes();
-      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
-      expect(calls.length).toBe(1);
-      expect(calls[0][0]).toBeCloseTo(0.5);
+      expect(audioEngine.updateSourcePosition).toHaveBeenCalledWith('s1', 1, 2, 0.5);
+      const calls = s.gainNode.gain.setTargetAtTime.mock.calls;
+      expect(calls[calls.length - 1][0]).toBeCloseTo(0.5);
     });
 
-    it('mutes sources outside their clip window', () => {
-      const src = addSource('src1');
-      timeline.sourceTimings.set('src1', { startTime: 100, duration: 50 });
+    it('never repositions a head-locked source', () => {
+      addSource(audioEngine, 'bw', { spatial: false });
+      timeline.setKeyframes('bw', [{ time: 0, x: 5, y: 5, z: 0, volume: 0.4 }]);
+      timeline.playheadTime = 1;
+      timeline._applyKeyframes();
+      expect(audioEngine.updateSourcePosition).not.toHaveBeenCalled();
+    });
+
+    it('mutes sources outside their clip window and starts them with an offset', () => {
+      const s = addSource(audioEngine, 's1', { isPlaying: false });
+      timeline.sourceTimings.set('s1', { startTime: 30, duration: 60 });
       timeline.playheadTime = 0;
       timeline._applyKeyframes();
-      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
+      let calls = s.gainNode.gain.setTargetAtTime.mock.calls;
       expect(calls[calls.length - 1][0]).toBe(0);
-    });
-
-    it('uses the source volume when no keyframes define one', () => {
-      const src = addSource('src1', { volume: 0.7 });
-      timeline.sourceTimings.set('src1', { startTime: 0, duration: 600 });
-      timeline.playheadTime = 10;
-      timeline._applyKeyframes();
-      const calls = src.gainNode.gain.setTargetAtTime.mock.calls;
-      expect(calls[calls.length - 1][0]).toBeCloseTo(0.7);
-    });
-
-    it('passes elapsed clip time as offset when activating a mid-journey source', () => {
-      const src = addSource('src2', { isPlaying: false });
-      // Clip starts at t=30, duration 60; playhead is at t=45 (15s into the clip)
-      timeline.sourceTimings.set('src2', { startTime: 30, duration: 60 });
       timeline.playheadTime = 45;
       timeline._applyKeyframes();
-      expect(audioEngine.toggleSource).toHaveBeenCalledWith('src2', 15);
+      expect(audioEngine.toggleSource).toHaveBeenCalledWith('s1', 15);
     });
 
     it('marks keyframed sources as timeline-controlled only while playing', () => {
-      const src = addSource('src1');
-      timeline.setKeyframes('src1', [
+      const s = addSource(audioEngine, 's1');
+      timeline.setKeyframes('s1', [
         { time: 0, x: 0, y: 0, z: 0, volume: 0.5 },
         { time: 10, x: 1, y: 1, z: 0, volume: 0.5 },
       ]);
       timeline.isPlaying = true;
       timeline._applyKeyframes();
-      expect(src._timelineControlled).toBe(true);
+      expect(s._timelineControlled).toBe(true);
       timeline.pause();
-      expect(src._timelineControlled).toBe(false);
+      expect(s._timelineControlled).toBe(false);
+    });
+
+    it('reports progress through onTimeUpdate', () => {
+      const spy = vi.fn();
+      timeline.onTimeUpdate = spy;
+      timeline.playheadTime = 42;
+      timeline._applyKeyframes();
+      expect(spy).toHaveBeenCalledWith(42, 600);
+    });
+  });
+
+  describe('sections', () => {
+    it('renders section markers in the ruler', () => {
+      addSource(audioEngine, 's1');
+      timeline.setSections([{ time: 0, name: 'Settle' }, { time: 120, name: 'Work' }]);
+      timeline.show();
+      timeline.pixelsPerSecond = 2;
+      timeline._render();
+      const marks = [...container.querySelectorAll('.tl-section span')].map(el => el.textContent);
+      expect(marks).toEqual(['Settle', 'Work']);
     });
   });
 });

@@ -1,113 +1,155 @@
-# 3D Sound Journey Builder
+# Sound Journey Builder
 
-[![Tests](https://img.shields.io/badge/tests-104%2F104%20✓-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder/actions)
+[![Tests](https://img.shields.io/badge/tests-177%2F177%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
-[![AI Built](https://img.shields.io/badge/built%20with-agentic%20AI-purple)](https://github.com/leopardcodeai/3d-sound-journey-builder)
+[![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
-An interactive **spatial audio experience builder** that runs entirely in the browser. Place instruments, nature sounds, and ambient textures on a 2D/3D canvas — each with its own position in space, volume, elevation, and animation path. Design multi-minute sound journeys with keyframe-based spatial animation, then export and share.
+A spatial audio studio that runs entirely in the browser. Place sounds around
+your head in three dimensions, move them along a timeline, and layer in
+frequency tools that are labelled for what the research actually supports.
 
-Every sound source is rendered as it would be experienced inside your head: HRTF spatialization with head/shoulder/pinna modeling, posture physics (standing, lying back, lateral), and real-time AirPods head tracking via Web Bluetooth.
+No account, no upload, no tracking. Every sample is decoded locally and every
+tone is generated in the Web Audio graph.
 
-**Live demo:** [3d-sound-journey-builder.vercel.app](https://3d-sound-journey-builder.vercel.app)
+**Live:** [3d-sound-journey-builder.vercel.app](https://3d-sound-journey-builder.vercel.app)
 
-Built and maintained by [LeopardCode.AI](https://leopardcode.ai) — an experiment in fully agentic AI development using Chinese AI models (Qwen3.6 Plus).
-
-![3D Sound Journey Builder](docs/screenshot_builder.png)
-
----
-
-## Features
-
-| Feature | Details |
-|---------|---------|
-| **Spatial 3D audio** | HRTF convolution, shoulder/pinna/torso scattering, posture physics |
-| **2D/3D canvas** | Isometric projection, camera orbit/pan/zoom, particle fog, ripple effects |
-| **45+ sound presets** | Instruments (piano, synth pad, bass, strings, flute, drone, arpeggio), nature (rain, thunder, waves, birds, crickets, campfire), urban (café, subway, traffic), jungle (monkeys, elephants, leopard, river), ocean (whales, dolphins, deep ambient), singing bowls (8 tones), brainwave frequencies (alpha, beta, theta, delta, gamma) |
-| **Activity presets** | Focus, meditation, sleep, relaxation, energy — instant multi-source scenes |
-| **Template scenes** | Jungle night, ocean deep, cosmic soundscape, urban thunderstorm, morning ritual, sound therapy |
-| **Timeline editor** | Multi-track keyframe editor with zoom, pan, play/pause/loop, 0–600 s range |
-| **Keyframe animation** | Spatial paths with linear/ease-in/ease-out interpolation, volume automation |
-| **Undo/redo** | 20-step Command Pattern stack with keyboard shortcuts (Cmd+Z / Cmd+Shift+Z) |
-| **Head tracking** | AirPods gyroscope → real-time listener rotation via Web Bluetooth |
-| **Speaker mode** | 2.0–7.1 channel configurations with custom speaker placement |
-| **Z-height** | Per-source 3D elevation (±10 m range) |
-| **Automations** | Orbit, ping-pong, drift, and breathe motion paths |
-| **Ramp controls** | Per-source fade-in/fade-out and repeat intervals |
-| **Soundscape timer** | Countdown with automatic scene stop |
-| **Scene sharing** | Export/import via URL-encoded state |
-| **i18n-ready** | English + German translations prepared |
+![The field view with a journey loaded](docs/screenshot_app.png)
 
 ---
 
-## Quick Start
+## Two ways to use it
+
+**The field.** A metre-accurate map of the space around your head. Drag a sound
+to move it on the ground plane, hold Alt to lift it, right-drag to orbit. The
+2D map and the 3D view are one camera blended between orthographic and
+perspective, so switching does not cut.
+
+**The focus view.** One screen, one button. Pick a mode and a length, press the
+ring. No map, no timeline, and a readout that names every frequency currently
+playing.
+
+![The focus view](docs/screenshot_focus.png)
+
+---
+
+## What is in it
+
+| Area | Detail |
+|---|---|
+| **Spatial audio** | HRTF panner per source, shoulder and outer-ear filters that track elevation, three listener postures, head tracking through device orientation |
+| **Sound library** | About forty entries in seven categories: recorded ambience, sound-healing instruments, offline-rendered instruments, procedural frequency tools, generative layers, and your own files |
+| **Frequency tools** | Binaural, isochronic and monaural beats, pure and solfeggio tones, white, pink and brown noise, a breathing pacer, a 7.83 Hz pulse. Each carries an evidence label |
+| **Per-source inserts** | Low-pass, high-pass, playback speed, tremolo, reverb send, fade in, fade out, repeat cycle |
+| **Master bus** | Shared convolution reverb, soft limiter, stereo meters |
+| **Timeline** | Clips, draggable keyframes with volume envelopes, mute and solo, named sections, zoom-aware snapping, fit to view |
+| **Journeys** | Seven built in, from a twenty-five minute deep-work block to a thirty minute sleep descent that ends in silence |
+| **Focus modes** | Six single-screen sessions with a countdown ring and live frequency readout |
+| **Output** | Headphones with HRTF, stereo speakers, 5.1, or a custom speaker layout placed by dragging |
+| **Editing** | One undo stack across moves, adds, deletes, clip edits, keyframe edits, parameters and motion paths |
+| **Sharing** | Scenes in local storage, plus links that carry the whole journey in the URL |
+| **Languages** | English and German |
+
+---
+
+## Honest labels
+
+Frequency tools ship with an evidence grade drawn from a literature review kept
+in [docs/research](docs/research). The grade describes the published research,
+not a promised effect.
+
+| Tool | Grade |
+|---|---|
+| Pink and white noise, breathing pacer at six breaths a minute | Some evidence |
+| Binaural, isochronic and monaural beats, brown noise | Weak evidence |
+| Solfeggio tones, 432 Hz tuning, 7.83 Hz Schumann | No evidence |
+
+Forty hertz gamma stimulation has strong evidence in clinical Alzheimer's
+trials using combined light and sound devices. That does not transfer to a
+wellness audio app, and the app does not claim it does.
+
+This is not a medical device.
+
+---
+
+## Quick start
 
 ```bash
-npm install        # install dependencies
-npm run dev        # dev server with hot reload
-npm test           # run the test suite (104/104 ✓)
-npm run build      # production build
-npm run preview    # preview the production build
+npm install
+npm run dev        # http://localhost:5199
+npm test           # 177 unit tests
+npm run build      # landing page + app
 ```
 
+The dev server serves the landing page at `/` and the app at `/app.html`.
+
 ---
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Runtime** | Vanilla JavaScript (ES modules, no framework) |
-| **Spatial audio** | Web Audio API — HRTF convolution, custom HRIR tables, PannerNode, ConvolverNode |
-| **Rendering** | Canvas 2D with custom isometric 3D projection, particle fog, ripple physics |
-| **Timeline** | Keyframe interpolation (linear/ease-in/ease-out), zoomable ruler |
-| **State management** | Command Pattern (UndoManager), Map-based source registry |
-| **Head tracking** | Web Bluetooth + AirPods IMU → quaternion → listener rotation |
-| **Testing** | Vitest + jsdom — 104 unit tests across 7 modules |
-| **Build & deploy** | Vite → Vercel edge |
-| **Browser automation** | Playwright (agent self-testing) |
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    HTML["index.html<br/>canvas · left panel · right panel"] --> Main
-
-    Main["main.js (orchestrator)"]
-    Main --> Canvas["CanvasGrid<br/>2D/3D rendering"]
-    Main --> Control["ControlPanel<br/>sidebar UI"]
-    Main --> Audio["AudioEngine<br/>HRTF + audio graph"]
-    Main --> TL["Timeline<br/>keyframes"]
-    Main --> Undo["UndoManager<br/>command stack"]
-
-    Audio --> WebAudio["Web Audio API<br/>AudioContext · PannerNode (HRTF) · GainNode · ConvolverNode"]
+```
+src/
+  audio/
+    AudioEngine.js      master bus, sources, inserts, analysers, output modes
+    Generators.js       procedural sources: binaural, isochronic, monaural,
+                        tone, noise, breath, pad, drone, shimmer, schumann
+    InstrumentSynth.js  offline-rendered instrument buffers
+    SceneManager.js     save, load and share, including generator parameters
+    SpeakerConfig.js    headphone and speaker layouts
+    HeadTracker.js      device orientation to listener rotation
+  core/UndoManager.js   one command stack for every edit
+  data/
+    SoundLibrary.js     the registry every surface reads from
+    Presets.js          journeys with sections, focus modes, static scenes
+  ui/
+    Camera.js           projection and inverse projection
+    CanvasGrid.js       the field: rendering, input, motion paths
+    Timeline.js         the journey editor
+    Library.js          left panel
+    Inspector.js        right panel
+    FocusView.js        the single-screen player
+    Icons.js            one line-icon set for DOM and canvas
 ```
 
----
+### Signal path
 
-## How It Was Built
+```
+sample     BufferSource -> LP -> HP -> tremolo -> shoulder -> pinna -> HRTF panner -> gain
+generator  generator output ---------------------> shoulder -> pinna -> HRTF panner -> gain
+binaural   generator output (stereo, head-locked) ----------------------------------> gain
+every      gain -> reverb send -> convolver -> return -> master ; gain -> analyser
+master     master -> limiter -> destination ; master -> splitter -> left/right analysers
+```
 
-This project is an experiment in **fully agentic AI development**: Qwen3.6 Plus generated 100% of the code through an iterative conversation loop — intent in, code out, test, deploy, repeat.
+Binaural beats need a different frequency in each ear. Sending them through the
+HRTF panner would mix the channels and destroy the beat, so they bypass it and
+stay locked to the listener. The inspector says so rather than hiding it.
 
-- **No scaffolding** — `npm init` was the only boilerplate
-- **No upfront architecture** — the structure emerged from feature conversations
-- **No ticketing system** — the AI agent acted as its own project manager
-- **Human role** — intent definition, design review, final approval
+### Coordinates
 
-### The self-testing loop
-
-A notable result: the agent debugged its own output autonomously. When the canvas rendered black, it installed Playwright, wrote scripts to screenshot the live app, traced the failure to an invalid RGBA string produced by a `.replace()` chain, implemented a `_withAlpha()` color helper, then tested, verified, and deployed the fix — without human intervention.
-
-### Engineering notes
-
-As an AI-built experiment, the codebase reflects its origin: some files grew organically past 500 lines, naming mixes German and English, and state lives largely in the AudioContext graph rather than a centralized store. The goal was not textbook architecture — it was measuring how far an AI agent can take a real product with nothing but intent and a feedback loop. The 104-test suite keeps it honest.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+World space is metres: x to the right, y forward, z up. Web Audio takes
+`(x, z, -y)`. The camera carries yaw, pitch and a blend between orthographic
+and perspective; picking and dragging run through the inverse projection, so
+they stay exact at any angle.
 
 ---
 
-<p align="center">
-  <sub>Built with agentic coding by <a href="https://leopardcode.ai">LeopardCode.AI</a> (<a href="https://github.com/leopardcodeai">github.com/leopardcodeai</a>)</sub>
-</p>
+## Adding a sound
+
+1. Check the licence allows redistribution in an MIT project. See
+   [docs/research](docs/research) for vetted sources.
+2. Drop the file in `public/sounds/`.
+3. Add one entry to `SOUNDS` in `src/data/SoundLibrary.js`.
+4. Add the display name to both language tables in `src/i18n.js`.
+5. Record the source and licence in `docs/ATTRIBUTION.md`.
+
+Everything else follows: the library card, the map colour and glyph, the
+timeline lane and the inspector all read from that one entry.
+
+---
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). Bundled audio keeps its own licence; see
+[docs/ATTRIBUTION.md](docs/ATTRIBUTION.md).
+
+Built by [LeopardCode.AI](https://leopardcode.ai).
