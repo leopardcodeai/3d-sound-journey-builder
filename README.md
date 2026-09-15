@@ -155,7 +155,16 @@ timeline lane and the inspector all read from that one entry.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Bundled audio keeps its own licence; see
+MIT, see [LICENSE](LICENSE) — for the code.
+
+⚠️ The bundled audio is **not** covered by that licence and its provenance is
+only partly established. Ten files are byte-identical to
+[Moodist](https://github.com/remvze/moodist), whose own README says its sounds
+fall under the Pixabay Content License or CC0 rather than its MIT licence; the
+Pixabay licence forbids redistributing a file on its own, which is what a
+committed mp3 is. Twenty-two files have no traceable origin. One requires a
+credit we cannot give, one came out of GarageBand. Fine for local use; settle
+it before forking or shipping commercially. Details and the plan:
 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md).
 
 Built by [LeopardCode.AI](https://leopardcode.ai).
