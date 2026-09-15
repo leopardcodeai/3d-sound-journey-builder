@@ -190,7 +190,37 @@ describe('Command helpers', () => {
       const cmd = createDeleteCommand(engine, grid, sourceData);
       cmd.undo();
 
-      expect(engine.addSource).toHaveBeenCalledWith('src1', 'birds', 'Birds', 3, 2, 0, 0.6);
+      expect(engine.addSource).toHaveBeenCalledWith('src1', 'birds', 'Birds', 3, 2, 0, 0.6,
+        { gen: undefined, params: undefined, inserts: undefined });
+    });
+
+    it('restores a generator with the parameters it was deleted with', () => {
+      const engine = createMockEngine();
+      const grid = createMockGrid();
+      const sourceData = {
+        id: 'g1', type: 'tone_pure', name: 'Tone', x: 0, y: 2, z: 0, volume: 0.4,
+        gen: 'tone', params: { freq: 528, harmonics: 0.2 }, inserts: { reverb: 0.3 },
+      };
+
+      const cmd = createDeleteCommand(engine, grid, sourceData);
+      cmd.undo();
+
+      expect(engine.addSource).toHaveBeenCalledWith('g1', 'tone_pure', 'Tone', 0, 2, 0, 0.4,
+        { gen: 'tone', params: { freq: 528, harmonics: 0.2 }, inserts: { reverb: 0.3 } });
+    });
+
+    it('restores fade and repeat settings', () => {
+      const engine = createMockEngine();
+      engine.setSourceRamp = vi.fn();
+      const grid = createMockGrid();
+      const sourceData = {
+        id: 'r1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5,
+        rampUp: 5, rampDown: 8, repeatInterval: 30,
+      };
+
+      createDeleteCommand(engine, grid, sourceData).undo();
+
+      expect(engine.setSourceRamp).toHaveBeenCalledWith('r1', 5, 8, 30);
     });
   });
 

@@ -40,7 +40,7 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 - **Suggested mode** for the current hour in the focus view.
 - **Two journeys**: Restore, built only from water and birdsong, and an
   hour-long Sound bath with the seven chakra bowls entering in order.
-- **Tests**: 200 unit tests across the engine, generators, camera, timeline,
+- **Tests**: 221 unit tests across the engine, generators, camera, timeline,
   library, focus view, presets, scenes, undo and i18n, up from 104.
 
 ### Changed
@@ -66,6 +66,22 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 
 ### Fixed
 
+- A shared link, opened for the first time on another machine, restored only
+  the generators. Loading a scene built its sources without decoding the
+  samples first, so every recorded sound was silently dropped. Loading is now
+  asynchronous and decodes what it needs.
+- Undo after deleting a generator brought it back with the library defaults
+  instead of the parameters it had. Fades and repeat settings were lost the
+  same way, and were never stored in a scene at all.
+- Changing a fade or repeat setting mid-cycle left the previous automation
+  scheduled, so the volume jumped at timestamps belonging to the old settings.
+- Loading a scene restored the listener pose but not the shoulder and ear
+  filter strengths that belong with it.
+- The pad's chord control changed the label but not the sound.
+- Sharing a link wrote a scene called "_temp" into the user's saved list.
+- Chrome reported an unstable filter on every sample source: the low-pass sat
+  at 20 kHz, within 9 percent of Nyquist. Its open position is now 40 percent
+  of the sample rate, above hearing and above what the bundled files carry.
 - The field sized its canvas from the window rather than from its own box. It
   sits below the top bar, so the backing store was 48 pixels too tall and got
   squashed: the drawn centre was 24 pixels off and every click landed short of

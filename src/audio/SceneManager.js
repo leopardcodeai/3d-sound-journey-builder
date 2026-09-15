@@ -3,6 +3,8 @@
  * (timeline keyframes + clip timings). Uses localStorage for persistence and
  * URL hash for sharing.
  */
+import { getSound } from '../data/SoundLibrary.js';
+
 const STORAGE_KEY = 'spatializer_scenes';
 
 const round = (v, d = 2) => {
@@ -31,6 +33,14 @@ export class SceneManager {
   
   // Save current soundscape as a named scene
   saveScene(name) {
+    const scene = this._buildScene(name);
+    this.scenes.set(name, scene);
+    this.persistScenes();
+    return scene;
+  }
+
+  /** The scene object for the current state, without storing it. */
+  _buildScene(name) {
     const sources = [];
     for (const [id, src] of this.audioEngine.sources.entries()) {
       // Rounded and compacted: a shared scene travels in a URL, so every
@@ -43,6 +53,9 @@ export class SceneManager {
         gen: src.gen || null,
         params: src.params ? { ...src.params } : null,
         inserts: src.inserts ? nonDefaultInserts(src.inserts) : null,
+        // Fades and the repeat cycle live directly on the source, not in
+        // inserts, so they need their own slot.
+        ramp: rampOf(src),
       }));
     }
     const automations = {};
@@ -54,19 +67,26 @@ export class SceneManager {
       masterVolume: this.audioEngine.masterGain ? this.audioEngine.masterGain.gain.value : 0.8,
       posture: this.audioEngine.posture,
       headTilt: this.audioEngine.headTilt,
+      // The posture preset also sets these two, and a listener can move them
+      // afterwards. Restoring the pose alone would leave the wrong filtering.
+      shoulderStrength: round(this.audioEngine.shoulderStrength, 3),
+      pinnaStrength: round(this.audioEngine.pinnaStrength, 3),
       sources,
       automations,
       timeline: this._captureTimeline()
     };
-    this.scenes.set(name, scene);
-    this.persistScenes();
     return scene;
   }
   
-  // Load a scene by name - recreates all sources
-  loadScene(name) {
+  /**
+   * Load a scene by name. Samples have to be decoded before their sources can
+   * be built, so this is async; a caller that ignores the promise still gets
+   * every generator, but the recorded sounds would be missing.
+   */
+  async loadScene(name) {
     const scene = this.scenes.get(name);
     if (!scene) return false;
+    await this._preloadFor(scene);
     // Clear current state
     for (const id of Array.from(this.audioEngine.sources.keys())) {
       this.audioEngine.removeSource(id);
@@ -74,8 +94,16 @@ export class SceneManager {
     this.canvasGrid.automations.clear();
     // Set master volume
     this.audioEngine.setMasterVolume(scene.masterVolume);
-    // Restore posture
-    this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
+    // Restore the pose and the anatomy filters that belong with it. Older
+    // scenes have no strengths stored, so fall back to the posture preset.
+    if (scene.shoulderStrength === undefined || scene.pinnaStrength === undefined) {
+      this.audioEngine.applyPosturePreset(scene.posture);
+      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
+    } else {
+      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
+      this.audioEngine.updateShoulderStrength(scene.shoulderStrength);
+      this.audioEngine.updatePinnaStrength(scene.pinnaStrength);
+    }
     // Recreate sources
     for (const s of scene.sources) {
       const src = this.audioEngine.addSource(s.id, s.type, s.name, s.x, s.y, s.z, s.volume, {
@@ -83,6 +111,9 @@ export class SceneManager {
         params: s.params || undefined,
         inserts: s.inserts || undefined,
       });
+      if (src && s.ramp) {
+        this.audioEngine.setSourceRamp(s.id, s.ramp.up || 0, s.ramp.down || 0, s.ramp.repeat || 0);
+      }
       if (src && !s.isPlaying) {
         this.audioEngine.toggleSource(s.id);
       }
@@ -94,6 +125,19 @@ export class SceneManager {
     // Restore the journey (timeline keyframes + clip timings)
     this._restoreTimeline(scene.timeline);
     return true;
+  }
+
+  /** Decode every sample a scene needs that is not in the buffer cache yet. */
+  async _preloadFor(scene) {
+    if (!this.audioEngine.preloadSound) return;
+    const needed = [...new Set((scene.sources || []).map(s => s.type))]
+      .filter(type => {
+        const def = getSound(type);
+        if (def.kind !== 'sample' || !def.url) return false;
+        return this.audioEngine.hasBuffer ? !this.audioEngine.hasBuffer(type) : false;
+      });
+    if (needed.length === 0) return;
+    await Promise.all(needed.map(type => this.audioEngine.preloadSound(type, getSound(type).url)));
   }
 
   // Snapshot the timeline state (journey) of the current scene
@@ -164,16 +208,24 @@ export class SceneManager {
   // Get all scene data
   getScenes() { return this.scenes; }
   
-  // Export current scene as a shareable URL hash
+  /**
+   * A shareable link. Building the payload must not persist anything: the
+   * scene list belongs to the user, not to the act of sharing.
+   */
   exportToURL() {
-    const data = this.saveScene('_temp');
+    const data = this._buildScene('Shared Scene');
     const json = JSON.stringify(data);
     const encoded = btoa(unescape(encodeURIComponent(json)));
     const url = window.location.origin + window.location.pathname + '#scene=' + encoded;
     return url;
   }
   
-  // Import scene from URL hash, return scene name if loaded
+  /**
+   * Read a shared scene out of the URL hash and register it under a fixed
+   * name. It does not load: loading needs to decode samples and the caller
+   * should decide when to await that.
+   * @returns {string|null} the registered name, or null if the hash was unusable
+   */
   importFromURL() {
     const hash = window.location.hash;
     if (!hash.startsWith('#scene=')) return null;
@@ -181,10 +233,10 @@ export class SceneManager {
       const encoded = hash.replace('#scene=', '');
       const json = decodeURIComponent(escape(atob(encoded)));
       const scene = JSON.parse(json);
+      if (!scene || !Array.isArray(scene.sources)) throw new Error('not a scene');
       scene.name = 'Shared Scene';
       this.scenes.set('Shared Scene', scene);
       this.persistScenes();
-      this.loadScene('Shared Scene');
       return 'Shared Scene';
     } catch(e) {
       console.error('Failed to import scene from URL:', e);
@@ -204,6 +256,9 @@ export class SceneManager {
   loadScenes() {
     try {
       const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      // Sharing used to persist a scene called "_temp" as a side effect. It
+      // never belonged in the user's list, so drop it on the way in.
+      delete data._temp;
       return new Map(Object.entries(data));
     } catch(e) {
       return new Map();
@@ -222,4 +277,13 @@ function nonDefaultInserts(inserts) {
     if (defaults[key] === undefined || Math.abs(value - defaults[key]) > 1e-6) out[key] = round(value, 3);
   }
   return out;
+}
+
+/** Fade and repeat settings, only when at least one is set. */
+function rampOf(src) {
+  const up = src.rampUp || 0;
+  const down = src.rampDown || 0;
+  const repeat = src.repeatInterval || 0;
+  if (!up && !down && !repeat) return null;
+  return compact({ up: up || null, down: down || null, repeat: repeat || null });
 }

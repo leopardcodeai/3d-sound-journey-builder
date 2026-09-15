@@ -68,7 +68,8 @@ export function fillNoise(data, color) {
  */
 export function createPulseBuffer(ctx, beat = 10, duty = 0.5) {
   const sr = ctx.sampleRate;
-  const length = Math.max(2, Math.round(sr / Math.max(0.1, beat)));
+  const rate = Number.isFinite(beat) ? beat : 10;
+  const length = Math.max(2, Math.round(sr / Math.max(0.1, rate)));
   const buffer = ctx.createBuffer(1, length, sr);
   const data = buffer.getChannelData(0);
   fillPulse(data, duty);
@@ -77,7 +78,8 @@ export function createPulseBuffer(ctx, beat = 10, duty = 0.5) {
 
 export function fillPulse(data, duty = 0.5) {
   const n = data.length;
-  const on = Math.max(1, Math.floor(n * Math.min(0.95, Math.max(0.05, duty))));
+  const d = Number.isFinite(duty) ? duty : 0.5;
+  const on = Math.max(1, Math.floor(n * Math.min(0.95, Math.max(0.05, d))));
   for (let i = 0; i < n; i++) {
     if (i < on) {
       // raised cosine window over the "on" part: no clicks at the edges
@@ -95,7 +97,8 @@ export function fillPulse(data, duty = 0.5) {
  */
 export function createBreathBuffer(ctx, bpm = 6, inhale = 0.45, hold = 0) {
   const sr = ctx.sampleRate;
-  const period = 60 / Math.max(1, bpm);
+  const rate = Number.isFinite(bpm) ? bpm : 6;
+  const period = 60 / Math.max(1, rate);
   const length = Math.max(2, Math.round(sr * period));
   const buffer = ctx.createBuffer(1, length, sr);
   fillBreath(buffer.getChannelData(0), inhale, hold);
@@ -104,8 +107,10 @@ export function createBreathBuffer(ctx, bpm = 6, inhale = 0.45, hold = 0) {
 
 export function fillBreath(data, inhale = 0.45, hold = 0) {
   const n = data.length;
-  const inN = Math.floor(n * inhale);
-  const holdN = Math.floor(n * hold);
+  const inFrac = Number.isFinite(inhale) ? Math.min(0.9, Math.max(0.05, inhale)) : 0.45;
+  const holdFrac = Number.isFinite(hold) ? Math.min(0.5, Math.max(0, hold)) : 0;
+  const inN = Math.max(1, Math.floor(n * inFrac));
+  const holdN = Math.floor(n * holdFrac);
   const outN = Math.max(1, n - inN - holdN);
   for (let i = 0; i < n; i++) {
     let v;
@@ -477,6 +482,15 @@ function buildPad(ctx, p) {
       else if (key === 'brightness') setParamSmooth(filter.frequency, base(), ctx, 0.2);
       else if (key === 'movement') { setParamSmooth(flG.gain, 400 * value, ctx); voices.forEach(v => setParamSmooth(v.lfoG.gain, 0.04 * value, ctx)); }
       else if (key === 'detune') voices.forEach((v, i) => { if (v.o.detune) setParamSmooth(v.o.detune, (i % 2 ? 1 : -1) * value, ctx); });
+      else if (key === 'chord') {
+        // Retune the existing voices to the new chord rather than rebuilding
+        // the graph, so the pad keeps sounding through the change.
+        const intervals = CHORDS[value] || CHORDS.sus2;
+        voices.forEach((v, i) => {
+          v.semi = intervals[Math.floor(i / 2) % intervals.length];
+          setParamSmooth(v.o.frequency, p.root * Math.pow(2, v.semi / 12), ctx, 0.35);
+        });
+      }
     },
     stop() { voices.forEach(v => { safeStop(v.o); safeStop(v.lfo); }); safeStop(fl); try { output.disconnect(); } catch (e) {} },
   };
@@ -676,5 +690,9 @@ export function clampParam(genName, key, value) {
   const def = GENERATORS[genName];
   const ctl = def && def.controls.find(c => c.key === key);
   if (!ctl || ctl.options) return value;
-  return Math.min(ctl.max, Math.max(ctl.min, value));
+  // Math.min/max pass NaN straight through, and a NaN beat rate reaches
+  // createBuffer as a NaN length, which throws and leaves the tone gated shut.
+  const n = Number(value);
+  if (!Number.isFinite(n)) return def.defaults[key];
+  return Math.min(ctl.max, Math.max(ctl.min, n));
 }

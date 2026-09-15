@@ -178,3 +178,80 @@ describe('SpatialAudioEngine with generators', () => {
     expect(engine._previewGen).toBeNull();
   });
 });
+
+describe('parameter guards', () => {
+  it('clampParam falls back to the default for a non-finite value', () => {
+    expect(clampParam('isochronic', 'beat', NaN)).toBe(GENERATORS.isochronic.defaults.beat);
+    expect(clampParam('breath', 'bpm', undefined)).toBe(GENERATORS.breath.defaults.bpm);
+    expect(clampParam('binaural', 'beat', 'nonsense')).toBe(GENERATORS.binaural.defaults.beat);
+    expect(clampParam('binaural', 'beat', '12')).toBe(12);
+  });
+
+  it('control buffers survive a non-finite rate instead of throwing', () => {
+    const ctx = createMockContext();
+    expect(() => createPulseBuffer(ctx, NaN, 0.5)).not.toThrow();
+    expect(createPulseBuffer(ctx, NaN, 0.5).length).toBeGreaterThan(1);
+    const data = fillBreath(new Float32Array(200), NaN, NaN);
+    expect(data.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe('pad chord control', () => {
+  it('retunes the voices when the chord changes', () => {
+    const ctx = createMockContext();
+    const h = buildGenerator(ctx, 'pad', { root: 100, chord: 'sus2' });
+    const oscs = ctx.createOscillator.mock.results.map(r => r.value);
+    const voiceOscs = oscs.filter(o => o.frequency.setValueAtTime.mock.calls.length
+      && o.frequency.setValueAtTime.mock.calls[0][0] >= 100);
+    const before = voiceOscs.map(o => o.frequency.setTargetAtTime.mock.calls.length);
+
+    h.setParam('chord', 'maj7');
+
+    expect(h.params.chord).toBe('maj7');
+    const after = voiceOscs.map(o => o.frequency.setTargetAtTime.mock.calls.length);
+    expect(after.some((n, i) => n > before[i])).toBe(true);
+  });
+});
+
+describe('ramp scheduling', () => {
+  it('cancels the previous schedule before starting a new repeat cycle', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    engine.addAudioBuffer('rain', { duration: 4, numberOfChannels: 2, length: 4 * 44100, sampleRate: 44100, getChannelData: () => new Float32Array(4) });
+    const src = engine.addSource('r1', 'rain', 'Rain', 0, 0, 0, 0.8);
+    const gain = src.gainNode.gain;
+
+    engine.setSourceRamp('r1', 2, 2, 10);
+    const firstCancels = gain.cancelScheduledValues.mock.calls.length;
+    expect(firstCancels).toBeGreaterThan(0);
+
+    // A second call mid-cycle must clear what the first one left pending.
+    engine.setSourceRamp('r1', 4, 2, 10);
+    expect(gain.cancelScheduledValues.mock.calls.length).toBeGreaterThan(firstCancels);
+  });
+});
+
+describe('filter stability', () => {
+  it('keeps the low-pass away from Nyquist so the biquad stays stable', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    engine.addAudioBuffer('rain', { duration: 4, numberOfChannels: 2, length: 4 * 44100, sampleRate: 44100, getChannelData: () => new Float32Array(4) });
+    const src = engine.addSource('r1', 'rain', 'Rain', 0, 0, 0, 0.5);
+    const nyquist = engine.ctx.sampleRate / 2;
+
+    const opened = src.lowpass.frequency.setValueAtTime.mock.calls[0][0];
+    expect(opened).toBeLessThan(nyquist * 0.85);
+    expect(opened).toBeGreaterThan(16000);
+
+    // A request above the ceiling is clamped; a sane one passes through.
+    engine.setSourceParam('r1', 'lowpass', 21000);
+    const clamped = src.lowpass.frequency.setValueAtTime.mock.calls.at(-1)[0];
+    expect(clamped).toBeLessThan(nyquist * 0.85);
+
+    engine.setSourceParam('r1', 'lowpass', 800);
+    expect(src.lowpass.frequency.setValueAtTime.mock.calls.at(-1)[0]).toBe(800);
+
+    // The stored value stays what the user asked for, so the UI still matches.
+    expect(src.inserts.lowpass).toBe(800);
+  });
+});

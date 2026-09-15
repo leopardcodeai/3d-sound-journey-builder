@@ -423,7 +423,12 @@ export class Inspector {
   _remove() {
     const node = this._node();
     if (!node) return;
-    const data = { id: node.id, type: node.type, name: node.name, x: node.x, y: node.y, z: node.z, volume: node.volume, gen: node.gen, params: { ...node.params } };
+    const data = {
+      id: node.id, type: node.type, name: node.name,
+      x: node.x, y: node.y, z: node.z, volume: node.volume,
+      gen: node.gen, params: { ...node.params }, inserts: { ...node.inserts },
+      rampUp: node.rampUp, rampDown: node.rampDown, repeatInterval: node.repeatInterval,
+    };
     if (this.undoManager) {
       this.undoManager.execute(createDeleteCommand(this.audioEngine, this.canvasGrid, data, this.timeline));
     } else {

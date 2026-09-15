@@ -471,15 +471,22 @@ function bindUI() {
     try { await navigator.clipboard.writeText(url); showToast(t('linkCopied')); }
     catch (e) { prompt(t('copyLink'), url); }
   });
-  $('#scene-list').addEventListener('click', (e) => {
+  $('#scene-list').addEventListener('click', async (e) => {
     const del = e.target.closest('.scene-del');
     if (del) { sceneManager.deleteScene(del.dataset.scene); renderSceneList(); return; }
     const item = e.target.closest('.scene-item');
     if (!item) return;
-    sceneManager.loadScene(item.dataset.scene);
+    if (!audioEngine.isInitialized) audioEngine.init();
+    await audioEngine.resume();
+    setHint(t('loadingAudio'));
+    // Loading decodes any sample the scene needs, so it has to be awaited.
+    await sceneManager.loadScene(item.dataset.scene);
+    setHint('');
     canvasGrid.selectedNodeId = null;
     inspector.show(null);
+    showTimeline(timeline.keyframes.size > 0 || audioEngine.sources.size > 0);
     timeline._render();
+    refreshPanels();
   });
 
   // Timer
@@ -608,7 +615,8 @@ function boot() {
   // Head tracker availability text
   $('#head-tracker-status').textContent = headTracker.isAvailable() ? t('headTrackerAvailable') : t('headTrackerNotAvailable');
 
-  // Shared scene in the URL skips the welcome screen
+  // A shared scene in the URL skips the welcome screen. The audio context
+  // still needs a gesture, so the first click anywhere resumes it.
   if (window.location.hash.startsWith('#scene=')) {
     audioEngine.init();
     const name = sceneManager.importFromURL();
@@ -616,7 +624,15 @@ function boot() {
       document.body.classList.remove('pre-start');
       $('#welcome').style.display = 'none';
       showTimeline(true);
-      timeline._render();
+      setHint(t('loadingAudio'));
+      // importFromURL kicks off the load; wait for the samples before drawing.
+      sceneManager.loadScene(name).then(() => {
+        setHint('');
+        timeline._render();
+        refreshPanels();
+      });
+      const resumeOnce = () => { audioEngine.resume(); document.removeEventListener('pointerdown', resumeOnce); };
+      document.addEventListener('pointerdown', resumeOnce, { once: true });
     }
   }
 

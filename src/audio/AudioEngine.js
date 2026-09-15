@@ -26,6 +26,19 @@ const POSTURE_PRESETS = {
 
 export const INSERT_DEFAULTS = { lowpass: 20000, highpass: 20, modRate: 0, modDepth: 0, reverb: 0, rate: 1 };
 
+/**
+ * A biquad low-pass becomes numerically unstable as its cutoff approaches
+ * Nyquist, and Chrome logs "state is bad" for it. Keep the fully-open position
+ * at 40 percent of the sample rate: about 17.6 kHz at 44.1 kHz, above the top
+ * of hearing and above what a 128 kbps mp3 carries, so nothing is lost.
+ */
+function safeCutoff(ctx, hz) {
+  const ceiling = (ctx && ctx.sampleRate ? ctx.sampleRate : 44100) * 0.4;
+  const n = Number(hz);
+  if (!Number.isFinite(n)) return ceiling;
+  return Math.max(20, Math.min(n, ceiling));
+}
+
 export class SpatialAudioEngine {
   constructor() {
     this.ctx = null;
@@ -269,7 +282,7 @@ export class SpatialAudioEngine {
     // Inserts (pre-spatial)
     src.lowpass = ctx.createBiquadFilter();
     src.lowpass.type = 'lowpass';
-    src.lowpass.frequency.setValueAtTime(src.inserts.lowpass, t);
+    src.lowpass.frequency.setValueAtTime(safeCutoff(ctx, src.inserts.lowpass), t);
     src.highpass = ctx.createBiquadFilter();
     src.highpass.type = 'highpass';
     src.highpass.frequency.setValueAtTime(src.inserts.highpass, t);
@@ -476,7 +489,7 @@ export class SpatialAudioEngine {
     switch (key) {
       case 'lowpass':
         src.inserts.lowpass = value;
-        if (src.lowpass) src.lowpass.frequency.setValueAtTime(value, t);
+        if (src.lowpass) src.lowpass.frequency.setValueAtTime(safeCutoff(this.ctx, value), t);
         return value;
       case 'highpass':
         src.inserts.highpass = value;
@@ -542,10 +555,13 @@ export class SpatialAudioEngine {
     if (src._rampTimeout) { clearTimeout(src._rampTimeout); src._rampTimeout = null; }
     const targetVolume = src.volume;
     const now = this.ctx.currentTime;
+    // Whatever the previous settings scheduled is no longer wanted. Leaving it
+    // in place makes the two schedules fight on the same parameter, and the
+    // volume jumps at the old timestamps.
+    src.gainNode.gain.cancelScheduledValues(now);
     if (repeatInterval > 0) {
       this._scheduleRampCycle(src, targetVolume, now);
     } else {
-      src.gainNode.gain.cancelScheduledValues(now);
       if (rampUp > 0) {
         src.gainNode.gain.setValueAtTime(0, now);
         src.gainNode.gain.linearRampToValueAtTime(targetVolume, now + rampUp);
@@ -559,6 +575,7 @@ export class SpatialAudioEngine {
     const { rampUp, rampDown, repeatInterval } = src;
     const scheduleCycle = (cycleStart) => {
       const g = src.gainNode.gain;
+      g.cancelScheduledValues(cycleStart);
       g.setValueAtTime(0, cycleStart);
       g.linearRampToValueAtTime(targetVolume, cycleStart + rampUp);
       g.setValueAtTime(targetVolume, cycleStart + repeatInterval - rampDown);

@@ -175,6 +175,9 @@ export function createDeleteCommand(audioEngine, canvasGrid, sourceData, timelin
       }
     },
     () => {
+      // A generator is rebuilt from its parameters, not from a buffer, so the
+      // captured gen/params/inserts have to travel with it. Without them the
+      // node comes back reset to the library defaults.
       audioEngine.addSource(
         sourceData.id,
         sourceData.type,
@@ -182,8 +185,16 @@ export function createDeleteCommand(audioEngine, canvasGrid, sourceData, timelin
         sourceData.x,
         sourceData.y,
         sourceData.z,
-        sourceData.volume
+        sourceData.volume,
+        {
+          gen: sourceData.gen || undefined,
+          params: sourceData.params || undefined,
+          inserts: sourceData.inserts || undefined,
+        }
       );
+      if (sourceData.rampUp || sourceData.rampDown || sourceData.repeatInterval) {
+        audioEngine.setSourceRamp(sourceData.id, sourceData.rampUp || 0, sourceData.rampDown || 0, sourceData.repeatInterval || 0);
+      }
       if (automation) {
         canvasGrid.automations.set(sourceData.id, automation);
       }
@@ -276,7 +287,16 @@ export function createMoveKeyframeCommand(timeline, id, index, oldKf, newKf) {
   const write = (from, to) => {
     const kfs = timeline.keyframes.get(id);
     if (!kfs) return;
-    const i = kfs.findIndex(k => k.time === from.time && k.volume === from.volume);
+    // Time and volume alone are not unique: rounding on scene save can make two
+    // keyframes agree on both while their positions differ. Match on position
+    // too, and fall back to time+volume only when that is unambiguous.
+    const exact = kfs.filter(k => k.time === from.time && k.volume === from.volume
+      && k.x === from.x && k.y === from.y && k.z === from.z);
+    let i = exact.length === 1 ? kfs.indexOf(exact[0]) : -1;
+    if (i === -1) {
+      const loose = kfs.filter(k => k.time === from.time && k.volume === from.volume);
+      i = loose.length === 1 ? kfs.indexOf(loose[0]) : -1;
+    }
     if (i === -1) return;
     kfs[i] = { ...to };
     kfs.sort((a, b) => a.time - b.time);

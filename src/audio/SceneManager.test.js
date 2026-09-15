@@ -6,11 +6,19 @@ const mockAudioEngine = {
   masterGain: { gain: { value: 0.8 } },
   posture: 'standing',
   headTilt: 0,
+  shoulderStrength: 0.5,
+  pinnaStrength: 0.5,
   removeSource: vi.fn(),
   addSource: vi.fn(() => ({ id: 'test', isPlaying: true })),
   setMasterVolume: vi.fn(),
   updateListenerPose: vi.fn(),
+  applyPosturePreset: vi.fn(),
+  updateShoulderStrength: vi.fn(),
+  updatePinnaStrength: vi.fn(),
+  setSourceRamp: vi.fn(),
   toggleSource: vi.fn(),
+  hasBuffer: vi.fn(() => true),
+  preloadSound: vi.fn(() => Promise.resolve(true)),
 };
 
 const mockCanvasGrid = {
@@ -83,16 +91,16 @@ describe('SceneManager', () => {
   });
 
   describe('loadScene', () => {
-    it('returns false for non-existent scene', () => {
-      const result = sceneManager.loadScene('Nonexistent');
+    it('returns false for non-existent scene', async () => {
+      const result = await sceneManager.loadScene('Nonexistent');
       expect(result).toBe(false);
     });
 
-    it('restores sources from saved scene', () => {
+    it('restores sources from saved scene', async () => {
       sceneManager.saveScene('Test Scene');
       mockAudioEngine.sources.clear();
 
-      const result = sceneManager.loadScene('Test Scene');
+      const result = await sceneManager.loadScene('Test Scene');
       expect(result).toBe(true);
       expect(mockAudioEngine.removeSource).not.toHaveBeenCalled();
       expect(mockAudioEngine.addSource).toHaveBeenCalledTimes(2);
@@ -102,44 +110,44 @@ describe('SceneManager', () => {
       );
     });
 
-    it('removes existing sources before loading', () => {
+    it('removes existing sources before loading', async () => {
       sceneManager.saveScene('Test Scene');
 
-      const result = sceneManager.loadScene('Test Scene');
+      const result = await sceneManager.loadScene('Test Scene');
       expect(result).toBe(true);
       expect(mockAudioEngine.removeSource).toHaveBeenCalledWith('src1');
       expect(mockAudioEngine.removeSource).toHaveBeenCalledWith('src2');
     });
 
-    it('sets master volume from scene', () => {
+    it('sets master volume from scene', async () => {
       sceneManager.saveScene('Test Scene');
-      sceneManager.loadScene('Test Scene');
+      await sceneManager.loadScene('Test Scene');
 
       expect(mockAudioEngine.setMasterVolume).toHaveBeenCalledWith(0.8);
     });
 
-    it('restores posture and head tilt', () => {
+    it('restores posture and head tilt', async () => {
       sceneManager.saveScene('Test Scene');
-      sceneManager.loadScene('Test Scene');
+      await sceneManager.loadScene('Test Scene');
 
       expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('standing', 0);
     });
 
-    it('restores automations', () => {
+    it('restores automations', async () => {
       sceneManager.saveScene('Test Scene');
-      sceneManager.loadScene('Test Scene');
+      await sceneManager.loadScene('Test Scene');
 
       expect(mockCanvasGrid.setAutomation).toHaveBeenCalledWith(
         'auto1', 'pan', true, expect.objectContaining({ type: 'pan', speed: 1 })
       );
     });
 
-    it('toggles off sources that were not playing', () => {
+    it('toggles off sources that were not playing', async () => {
       sceneManager.saveScene('Test Scene');
       mockAudioEngine.sources.clear();
       mockAudioEngine.addSource.mockReturnValue({ id: 'src2', isPlaying: true });
 
-      sceneManager.loadScene('Test Scene');
+      await sceneManager.loadScene('Test Scene');
 
       expect(mockAudioEngine.toggleSource).toHaveBeenCalledWith('src2');
     });
@@ -193,7 +201,7 @@ describe('SceneManager', () => {
       };
     }
 
-    it('saves and restores keyframes, clip timings and duration', () => {
+    it('saves and restores keyframes, clip timings and duration', async () => {
       const timeline = createMockTimeline();
       const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
 
@@ -211,7 +219,7 @@ describe('SceneManager', () => {
       timeline.sourceTimings.clear();
       timeline.keyframes.clear();
 
-      manager.loadScene('Journey');
+      await manager.loadScene('Journey');
 
       expect(timeline.pause).toHaveBeenCalled();
       expect(timeline.totalDuration).toBe(300);
@@ -230,7 +238,7 @@ describe('SceneManager', () => {
       expect(scene.timeline.keyframes).not.toHaveProperty('ghost');
     });
 
-    it('clears the journey when loading a scene without timeline data', () => {
+    it('clears the journey when loading a scene without timeline data', async () => {
       const timeline = createMockTimeline();
       const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
 
@@ -240,16 +248,16 @@ describe('SceneManager', () => {
       });
 
       timeline.keyframes.set('src1', [{ time: 0, x: 0, y: 0, z: 0, volume: 0.5 }]);
-      manager.loadScene('Legacy');
+      await manager.loadScene('Legacy');
 
       expect(timeline.keyframes.size).toBe(0);
       expect(timeline.sourceTimings.size).toBe(0);
     });
 
-    it('works without a timeline reference (backwards compatible)', () => {
+    it('works without a timeline reference (backwards compatible)', async () => {
       const scene = sceneManager.saveScene('No Timeline');
       expect(scene.timeline).toBeNull();
-      expect(sceneManager.loadScene('No Timeline')).toBe(true);
+      expect(await sceneManager.loadScene('No Timeline')).toBe(true);
     });
   });
 
@@ -284,7 +292,7 @@ describe('SceneManager', () => {
 });
 
 describe('generator sources', () => {
-  it('captures generator parameters and replays them on load', () => {
+  it('captures generator parameters and replays them on load', async () => {
     mockAudioEngine.sources.clear();
     mockAudioEngine.sources.set('bw1', {
       id: 'bw1', type: 'bw_alpha', name: 'Alpha',
@@ -297,7 +305,7 @@ describe('generator sources', () => {
     expect(scene.sources[0].params).toEqual({ beat: 10, carrier: 200 });
 
     vi.clearAllMocks();
-    manager.loadScene('Freq');
+    await manager.loadScene('Freq');
     expect(mockAudioEngine.addSource).toHaveBeenCalledWith(
       'bw1', 'bw_alpha', 'Alpha', 0, 0, 0, 0.3,
       { gen: 'binaural', params: { beat: 10, carrier: 200 }, inserts: { reverb: 0.2 } }
@@ -352,5 +360,155 @@ describe('scene size', () => {
     expect(scene.timeline.timings.s1).toEqual({ startTime: 10.1, duration: 101 });
     expect(scene.timeline.keyframes.s1[0]).toEqual({ time: 1.2, x: 1.23, y: 2.35, z: 0.5, volume: 0.457, easing: 'linear' });
     expect(Object.keys(scene.timeline.tracks)).toEqual(['s1']);
+  });
+});
+
+describe('listener anatomy and ramps', () => {
+  it('stores the filter strengths alongside the posture and restores both', async () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.posture = 'lying-side';
+    mockAudioEngine.headTilt = -45;
+    mockAudioEngine.shoulderStrength = 0.9;
+    mockAudioEngine.pinnaStrength = 0.15;
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    const scene = manager.saveScene('Side');
+    expect(scene.shoulderStrength).toBe(0.9);
+    expect(scene.pinnaStrength).toBe(0.15);
+
+    vi.clearAllMocks();
+    await manager.loadScene('Side');
+    expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('lying-side', -45);
+    expect(mockAudioEngine.updateShoulderStrength).toHaveBeenCalledWith(0.9);
+    expect(mockAudioEngine.updatePinnaStrength).toHaveBeenCalledWith(0.15);
+  });
+
+  it('falls back to the posture preset for a scene saved before strengths existed', async () => {
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    manager.scenes.set('Old', {
+      name: 'Old', masterVolume: 0.6, posture: 'lying-back', headTilt: 0,
+      sources: [], automations: {}, timeline: null,
+    });
+    vi.clearAllMocks();
+    await manager.loadScene('Old');
+    expect(mockAudioEngine.applyPosturePreset).toHaveBeenCalledWith('lying-back');
+  });
+
+  it('carries fade and repeat settings through a round trip', async () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('r1', {
+      id: 'r1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true,
+      rampUp: 5, rampDown: 8, repeatInterval: 30,
+    });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    const scene = manager.saveScene('Ramped');
+    expect(scene.sources[0].ramp).toEqual({ up: 5, down: 8, repeat: 30 });
+
+    vi.clearAllMocks();
+    await manager.loadScene('Ramped');
+    expect(mockAudioEngine.setSourceRamp).toHaveBeenCalledWith('r1', 5, 8, 30);
+  });
+
+  it('omits the ramp slot when nothing is set', () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('p1', { id: 'p1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    expect(manager.saveScene('Plain').sources[0].ramp).toBeUndefined();
+  });
+
+  it('sharing a link does not write a scene into the list', () => {
+    mockAudioEngine.sources.clear();
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    manager.saveScene('Mine');
+    const before = manager.getSceneNames();
+    const url = manager.exportToURL();
+    expect(url).toContain('#scene=');
+    expect(manager.getSceneNames()).toEqual(before);
+    expect(manager.getSceneNames()).not.toContain('_temp');
+  });
+});
+
+describe('sample preloading', () => {
+  it('decodes the samples a scene needs before rebuilding its sources', async () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('s1', { id: 's1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true });
+    mockAudioEngine.sources.set('s2', { id: 's2', type: 'bw_alpha', name: 'Alpha', x: 0, y: 0, z: 0, volume: 0.4, isPlaying: true, gen: 'binaural', params: { beat: 10 } });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    manager.saveScene('Mixed');
+
+    vi.clearAllMocks();
+    mockAudioEngine.hasBuffer.mockReturnValue(false);
+    await manager.loadScene('Mixed');
+
+    // The sample is fetched, the generator is not.
+    expect(mockAudioEngine.preloadSound).toHaveBeenCalledTimes(1);
+    expect(mockAudioEngine.preloadSound).toHaveBeenCalledWith('rain', '/sounds/rain.mp3');
+    mockAudioEngine.hasBuffer.mockReturnValue(true);
+  });
+
+  it('does not refetch a sample that is already decoded', async () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('s1', { id: 's1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    manager.saveScene('Cached');
+
+    vi.clearAllMocks();
+    mockAudioEngine.hasBuffer.mockReturnValue(true);
+    await manager.loadScene('Cached');
+    expect(mockAudioEngine.preloadSound).not.toHaveBeenCalled();
+  });
+
+  it('drops a legacy _temp entry when reading storage', () => {
+    // This block sits outside the main describe, so it stubs storage itself.
+    localStorageMock.clear();
+    localStorageMock.store.spatializer_scenes = JSON.stringify({
+      _temp: { name: '_temp', sources: [] },
+      Mine: { name: 'Mine', sources: [] },
+    });
+    vi.stubGlobal('localStorage', localStorageMock);
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    expect(manager.getSceneNames()).toEqual(['Mine']);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('importFromURL', () => {
+  const encode = (obj) => btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+
+  beforeEach(() => {
+    localStorageMock.clear();
+    vi.stubGlobal('localStorage', localStorageMock);
+    mockAudioEngine.sources.clear();
+  });
+
+  afterEach(() => { vi.unstubAllGlobals(); window.location.hash = ''; });
+
+  it('registers the scene but leaves loading to the caller', () => {
+    const payload = { name: 'x', masterVolume: 0.5, posture: 'standing', headTilt: 0, sources: [{ id: 'a', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.4, isPlaying: true }], automations: {}, timeline: null };
+    window.location.hash = '#scene=' + encode(payload);
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    vi.clearAllMocks();
+
+    const name = manager.importFromURL();
+    expect(name).toBe('Shared Scene');
+    expect(manager.getSceneNames()).toContain('Shared Scene');
+    expect(mockAudioEngine.addSource).not.toHaveBeenCalled();
+  });
+
+  it('returns null for a hash that is not a scene', () => {
+    window.location.hash = '#scene=' + encode({ hello: 'world' });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    expect(manager.importFromURL()).toBeNull();
+  });
+
+  it('returns null for a hash that is not even base64 JSON', () => {
+    window.location.hash = '#scene=not-base64!!';
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    expect(manager.importFromURL()).toBeNull();
+  });
+
+  it('returns null when there is no scene in the hash', () => {
+    window.location.hash = '#something-else';
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    expect(manager.importFromURL()).toBeNull();
   });
 });

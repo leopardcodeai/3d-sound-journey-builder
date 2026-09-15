@@ -38,9 +38,14 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
         e.preventDefault();
         const id = canvasGrid.selectedNodeId;
         if (!id) return;
-        audioEngine.removeSource(id);
-        canvasGrid.automations.delete(id);
-        canvasGrid.selectedNodeId = null;
+        // Route through the inspector so the deletion lands on the undo stack
+        // with the source's parameters, rather than vanishing outright.
+        if (inspector && inspector.nodeId === id) inspector._remove();
+        else {
+          audioEngine.removeSource(id);
+          canvasGrid.automations.delete(id);
+          canvasGrid.selectedNodeId = null;
+        }
         refresh();
         toast(t('removeSound'));
         return;

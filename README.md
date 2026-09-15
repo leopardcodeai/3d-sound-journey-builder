@@ -1,6 +1,6 @@
 # Sound Journey Builder
 
-[![Tests](https://img.shields.io/badge/tests-200%2F200%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
+[![Tests](https://img.shields.io/badge/tests-221%2F221%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
@@ -82,7 +82,7 @@ This is not a medical device.
 ```bash
 npm install
 npm run dev        # http://localhost:5199
-npm test           # 200 unit tests
+npm test           # 221 unit tests
 npm run build      # landing page + app
 ```
 
