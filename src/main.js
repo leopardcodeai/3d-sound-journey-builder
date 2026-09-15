@@ -584,7 +584,12 @@ function renderSpeakerList() {
   const list = custom ? speakerConfig.customSpeakers : (preset && preset.speakerPositions) || [];
 
   if (!list.length) {
-    container.innerHTML = `<p class="note">${escapeHtml(t('speakersNone'))}</p>`;
+    // Two different empty states. Headphones have nothing to place by design.
+    // Custom speakers with none placed is a half-finished setting, and saying
+    // "Headphones:" there reads as if the choice had not taken, when in fact
+    // the engine does hold at the headphone rendering until a speaker exists.
+    const key = custom ? 'speakersNoneCustom' : 'speakersNone';
+    container.innerHTML = `<p class="note">${escapeHtml(t(key))}</p>`;
     return;
   }
 
@@ -948,9 +953,15 @@ function bindUI() {
   lang.addEventListener('change', () => {
     setLanguage(lang.value);
     applyTranslations(document);
+    // Everything the app renders itself rather than through data-i18n has to be
+    // rebuilt here, because applyTranslations cannot reach into markup it did
+    // not write. That is journeys, sets, "Starten mit", the speaker list, the
+    // panels, the timeline and the inspector. The speaker list was the one
+    // missing: its hint stayed English while the heading above it turned German.
     renderJourneyList();
     renderSetList();
     renderStartWith(loadPrefs().startWith);
+    renderSpeakerList();
     refreshPanels();
     // The timeline keeps its own rendered labels, so a language switch left the
     // track names and the transport in the old language. applyTranslations also
