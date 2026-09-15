@@ -4,7 +4,37 @@
  */
 import { t } from '../i18n.js';
 
-export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, timeline, inspector, onToggleView, onToast }) {
+/**
+ * The shortcuts, in the order they are shown. Kept in this file and directly
+ * above the handler that implements them, so the two cannot drift apart
+ * unnoticed. Until this list existed the app had fifteen keys and no way at
+ * all to find out about them.
+ *
+ * `keys` is what the sheet prints; `mod` marks the ones that take the platform
+ * modifier, so macOS shows the command symbol and everything else Ctrl.
+ */
+export const SHORTCUTS = [
+  { group: 'shortcutsEditing', keys: ['Z'], mod: true, labelKey: 'undo' },
+  { group: 'shortcutsEditing', keys: ['\u21e7', 'Z'], mod: true, labelKey: 'redo' },
+  { group: 'shortcutsEditing', keys: ['Delete'], labelKey: 'removeSound' },
+  { group: 'shortcutsEditing', keys: ['K'], labelKey: 'addKeyframe' },
+  { group: 'shortcutsEditing', keys: ['\u2190', '\u2192', '\u2191', '\u2193'], labelKey: 'shortcutNudge' },
+
+  { group: 'shortcutsPlayback', keys: ['Space'], labelKey: 'shortcutPlay' },
+
+  { group: 'shortcutsView', keys: ['2'], labelKey: 'shortcut2d' },
+  { group: 'shortcutsView', keys: ['3'], labelKey: 'shortcut3d' },
+  { group: 'shortcutsView', keys: ['0'], labelKey: 'reset' },
+  { group: 'shortcutsView', keys: ['+', '\u2212'], labelKey: 'shortcutZoom' },
+  { group: 'shortcutsView', keys: ['Tab'], labelKey: 'shortcutSwitchView' },
+  { group: 'shortcutsView', keys: ['Esc'], labelKey: 'shortcutEscape' },
+  { group: 'shortcutsView', keys: ['?'], labelKey: 'shortcutSheet' },
+];
+
+/** Groups in display order. */
+export const SHORTCUT_GROUPS = ['shortcutsEditing', 'shortcutsPlayback', 'shortcutsView'];
+
+export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, timeline, inspector, onToggleView, onToast, onShowShortcuts }) {
   const toast = (msg) => { if (onToast) onToast(msg); };
 
   function isTyping() {
@@ -57,11 +87,14 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
         if (id) toast(audioEngine.toggleSource(id) ? t('play') : t('pause'));
         return;
       }
-      case 'Escape':
+      case 'Escape': {
+        const sheet = document.getElementById('shortcuts-overlay');
+        if (sheet && !sheet.hidden) { sheet.hidden = true; sheet.classList.remove('is-visible'); return; }
         canvasGrid.selectedNodeId = null;
         if (inspector) inspector.show(null);
         document.querySelectorAll('.drawer.is-open').forEach(d => { d.hidden = true; d.classList.remove('is-open'); });
         return;
+      }
       case 'Tab':
         if (onToggleView) { e.preventDefault(); onToggleView(); }
         return;
@@ -74,6 +107,9 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
       case 'ArrowRight': e.preventDefault(); nudge(canvasGrid, audioEngine, 0.25, 0); return;
       case 'ArrowUp': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, 0.25); return;
       case 'ArrowDown': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, -0.25); return;
+      case '?':
+        if (onShowShortcuts) { e.preventDefault(); onShowShortcuts(); }
+        return;
       default:
         if (e.key.toLowerCase() === 'k' && timeline && canvasGrid.selectedNodeId) {
           timeline.addKeyframeAt(canvasGrid.selectedNodeId, timeline.playheadTime);

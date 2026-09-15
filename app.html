@@ -67,6 +67,7 @@
         <span class="tool-sep"></span>
         <button class="icon-btn" id="labels-btn" title="Labels"><span data-icon="info" data-size="15"></span></button>
         <button class="icon-btn" id="grid-btn" title="Grid"><span data-icon="grid" data-size="15"></span></button>
+        <button class="icon-btn" id="paths-btn" data-i18n-title="motionPaths"><span data-icon="drift" data-size="15"></span></button>
       </div>
 
       <aside class="panel panel-left" id="panel-library"></aside>
@@ -125,6 +126,10 @@
           <button class="seg-btn" data-posture="lying-side"><span data-icon="side" data-size="15"></span><span data-i18n="lyingSide">Lying on side</span></button>
         </div>
         <label class="ctl">
+          <span class="ctl-label" data-i18n="headTurn">Head turn</span>
+          <span class="ctl-row"><input type="range" id="head-turn" min="-180" max="180" step="1" value="0" /><output class="ctl-value mono">0&deg;</output></span>
+        </label>
+        <label class="ctl">
           <span class="ctl-label" data-i18n="headTilt">Head tilt</span>
           <span class="ctl-row"><input type="range" id="head-tilt" min="-90" max="90" step="1" value="0" /><output class="ctl-value mono">0°</output></span>
         </label>
@@ -180,6 +185,12 @@
       </section>
 
       <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="shortcuts">Shortcuts</h3>
+        <p class="note" data-i18n="shortcutsHelp"></p>
+        <button class="btn btn-ghost" id="shortcuts-open" style="width:100%"><span data-icon="brackets" data-size="13"></span><span data-i18n="shortcuts">Shortcuts</span></button>
+      </section>
+
+      <section class="drawer-section">
         <h3 class="drawer-title" data-i18n="language">Language</h3>
         <select class="input" id="lang-select">
           <option value="en">English</option>
@@ -192,6 +203,18 @@
         <button class="btn btn-ghost" id="reset-prefs-btn" style="margin-top:8px;width:100%"><span data-icon="undo" data-size="13"></span><span data-i18n="resetSettings">Reset settings</span></button>
       </section>
     </aside>
+
+    <!-- Keyboard shortcuts -->
+    <div class="overlay" id="shortcuts-overlay" hidden>
+      <div class="modal modal-wide">
+        <div class="panel-head">
+          <h2 class="panel-title" data-i18n="shortcuts">Shortcuts</h2>
+          <button class="icon-btn" id="shortcuts-close" data-i18n-title="close"><span data-icon="close" data-size="14"></span></button>
+        </div>
+        <div class="shortcut-groups" id="shortcut-groups"></div>
+        <p class="note" data-i18n="shortcutsHelp"></p>
+      </div>
+    </div>
 
     <!-- Welcome -->
     <div class="overlay" id="welcome">

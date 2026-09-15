@@ -15,7 +15,7 @@ import { Library } from './ui/Library.js';
 import { Inspector } from './ui/Inspector.js';
 import { FocusView } from './ui/FocusView.js';
 import { SoundscapeTimer } from './ui/Timer.js';
-import { initKeyboardShortcuts } from './ui/KeyboardShortcuts.js';
+import { initKeyboardShortcuts, SHORTCUTS, SHORTCUT_GROUPS } from './ui/KeyboardShortcuts.js';
 import { hydrateIcons, icon } from './ui/Icons.js';
 import { watchRangeFills, syncRangeFills, setRangeFill } from './ui/sliders.js';
 import { getSound, soundName, SOUND_URLS } from './data/SoundLibrary.js';
@@ -53,6 +53,7 @@ const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
 const timeline = new Timeline($('#timeline-dock'), audioEngine, canvasGrid);
 timeline.undoManager = undoManager;
 canvasGrid.timeline = timeline;
+timeline.onSnapChange = (on) => savePrefs({ snap: on });
 timeline.onSelect = (id) => {
   canvasGrid.selectedNodeId = id;
   if (inspector) inspector.show(audioEngine.sources.get(id));
@@ -87,7 +88,7 @@ const soundscapeTimer = new SoundscapeTimer(audioEngine, {
 
 const headTracker = new HeadTracker(audioEngine, {
   onStart: () => setHeadTrackerUI(true),
-  onStop: () => { setHeadTrackerUI(false); audioEngine.updateListenerPose(audioEngine.posture, audioEngine.headTilt); },
+  onStop: () => { setHeadTrackerUI(false); audioEngine.updateListenerPose(audioEngine.posture, audioEngine.headTilt, audioEngine.headTurn); },
 });
 audioEngine.headTracker = headTracker;
 
@@ -387,10 +388,20 @@ function syncMasterUI(value) {
   if (out) out.textContent = `${Math.round(value * 100)}%`;
 }
 
+/** Head turn as an angle plus the side, so the direction is not left to guess. */
+function formatTurn(v) {
+  const n = Math.round(v);
+  if (n === 0) return `0° ${t('ahead')}`;
+  if (Math.abs(n) === 180) return `180° ${t('behind')}`;
+  return `${Math.abs(n)}° ${n > 0 ? t('rightShort') : t('leftShort')}`;
+}
+
 function syncPostureUI(posture) {
   document.querySelectorAll('#posture-seg .seg-btn').forEach(b => b.classList.toggle('is-on', b.dataset.posture === posture));
   const tilt = $('#head-tilt');
   if (tilt) { tilt.value = audioEngine.headTilt; tilt.nextElementSibling.textContent = `${audioEngine.headTilt}°`; }
+  const turn = $('#head-turn');
+  if (turn) { turn.value = audioEngine.headTurn || 0; turn.nextElementSibling.textContent = formatTurn(audioEngine.headTurn || 0); }
   const sh = $('#shoulder-strength');
   if (sh) { sh.value = audioEngine.shoulderStrength; sh.nextElementSibling.textContent = `${Math.round(audioEngine.shoulderStrength * 100)}%`; }
   const pi = $('#pinna-strength');
@@ -418,7 +429,7 @@ function applyPrefs(prefs) {
   if (reverb) { reverb.value = prefs.room; reverb.nextElementSibling.textContent = `${Math.round(prefs.room * 100)}%`; }
 
   audioEngine.applyPosturePreset(prefs.posture);
-  audioEngine.updateListenerPose(prefs.posture, prefs.headTilt);
+  audioEngine.updateListenerPose(prefs.posture, prefs.headTilt, prefs.headTurn);
   audioEngine.updateShoulderStrength(prefs.shoulder);
   audioEngine.updatePinnaStrength(prefs.pinna);
   syncPostureUI(prefs.posture);
@@ -515,6 +526,31 @@ function renderStartWith(selected) {
   el.value = known.includes(selected) ? selected : DEFAULTS.startWith;
 }
 
+const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
+/** Renders the shortcut sheet. The modifier symbol follows the platform. */
+function renderShortcuts() {
+  const host = $('#shortcut-groups');
+  if (!host) return;
+  const mod = IS_APPLE ? '\u2318' : 'Ctrl';
+  host.innerHTML = SHORTCUT_GROUPS.map(group => {
+    const rows = SHORTCUTS.filter(s => s.group === group).map(s => {
+      const keys = (s.mod ? [mod, ...s.keys] : s.keys)
+        .map(k => `<kbd>${escapeHtml(k)}</kbd>`).join('');
+      return `<div class="shortcut-row"><span>${escapeHtml(t(s.labelKey))}</span><span class="shortcut-keys">${keys}</span></div>`;
+    }).join('');
+    return `<div><div class="shortcut-group-title">${escapeHtml(t(group))}</div>${rows}</div>`;
+  }).join('');
+}
+
+function showShortcuts(on) {
+  const el = $('#shortcuts-overlay');
+  if (!el) return;
+  if (on) renderShortcuts();
+  el.hidden = !on;
+  el.classList.toggle('is-visible', on);
+}
+
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
@@ -558,10 +594,17 @@ function bindUI() {
   $('#labels-btn').addEventListener('click', (e) => {
     canvasGrid.showLabels = !canvasGrid.showLabels;
     e.currentTarget.classList.toggle('is-on', canvasGrid.showLabels);
+    savePrefs({ showLabels: canvasGrid.showLabels });
   });
   $('#grid-btn').addEventListener('click', (e) => {
     canvasGrid.showGrid = !canvasGrid.showGrid;
     e.currentTarget.classList.toggle('is-on', canvasGrid.showGrid);
+    savePrefs({ showGrid: canvasGrid.showGrid });
+  });
+  $('#paths-btn').addEventListener('click', (e) => {
+    canvasGrid.showPaths = !canvasGrid.showPaths;
+    e.currentTarget.classList.toggle('is-on', canvasGrid.showPaths);
+    savePrefs({ showPaths: canvasGrid.showPaths });
   });
 
   // Timeline dock
@@ -610,7 +653,13 @@ function bindUI() {
     syncPostureUI(btn.dataset.posture);
     savePrefs({ posture: btn.dataset.posture });
   });
-  bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v); return `${v}°`; }, 'headTilt');
+  // A bare "45 degrees" does not say which way. The side is the part the ear
+  // can check, so it is spelled out.
+  bindRange('#head-turn', (v) => {
+    audioEngine.updateListenerPose(audioEngine.posture, audioEngine.headTilt, v);
+    return formatTurn(v);
+  }, 'headTurn');
+  bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v, audioEngine.headTurn); return `${v}°`; }, 'headTilt');
   bindRange('#shoulder-strength', (v) => { audioEngine.updateShoulderStrength(v); return `${Math.round(v * 100)}%`; }, 'shoulder');
   bindRange('#pinna-strength', (v) => { audioEngine.updatePinnaStrength(v); return `${Math.round(v * 100)}%`; }, 'pinna');
 
@@ -703,6 +752,12 @@ function bindUI() {
     timeline._render();
   });
 
+  $('#shortcuts-open').addEventListener('click', () => showShortcuts(true));
+  $('#shortcuts-close').addEventListener('click', () => showShortcuts(false));
+  $('#shortcuts-overlay').addEventListener('click', (e) => {
+    if (e.target === $('#shortcuts-overlay')) showShortcuts(false);
+  });
+
   $('#reset-prefs-btn').addEventListener('click', () => {
     const prefs = resetPrefs();
     applyPrefs(prefs);
@@ -739,8 +794,9 @@ function bindRange(selector, handler, prefKey) {
   });
 }
 
-function setFieldMode(mode) {
+function setFieldMode(mode, remember = true) {
   canvasGrid.setViewMode(mode);
+  if (remember) savePrefs({ fieldMode: mode });
   $('#view-2d-btn').classList.toggle('is-on', mode === '2d');
   $('#view-3d-btn').classList.toggle('is-on', mode === '3d');
 }
@@ -794,6 +850,14 @@ function boot() {
   // that writes to an AudioParam waits for applyPrefs in startApp.
   const prefs = loadPrefs();
   renderStartWith(prefs.startWith);
+  canvasGrid.showLabels = prefs.showLabels;
+  canvasGrid.showGrid = prefs.showGrid;
+  canvasGrid.showPaths = prefs.showPaths;
+  timeline.setSnap(prefs.snap);
+  for (const [sel, on] of [['#labels-btn', prefs.showLabels], ['#grid-btn', prefs.showGrid], ['#paths-btn', prefs.showPaths]]) {
+    const el = $(sel);
+    if (el) el.classList.toggle('is-on', on);
+  }
   const speakerSelect = $('#speaker-config');
   if (speakerSelect) speakerSelect.value = prefs.output;
   const reverb = $('#reverb-level');
@@ -801,7 +865,7 @@ function boot() {
   syncMasterUI(prefs.masterVolume);
   watchRangeFills(document);
   bindUI();
-  setFieldMode('2d');
+  setFieldMode(prefs.fieldMode, false);
   setHint('');
   document.body.dataset.panel = 'field';
 
@@ -810,6 +874,7 @@ function boot() {
     inspector,
     onToggleView: () => setView(currentView === 'field' ? 'focus' : 'field'),
     onToast: showToast,
+    onShowShortcuts: () => showShortcuts(true),
   });
 
   // Head tracker availability text

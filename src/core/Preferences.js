@@ -28,11 +28,20 @@ export const DEFAULTS = Object.freeze({
   room: 0.3,
   posture: 'standing',
   headTilt: 0,
+  headTurn: 0,
   shoulder: 0.5,
   pinna: 0.5,
   masterVolume: 0.5,
   startWith: 'meditate',
   rememberStart: true,
+  // What the field looks like. These were toolbar toggles that reset on every
+  // reload, so anyone who works without labels had to switch them off again
+  // each visit.
+  fieldMode: '2d',
+  showLabels: true,
+  showGrid: true,
+  showPaths: true,
+  snap: true,
 });
 
 const num = (min, max) => (v, fallback) => {
@@ -55,11 +64,17 @@ const FIELDS = {
   // angle, so the store must not be narrower than the control. It was, and a
   // tilt of 80 degrees came back as 45 after a reload without saying so.
   headTilt: num(-90, 90),
+  headTurn: num(-180, 180),
   shoulder: num(0, 1),
   pinna: num(0, 1),
   masterVolume: num(0, 1),
   startWith: id,
   rememberStart: bool,
+  fieldMode: oneOf(['2d', '3d']),
+  showLabels: bool,
+  showGrid: bool,
+  showPaths: bool,
+  snap: bool,
 };
 
 /**

@@ -387,7 +387,9 @@ export class Timeline {
 
   setSnap(on) {
     this.snap = on;
-    this._q('.tl-snap').classList.toggle('is-on', on);
+    const btn = this._q('.tl-snap');
+    if (btn) btn.classList.toggle('is-on', on);
+    if (this.onSnapChange) this.onSnapChange(on);
   }
 
   // ---------------------------------------------------------------------

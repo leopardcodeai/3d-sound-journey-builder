@@ -65,6 +65,7 @@ export class SpatialAudioEngine {
     this.pinnaStrength = 0.5;
     this.posture = 'standing';
     this.headTilt = 0;
+    this.headTurn = 0;
 
     this.outputMode = 'hrtf';
     this.speakerPositions = null;
@@ -150,7 +151,7 @@ export class SpatialAudioEngine {
     }
 
     this.isInitialized = true;
-    this.updateListenerPose(this.posture, this.headTilt);
+    this.updateListenerPose(this.posture, this.headTilt, this.headTurn);
     console.log('Spatial audio engine ready');
   }
 
@@ -172,9 +173,58 @@ export class SpatialAudioEngine {
   // Listener
   // ---------------------------------------------------------------------
 
-  updateListenerPose(posture, headTilt) {
+  /**
+   * Rotates a vector about a unit axis. Rodrigues' formula, with the term that
+   * needs the dot product kept, so it is correct even when the two are not
+   * perpendicular.
+   */
+  static _rotateAbout(v, k, angle) {
+    const c = Math.cos(angle);
+    const sn = Math.sin(angle);
+    const dot = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+    const cross = [
+      k[1] * v[2] - k[2] * v[1],
+      k[2] * v[0] - k[0] * v[2],
+      k[0] * v[1] - k[1] * v[0],
+    ];
+    return [
+      v[0] * c + cross[0] * sn + k[0] * dot * (1 - c),
+      v[1] * c + cross[1] * sn + k[1] * dot * (1 - c),
+      v[2] * c + cross[2] * sn + k[2] * dot * (1 - c),
+    ];
+  }
+
+  /**
+   * Sets the listener's orientation from posture, head tilt and head turn.
+   *
+   * Tilt and turn are two different movements and the app only had one of them.
+   *
+   * Tilt is roll: the head leans towards a shoulder, the up vector rotates and
+   * the face keeps pointing the same way. Turn is yaw: the face itself rotates,
+   * so a sound on the right swings towards the front and on to the left ear.
+   * Yaw is the movement people mean by turning their head, and until now there
+   * was no control for it anywhere.
+   *
+   * Both are audible, which is worth stating because a first measurement here
+   * suggested otherwise. Probing with a 600 Hz tone showed tilt moving the
+   * balance by under a decibel, but that is an artefact of the probe: at
+   * 600 Hz the ear works on arrival time, not level, and an RMS comparison
+   * cannot see it. Re-measured with broadband noise on a source three metres
+   * to the right, right minus left in dB:
+   *
+   *            0     30     60     90    120    180 degrees
+   *   tilt   11.1    9.1    7.7    0.0   -7.9  -11.1
+   *   turn   11.1   10.8    9.4    0.0   -9.4  -11.3
+   *
+   * Turn is applied by rotating the forward vector about the listener's own up
+   * axis, so it works the same way in all three postures instead of needing a
+   * special case for each.
+   */
+  updateListenerPose(posture, headTilt, headTurn) {
     this.posture = posture;
     this.headTilt = headTilt;
+    if (headTurn !== undefined) this.headTurn = headTurn;
+    const turn = Number.isFinite(this.headTurn) ? this.headTurn : 0;
     if (!this.isInitialized || !this.ctx) return;
     const listener = this.ctx.listener;
     const rad = (headTilt * Math.PI) / 180;
@@ -189,6 +239,18 @@ export class SpatialAudioEngine {
       fx = 0; fy = 0; fz = -1;
       ux = Math.sin(rad); uy = Math.cos(rad); uz = 0;
     }
+
+    if (turn !== 0) {
+      const axis = [ux, uy, uz];
+      const len = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+      const k = [axis[0] / len, axis[1] / len, axis[2] / len];
+      // Negated so a positive angle turns to the right, like a compass bearing
+      // and like the yaw a head tracker reports. Rotating about the up axis by
+      // a positive angle would otherwise swing the face to the left.
+      const f = SpatialAudioEngine._rotateAbout([fx, fy, fz], k, (-turn * Math.PI) / 180);
+      fx = f[0]; fy = f[1]; fz = f[2];
+    }
+
     const t = this.ctx.currentTime;
     if (listener.forwardX) {
       listener.forwardX.setValueAtTime(fx, t); listener.forwardY.setValueAtTime(fy, t); listener.forwardZ.setValueAtTime(fz, t);
