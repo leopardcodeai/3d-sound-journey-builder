@@ -268,13 +268,16 @@ export function createRemoveKeyframeCommand(timeline, id, keyframe, index) {
 
 export function createMoveKeyframeCommand(timeline, id, index, oldKf, newKf) {
   // The list stays sorted by time, so a move can change the index. Both
-  // directions locate the entry by identity before writing.
+  // directions locate the entry by its own values.
+  //
+  // If nothing matches, the keyframe is gone: deleted, or replaced when a
+  // journey loaded. Writing at the stored index would then overwrite an
+  // unrelated keyframe, so the command does nothing instead.
   const write = (from, to) => {
     const kfs = timeline.keyframes.get(id);
     if (!kfs) return;
-    let i = kfs.findIndex(k => k.time === from.time && k.volume === from.volume);
-    if (i === -1) i = Math.min(index, kfs.length - 1);
-    if (i < 0) return;
+    const i = kfs.findIndex(k => k.time === from.time && k.volume === from.volume);
+    if (i === -1) return;
     kfs[i] = { ...to };
     kfs.sort((a, b) => a.time - b.time);
     if (timeline.visible) timeline._render();

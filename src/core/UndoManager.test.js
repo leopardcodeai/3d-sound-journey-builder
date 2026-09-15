@@ -352,6 +352,30 @@ describe('createMoveKeyframeCommand', () => {
     expect(tl.keyframes.get('s1')[1].volume).toBe(0.5);
   });
 
+  it('does nothing when the keyframe it moved is gone', () => {
+    const kfs = [
+      { time: 0, x: 0, y: 0, z: 0, volume: 0.2 },
+      { time: 10, x: 1, y: 1, z: 0, volume: 0.5 },
+      { time: 20, x: 2, y: 2, z: 0, volume: 0.7 },
+    ];
+    const tl = makeTimeline(kfs);
+    const cmd = createMoveKeyframeCommand(tl, 's1', 1, { ...kfs[1] }, { ...kfs[1], time: 15 });
+    // The user deletes that keyframe before undoing the move.
+    kfs.splice(1, 1);
+    const snapshot = JSON.parse(JSON.stringify(kfs));
+    cmd.execute();
+    expect(tl.keyframes.get('s1')).toEqual(snapshot);
+    cmd.undo();
+    expect(tl.keyframes.get('s1')).toEqual(snapshot);
+  });
+
+  it('does nothing when the whole list was replaced by a journey', () => {
+    const tl = makeTimeline([{ time: 0, x: 0, y: 0, z: 0, volume: 0.2 }]);
+    const cmd = createMoveKeyframeCommand(tl, 's1', 3, { time: 10, volume: 0.5 }, { time: 40, volume: 0.9 });
+    cmd.execute();
+    expect(tl.keyframes.get('s1')).toEqual([{ time: 0, x: 0, y: 0, z: 0, volume: 0.2 }]);
+  });
+
   it('keeps the list sorted when a move crosses a neighbour', () => {
     const kfs = [
       { time: 0, x: 0, y: 0, z: 0, volume: 0.2 },
