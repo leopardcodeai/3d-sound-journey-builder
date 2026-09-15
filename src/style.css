@@ -672,6 +672,12 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
   transition: opacity 0.35s var(--ease);
 }
 .overlay.is-hidden { opacity: 0; pointer-events: none; }
+/* A class selector beats the browser's own [hidden] rule, so .overlay's
+   display:grid made every overlay visible from page load regardless of the
+   attribute. The welcome modal hides itself with .is-hidden and so never hit
+   this; the shortcut sheet did, and shipped sitting open over the app. Make
+   the attribute authoritative for anything that can carry it. */
+.overlay[hidden], .drawer[hidden] { display: none; }
 .modal {
   width: min(460px, 100%); padding: 32px 30px; text-align: center;
   display: flex; flex-direction: column; align-items: center; gap: 14px;
