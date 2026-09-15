@@ -114,11 +114,11 @@ export class FocusView {
       if (this.callbacks.onOpenField) this.callbacks.onOpenField();
     });
     this.layersEl.addEventListener('input', (e) => {
-      const input = e.target.closest('input[data-id]');
+      const input = e.target.closest('[data-id][data-key]');
       if (!input) return;
       const id = input.dataset.id;
       const key = input.dataset.key;
-      const value = parseFloat(input.value);
+      const value = input.tagName === 'SELECT' ? input.value : parseFloat(input.value);
       if (key === 'volume') this.audioEngine.updateSourceVolume(id, value);
       else this.audioEngine.setSourceParam(id, key, value);
       const out = input.parentElement.querySelector('output');
@@ -385,10 +385,7 @@ export class FocusView {
             <input type="range" data-id="${src.id}" data-key="volume" min="0" max="1" step="0.01" value="${src.volume}" />
             <output class="mono">${Math.round(src.volume * 100)}%</output>
           </label>
-          ${main ? `<label class="focus-layer-ctl">
-            <input type="range" data-id="${src.id}" data-key="${main.key}" min="${main.min}" max="${main.max}" step="${main.step}" value="${mainValue}" />
-            <output class="mono">${formatParam(main.key, mainValue)}</output>
-          </label>` : ''}
+          ${main ? layerControl(src.id, main, mainValue) : ''}
           ${src.gen === 'tone' ? `<div class="chips">${SOLFEGGIO.slice(0, 5).map(f => `<button class="chip solf-btn" data-id="${src.id}" data-freq="${f}">${f}</button>`).join('')}</div>` : ''}
           <button class="icon-btn focus-layer-remove" data-id="${src.id}" title="${t('removeSound')}">${icon('close', { size: 12 })}</button>
         </div>`;
@@ -401,8 +398,28 @@ function cell(label, value, sub) {
   return `<div class="stat"><span class="stat-label">${escapeHtml(label)}</span><span class="stat-value mono">${escapeHtml(value)}</span><span class="stat-sub">${escapeHtml(sub || '')}</span></div>`;
 }
 
+/**
+ * One control per layer. A parameter with a fixed set of options (noise colour,
+ * chord) needs a select; a numeric one gets a range. Feeding a range with an
+ * option value would show NaN.
+ */
+function layerControl(id, ctl, value) {
+  if (ctl.options) {
+    return `<label class="focus-layer-ctl">
+      <select class="input" data-id="${id}" data-key="${ctl.key}">
+        ${ctl.options.map(o => `<option value="${o}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>
+    </label>`;
+  }
+  return `<label class="focus-layer-ctl">
+    <input type="range" data-id="${id}" data-key="${ctl.key}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${value}" />
+    <output class="mono">${formatParam(ctl.key, value)}</output>
+  </label>`;
+}
+
 function formatParam(key, value) {
   if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
   if (key === 'beat' || key === 'freq' || key === 'carrier' || key === 'cutoff') return `${Number(value).toFixed(key === 'beat' ? 1 : 0)} Hz`;
   if (key === 'bpm') return `${value}/min`;
   return String(Math.round(value * 100) / 100);
