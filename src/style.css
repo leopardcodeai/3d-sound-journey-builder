@@ -603,6 +603,30 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .focus-orb-time { grid-area: 1 / 1; transform: translateY(26px); font-size: var(--fs-md); color: var(--text-2); }
 .focus-orb:hover .focus-orb-icon { color: #fff; }
 .focus-phase { font-size: var(--fs-sm); color: var(--text-3); min-height: 18px; text-align: center; }
+.focus-bare-hint { font-size: var(--fs-xs); color: var(--text-3); text-align: center; opacity: 0; transition: opacity 0.6s var(--ease); pointer-events: none; }
+.focus-head { position: relative; }
+.focus-bare-btn {
+  position: absolute; right: 0; top: 2px; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font: inherit; font-size: var(--fs-xs); color: var(--text-3);
+  background: none; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer;
+  transition: color 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+.focus-bare-btn:hover { color: var(--text-2); border-color: var(--line-strong); }
+/* Bare mode: everything but the orb, the phase line and the field steps back.
+   Hidden with opacity rather than display so the layout does not jump, which
+   would move the orb out from under the pointer mid-session. */
+.view-focus.is-bare .focus-head > *:not(.focus-bare-hint),
+.view-focus.is-bare .focus-modes,
+.view-focus.is-bare .focus-readout,
+.view-focus.is-bare .focus-lengths,
+.view-focus.is-bare .focus-layers,
+.view-focus.is-bare .focus-foot { opacity: 0; pointer-events: none; transition: opacity 0.6s var(--ease); }
+.view-focus.is-bare .focus-bare-hint { opacity: 1; transition-delay: 0.5s; }
+/* Dim the bar's contents, not the bar. Fading the bar itself lets the page
+   texture show through along the top edge, which is louder than the chrome it
+   was meant to hide. */
+body.focus-bare .topbar > * { opacity: 0.12; transition: opacity 0.6s var(--ease); }
+body.focus-bare .topbar:hover > * { opacity: 1; }
 
 .focus-readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .focus-readout:empty { display: none; }

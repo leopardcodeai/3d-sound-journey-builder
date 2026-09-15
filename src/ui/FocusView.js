@@ -43,6 +43,9 @@ export class FocusView {
         <header class="focus-head">
           <h1 class="focus-title" data-i18n="focusTitle">Focus session</h1>
           <p class="focus-sub" data-i18n="focusHelp"></p>
+          <button class="focus-bare-btn" data-i18n-title="hideInterface">
+            ${icon('focus', { size: 14 })}<span data-i18n="hideInterface">Hide interface</span>
+          </button>
         </header>
 
         <div class="focus-modes" role="tablist">
@@ -68,6 +71,7 @@ export class FocusView {
             <span class="focus-orb-time mono">00:00</span>
           </button>
           <p class="focus-phase"></p>
+          <p class="focus-bare-hint" data-i18n="bareHint"></p>
         </div>
 
         <div class="focus-readout"></div>
@@ -87,6 +91,7 @@ export class FocusView {
         </footer>
       </div>
     `;
+    this.bareBtn = this.root.querySelector('.focus-bare-btn');
     this.fieldEl = this.root.querySelector('.focus-field');
     this.orbEl = this.root.querySelector('.focus-orb');
     this.orbIcon = this.root.querySelector('.focus-orb-icon');
@@ -107,6 +112,23 @@ export class FocusView {
       if (btn) this.applyMode(btn.dataset.mode);
     });
     this.orbEl.addEventListener('click', () => this.toggle());
+
+    this.bareBtn.addEventListener('click', (e) => {
+      // Without this the click bubbles to the root handler below, which sees
+      // bare mode already on and turns it straight back off.
+      e.stopPropagation();
+      this.setBare(true);
+    });
+    // Leaving is deliberately easy: anything but the orb brings the interface
+    // back. A mode you cannot get out of is worse than no mode.
+    this.root.addEventListener('click', (e) => {
+      if (!this.bare) return;
+      if (e.target.closest('.focus-orb') || e.target.closest('.focus-bare-btn')) return;
+      this.setBare(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.bare) { this.setBare(false); e.stopPropagation(); }
+    });
     this.root.querySelector('.focus-length-chips').addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
@@ -146,6 +168,20 @@ export class FocusView {
   }
 
   // ------------------------------------------------------------------
+
+  /**
+   * Strips the screen back to the orb, the phase line and the field.
+   *
+   * Endel ships this as an explicit "Hide interface" button and Calm fades its
+   * chrome after fifteen idle seconds. The button is the honest version: an
+   * interface that vanishes on its own reads as a fault the first time it
+   * happens. Leaving is a click anywhere or Escape.
+   */
+  setBare(on) {
+    this.bare = !!on;
+    this.root.classList.toggle('is-bare', this.bare);
+    document.body.classList.toggle('focus-bare', this.bare);
+  }
 
   show() {
     this.visible = true;
