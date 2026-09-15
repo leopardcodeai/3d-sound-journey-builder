@@ -9,11 +9,30 @@ import { chromium } from 'playwright';
 const URL = process.env.SHOOT_URL || 'http://localhost:5199/app.html';
 const OUT = process.env.SHOOT_OUT || 'docs/screenshot_app.png';
 const JOURNEY = process.env.SHOOT_JOURNEY || 'ocean';
-const VIEW = process.env.SHOOT_VIEW || '3d';
+const VIEW = process.env.SHOOT_VIEW || '3d';   // field | 3d | focus | landing
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 950 }, deviceScaleFactor: 2 });
+
+if (VIEW === 'landing') {
+  await page.goto(URL.replace(/\/app\.html$/, '/'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: OUT });
+  await browser.close();
+  console.log('saved', OUT);
+  process.exit(0);
+}
+
 await page.goto(URL, { waitUntil: 'networkidle' });
+
+if (VIEW === 'focus') {
+  await page.click('#start-focus');
+  await page.waitForTimeout(4000);
+  await page.screenshot({ path: OUT });
+  await browser.close();
+  console.log('saved', OUT);
+  process.exit(0);
+}
 
 await page.click('#start-journey');
 await page.waitForTimeout(3000);

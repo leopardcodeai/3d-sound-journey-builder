@@ -87,6 +87,12 @@ export class CanvasGrid {
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('resize', () => this.resize());
     }
+    // The canvas box also changes without a window resize: a panel opening, the
+    // timeline dock, an orientation change. ResizeObserver catches those.
+    if (typeof ResizeObserver === 'function') {
+      this._resizeObserver = new ResizeObserver(() => this.resize());
+      this._resizeObserver.observe(this.canvas);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -128,12 +134,20 @@ export class CanvasGrid {
     return this.themeColors[type] || getSound(type).color || this.themeColors.custom;
   }
 
+  /**
+   * Size the backing store to the canvas's own box, not the window. The canvas
+   * sits below the top bar, so the two differ, and using the window would
+   * stretch every drawing and put pointer coordinates out by that difference.
+   */
   resize() {
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-    this.w = (typeof window !== 'undefined' && window.innerWidth) || 500;
-    this.h = (typeof window !== 'undefined' && window.innerHeight) || 500;
-    this.canvas.width = this.w * dpr;
-    this.canvas.height = this.h * dpr;
+    const rect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : null;
+    const w = rect && rect.width > 0 ? rect.width : ((typeof window !== 'undefined' && window.innerWidth) || 500);
+    const h = rect && rect.height > 0 ? rect.height : ((typeof window !== 'undefined' && window.innerHeight) || 500);
+    this.w = w;
+    this.h = h;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
     if (this.ctx && this.ctx.setTransform) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this._baseScale = Math.min(this.w, this.h) / 22;
     this.unitScale = this._baseScale * this.camZoom;

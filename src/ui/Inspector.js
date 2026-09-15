@@ -108,10 +108,14 @@ export class Inspector {
     // Delegated control handling: ranges commit on change, selects on change.
     this.paneEl.addEventListener('input', (e) => this._onControl(e, false));
     this.paneEl.addEventListener('change', (e) => this._onControl(e, true));
-    this.paneEl.addEventListener('pointerdown', (e) => {
-      const input = e.target.closest('input[type="range"]');
+    // Remember the value a gesture starts from, so the change event can push a
+    // single undo entry. Keyboard users get the same through focusin.
+    const rememberStart = (e) => {
+      const input = e.target.closest && e.target.closest('input[type="range"]');
       if (input) this._commitStart = this._readValue(input.dataset.key);
-    });
+    };
+    this.paneEl.addEventListener('pointerdown', rememberStart);
+    this.paneEl.addEventListener('focusin', rememberStart);
     this.paneEl.addEventListener('click', (e) => {
       const motion = e.target.closest('.motion-btn');
       if (motion) { this._setMotion(motion.dataset.motion); return; }

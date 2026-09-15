@@ -22,6 +22,7 @@ export class Library {
     this.query = '';
     this.customSounds = [];
     this._previewTimer = null;
+    this._previewBtn = null;
 
     this._build();
     this._bind();
@@ -99,23 +100,34 @@ export class Library {
     if (this.callbacks.onAdd) this.callbacks.onAdd(type);
   }
 
+  /**
+   * Preview a sound without placing it. Only one preview runs at a time, so the
+   * previous button has to be reset here: clearing its timer would otherwise
+   * leave it stuck showing the stop icon.
+   */
   async audition(type, btn) {
+    clearTimeout(this._previewTimer);
+    this._resetPreviewButton();
+    this._previewBtn = btn || null;
     if (btn) {
       btn.innerHTML = icon('stop', { size: 11 });
       btn.classList.add('is-on');
     }
-    clearTimeout(this._previewTimer);
     try {
       const def = getSound(type);
       await this.audioEngine.previewSound(type, def.url);
     } catch (e) {
       console.warn('Audition failed', type, e);
     }
-    this._previewTimer = setTimeout(() => {
-      if (!btn) return;
-      btn.innerHTML = icon('play', { size: 11 });
-      btn.classList.remove('is-on');
-    }, 4200);
+    this._previewTimer = setTimeout(() => this._resetPreviewButton(), 4200);
+  }
+
+  _resetPreviewButton() {
+    const btn = this._previewBtn;
+    if (!btn) return;
+    btn.innerHTML = icon('play', { size: 11 });
+    btn.classList.remove('is-on');
+    this._previewBtn = null;
   }
 
   /** Register a decoded user upload so it shows up under "Your files". */

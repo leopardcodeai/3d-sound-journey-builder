@@ -133,3 +133,44 @@ describe('CanvasGrid render loop', () => {
     expect(grid.ctx.fillRect).not.toHaveBeenCalled();
   });
 });
+
+describe('CanvasGrid sizing', () => {
+  it('measures its own box rather than the window', () => {
+    const canvas = createMockCanvas();
+    // The canvas sits below a 48 px top bar, so its box is shorter than the window.
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 48, width: 1000, height: 700 });
+    const engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 1000, innerHeight: 748, addEventListener: vi.fn(), devicePixelRatio: 2 });
+    const grid = new CanvasGrid(canvas, engine);
+    expect(grid.w).toBe(1000);
+    expect(grid.h).toBe(700);
+    expect(canvas.width).toBe(2000);
+    expect(canvas.height).toBe(1400);
+    // The projected origin lands in the middle of the real box.
+    const p = grid.project(0, 0, 0);
+    expect(p.sx).toBeCloseTo(500);
+    expect(p.sy).toBeCloseTo(350);
+  });
+
+  it('falls back to the window when the box has not been laid out', () => {
+    const canvas = createMockCanvas();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 });
+    const engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 640, innerHeight: 480, addEventListener: vi.fn(), devicePixelRatio: 1 });
+    const grid = new CanvasGrid(canvas, engine);
+    expect(grid.w).toBe(640);
+    expect(grid.h).toBe(480);
+  });
+
+  it('round-trips a pointer position through the real box', () => {
+    const canvas = createMockCanvas();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 48, width: 1000, height: 700 });
+    const engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 1000, innerHeight: 748, addEventListener: vi.fn(), devicePixelRatio: 1 });
+    const grid = new CanvasGrid(canvas, engine);
+    const world = grid.canvasToAudioCoords(700, 200, 0);
+    const back = grid.audioToCanvasCoords(world.x, world.y, 0);
+    expect(back.x).toBeCloseTo(700, 3);
+    expect(back.y).toBeCloseTo(200, 3);
+  });
+});

@@ -4,7 +4,5 @@
   "devCommand": "npm run dev",
   "framework": "vite",
   "cleanUrls": true,
-  "rewrites": [
-    { "source": "/app", "destination": "/app.html" }
-  ]
+  "trailingSlash": false
 }
