@@ -582,7 +582,14 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .focus-mode-name { font-size: var(--fs-sm); font-weight: 500; }
 .focus-mode-sum { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
 
-.focus-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.focus-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+/* The field sits behind the orb and is wider than it, so the composition reads
+   as a field the orb is in rather than as a halo stuck to the button. */
+.focus-field {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 460px; height: 460px; pointer-events: none; z-index: 0;
+}
+.focus-stage > .focus-orb, .focus-stage > .focus-phase { position: relative; z-index: 1; }
 .focus-orb {
   position: relative; width: 220px; height: 220px; flex: none;
   background: none; border: none; cursor: pointer; color: var(--text);
@@ -697,6 +704,7 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
   .drawer { width: 100%; }
   .focus-wrap { padding: 20px 14px 80px; gap: 20px; }
   .focus-orb { width: 180px; height: 180px; }
+  .focus-field { width: 320px; height: 320px; }
   .focus-layer { grid-template-columns: 26px 1fr auto; row-gap: 8px; }
   .focus-layer-ctl { grid-column: 1 / -1; }
   .view-focus { padding-bottom: 62px; }

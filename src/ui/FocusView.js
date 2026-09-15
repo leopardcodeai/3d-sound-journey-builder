@@ -9,6 +9,7 @@ import { MODES, MODE_ORDER, phaseAt, sessionPhases, modeForHour } from '../data/
 import { getSound, soundName, bandForBeat, SOLFEGGIO } from '../data/SoundLibrary.js';
 import { GENERATORS } from '../audio/Generators.js';
 import { icon } from './Icons.js';
+import { CircleField } from './CircleField.js';
 import { syncRangeFills } from './sliders.js';
 import { t } from '../i18n.js';
 
@@ -56,6 +57,7 @@ export class FocusView {
         </div>
 
         <div class="focus-stage">
+          <canvas class="focus-field" aria-hidden="true"></canvas>
           <button class="focus-orb" aria-label="Play">
             <svg class="focus-ring" viewBox="0 0 220 220" aria-hidden="true">
               <circle class="focus-ring-track" cx="110" cy="110" r="100" />
@@ -85,6 +87,7 @@ export class FocusView {
         </footer>
       </div>
     `;
+    this.fieldEl = this.root.querySelector('.focus-field');
     this.orbEl = this.root.querySelector('.focus-orb');
     this.orbIcon = this.root.querySelector('.focus-orb-icon');
     this.orbTime = this.root.querySelector('.focus-orb-time');
@@ -152,12 +155,24 @@ export class FocusView {
     this._renderLengths();
     this.renderLayers();
     this.renderReadout();
+    // The canvas has no box while the view is hidden, so the field is built and
+    // measured on first show rather than in the constructor.
+    if (!this.field && this.fieldEl) {
+      this.field = new CircleField(this.fieldEl, { colour: '242, 140, 96' });
+    }
+    if (this.field) {
+      this.field.resize();
+      this.field.setIntensity(this.running ? 1 : 0);
+      this.field.start();
+    }
   }
 
   hide() {
     this.visible = false;
     this.root.hidden = true;
     this.root.classList.remove('is-visible');
+    // A hidden canvas still costs a frame each tick, so the loop stops with it.
+    if (this.field) this.field.stop();
   }
 
   /**
@@ -209,6 +224,7 @@ export class FocusView {
     this.startedAt = Date.now() - this.elapsed * 1000;
     this.orbEl.classList.add('is-running');
     this.orbIcon.innerHTML = icon('pause', { size: 30 });
+    if (this.field) this.field.setIntensity(1);
     for (const [id, src] of this.audioEngine.sources) if (!src.isPlaying) this.audioEngine.toggleSource(id);
     if (this.callbacks.onStart) this.callbacks.onStart();
     clearInterval(this._tickTimer);
@@ -229,6 +245,7 @@ export class FocusView {
     }
     this.orbEl.classList.remove('is-running');
     this.orbIcon.innerHTML = icon('play', { size: 34 });
+    if (this.field) this.field.setIntensity(0);
     for (const [id, src] of this.audioEngine.sources) if (src.isPlaying) this.audioEngine.toggleSource(id);
     clearInterval(this._tickTimer);
     this._tickTimer = null;
