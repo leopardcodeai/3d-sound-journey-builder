@@ -626,6 +626,22 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .focus-length-note { margin: -2px 0 8px; max-width: 48ch; }
 .build-line { font-size: var(--fs-xs); color: var(--text-3); margin: 2px 0 0; }
 .modal-build { font-size: var(--fs-xs); color: var(--text-4); margin: 6px 0 0; }
+/* The one checkbox in the app. Left unstyled it rendered as a bare white
+   square, which is the only piece of default browser chrome on screen. */
+.ctl-check { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.ctl-check input[type="checkbox"] {
+  appearance: none; width: 16px; height: 16px; flex: none; margin: 0;
+  border: 1px solid var(--line-strong); border-radius: 4px;
+  background: var(--surface); cursor: pointer;
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+.ctl-check input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.ctl-check input[type="checkbox"]:checked::after {
+  content: ''; display: block; width: 4px; height: 8px; margin: 1px 0 0 5px;
+  border: solid #17120f; border-width: 0 1.8px 1.8px 0; transform: rotate(45deg);
+}
+.ctl-check input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.ctl-check .ctl-label { cursor: pointer; }
 .focus-bare-hint { font-size: var(--fs-xs); color: var(--text-3); text-align: center; opacity: 0; transition: opacity 0.6s var(--ease); pointer-events: none; }
 .focus-head { position: relative; }
 .focus-bare-btn {
@@ -750,7 +766,9 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
 
   .tabbar {
     position: fixed; bottom: 0; left: 0; right: 0; height: 62px; z-index: 90;
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    /* However many entries there are. A hard-coded four broke the moment
+       Position was added as a fifth. */
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     background: rgba(11, 10, 10, 0.95); border-top: 1px solid var(--line);
     backdrop-filter: blur(16px); padding-bottom: env(safe-area-inset-bottom, 0);
   }
@@ -759,14 +777,15 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
     background: none; border: none; color: var(--text-3); font: inherit; font-size: 9.5px; cursor: pointer;
   }
   .tabbar-btn.is-on { color: var(--accent-2); }
-/* The dock is open, which is a different thing from being the selected panel.
-   A dot rather than the full selection treatment, so the two read apart. */
-.tabbar-btn.is-open { color: var(--text-2); }
-.tabbar-btn.is-open::after {
-  content: ''; position: absolute; top: 6px; right: 50%; transform: translateX(14px);
-  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
-}
-.tabbar-btn { position: relative; }
+  .tabbar-btn { position: relative; }
+  /* Open is a different thing from selected: the dock and the drawer sit over
+     a view rather than replacing it, so they get a dot instead of the full
+     selection treatment. */
+  .tabbar-btn.is-open { color: var(--text-2); }
+  .tabbar-btn.is-open::after {
+    content: ''; position: absolute; top: 6px; right: 50%; transform: translateX(13px);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  }
 
   .drawer { width: 100%; }
   .focus-wrap { padding: 20px 14px 80px; gap: 20px; }

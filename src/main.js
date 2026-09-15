@@ -6,6 +6,7 @@
 import './style.css';
 import { SpatialAudioEngine } from './audio/AudioEngine.js';
 import { HeadTracker } from './audio/HeadTracker.js';
+import { PostureSensor } from './audio/PostureSensor.js';
 import { SpeakerConfig, SPEAKER_PRESETS } from './audio/SpeakerConfig.js';
 import { SceneManager } from './audio/SceneManager.js';
 import { InstrumentSynth } from './audio/InstrumentSynth.js';
@@ -86,6 +87,28 @@ const soundscapeTimer = new SoundscapeTimer(audioEngine, {
     showToast(t('timerDone'));
   },
 });
+
+/**
+ * Posture from the way the phone is held. It never changes the setting behind
+ * the user's back without saying so, and any manual choice switches it off:
+ * a control that moves on its own reads as a fault.
+ */
+const postureSensor = new PostureSensor({
+  onPosture: (posture) => {
+    if (!prefsFollowDevice()) return;
+    audioEngine.applyPosturePreset(posture);
+    audioEngine.updateListenerPose(posture, audioEngine.headTilt, audioEngine.headTurn);
+    syncPostureUI(posture);
+    savePrefs({ posture });
+    showToast(`${t('postureFromDevice')}: ${t(POSTURE_KEY[posture] || posture)}`);
+  },
+});
+
+const POSTURE_KEY = { standing: 'standing', 'lying-back': 'lyingBack', 'lying-side': 'lyingSide' };
+const prefsFollowDevice = () => {
+  const el = $('#follow-device');
+  return !!(el && el.checked);
+};
 
 const headTracker = new HeadTracker(audioEngine, {
   onStart: () => setHeadTrackerUI(true),
@@ -178,6 +201,9 @@ async function importAudioFile(file) {
 
 let journeyLoad = 0;
 
+/** What an untimed set falls back to when a timeline is opened over it. */
+const DEFAULT_JOURNEY_SECONDS = 600;
+
 async function loadJourney(id) {
   const journey = JOURNEYS[id];
   if (!journey) return;
@@ -256,6 +282,10 @@ async function loadSet(id) {
   timeline.sourceTimings.clear();
   timeline.trackState.clear();
   timeline.setSections([]);
+  // A set has no length of its own. Without this the timeline kept whatever the
+  // last journey had, so placing a sound into a set after the hour-long sound
+  // bath gave it a sixty-minute clip for no reason the user could see.
+  timeline.setTotalDuration(DEFAULT_JOURNEY_SECONDS);
 
   if (typeof set.masterVolume === 'number') {
     audioEngine.setMasterVolume(set.masterVolume);
@@ -351,6 +381,14 @@ function syncTabBar() {
       b.setAttribute('aria-pressed', timeline.visible ? 'true' : 'false');
       return;
     }
+    if (p === 'position') {
+      // Opens the drawer rather than replacing the view, so it carries no
+      // selection either. Its state is the drawer being open.
+      b.classList.remove('is-on');
+      b.classList.toggle('is-open', !$('#settings-drawer').hidden);
+      b.setAttribute('aria-pressed', $('#settings-drawer').hidden ? 'false' : 'true');
+      return;
+    }
     const on = p === selected;
     b.classList.toggle('is-on', on);
     if (on) b.setAttribute('aria-current', 'true');
@@ -372,7 +410,27 @@ function toggleMobilePanel(panel) {
     showTimeline(!timeline.visible);
     return;
   }
+  // Where you are in the room: posture, head turn, head tilt and the ear
+  // filters. These already exist in the drawer, so the entry opens them there
+  // rather than keeping a second copy in step with the first.
+  if (panel === 'position') {
+    openListenerSettings();
+    return;
+  }
   openMobilePanel(document.body.dataset.panel === panel ? 'field' : panel);
+}
+
+/** Opens the settings drawer with the listener controls in view. */
+function openListenerSettings() {
+  const drawer = $('#settings-drawer');
+  if (!drawer) return;
+  drawer.hidden = false;
+  drawer.classList.add('is-open');
+  const section = [...drawer.querySelectorAll('.drawer-title')]
+    .find(h => h.dataset.i18n === 'listener');
+  if (section && section.scrollIntoView) section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  document.body.dataset.panel = 'field';
+  syncTabBar();
 }
 
 function refreshPanels() {
@@ -605,8 +663,13 @@ function bindUI() {
   $('#settings-btn').addEventListener('click', () => {
     drawer.hidden = !drawer.hidden;
     drawer.classList.toggle('is-open', !drawer.hidden);
+    syncTabBar();
   });
-  $('#settings-close').addEventListener('click', () => { drawer.hidden = true; drawer.classList.remove('is-open'); });
+  $('#settings-close').addEventListener('click', () => {
+    drawer.hidden = true;
+    drawer.classList.remove('is-open');
+    syncTabBar();
+  });
 
   // Field tools
   $('#view-2d-btn').addEventListener('click', () => setFieldMode('2d'));
@@ -674,6 +737,13 @@ function bindUI() {
     audioEngine.applyPosturePreset(btn.dataset.posture);
     syncPostureUI(btn.dataset.posture);
     savePrefs({ posture: btn.dataset.posture });
+    // Choosing by hand wins over the sensor, and says so by clearing the box.
+    const follow = $('#follow-device');
+    if (follow && follow.checked) {
+      follow.checked = false;
+      postureSensor.stop();
+      savePrefs({ followDevice: false });
+    }
   });
   // A bare "45 degrees" does not say which way. The side is the part the ear
   // can check, so it is spelled out.
@@ -684,6 +754,21 @@ function bindUI() {
   bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v, audioEngine.headTurn); return `${v}°`; }, 'headTilt');
   bindRange('#shoulder-strength', (v) => { audioEngine.updateShoulderStrength(v); return `${Math.round(v * 100)}%`; }, 'shoulder');
   bindRange('#pinna-strength', (v) => { audioEngine.updatePinnaStrength(v); return `${Math.round(v * 100)}%`; }, 'pinna');
+
+  $('#follow-device').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    savePrefs({ followDevice: on });
+    if (!on) { postureSensor.stop(); return; }
+    // iOS needs a gesture and an explicit grant; this change event is one.
+    const granted = await postureSensor.requestPermission();
+    if (!granted) {
+      e.target.checked = false;
+      savePrefs({ followDevice: false });
+      showToast(t('motionDenied'));
+      return;
+    }
+    postureSensor.start();
+  });
 
   $('#head-tracker-btn').addEventListener('click', async () => {
     if (!headTracker.isAvailable()) { showToast(t('headTrackerNotAvailable')); return; }

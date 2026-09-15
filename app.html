@@ -82,6 +82,7 @@
         <button class="tabbar-btn" data-panel="library"><span data-icon="layers" data-size="18"></span><span data-i18n="library">Library</span></button>
         <button class="tabbar-btn is-on" data-panel="field"><span data-icon="map" data-size="18"></span><span data-i18n="mapView">Field</span></button>
         <button class="tabbar-btn" data-panel="inspector"><span data-icon="settings" data-size="18"></span><span data-i18n="inspector">Inspector</span></button>
+        <button class="tabbar-btn" data-panel="position"><span data-icon="person" data-size="18"></span><span data-i18n="position">Position</span></button>
         <button class="tabbar-btn" data-panel="timeline"><span data-icon="clock" data-size="18"></span><span data-i18n="timeline">Timeline</span></button>
       </nav>
     </main>
@@ -143,6 +144,11 @@
 
       <section class="drawer-section">
         <h3 class="drawer-title" data-i18n="listener">Listener</h3>
+        <label class="ctl ctl-check">
+          <input type="checkbox" id="follow-device" />
+          <span class="ctl-label" data-i18n="followDevice">Follow the device</span>
+        </label>
+        <p class="note" data-i18n="followDeviceHelp"></p>
         <div class="seg" id="posture-seg">
           <button class="seg-btn is-on" data-posture="standing"><span data-icon="person" data-size="15"></span><span data-i18n="standing">Standing</span></button>
           <button class="seg-btn" data-posture="lying-back"><span data-icon="bed" data-size="15"></span><span data-i18n="lyingBack">Lying on back</span></button>

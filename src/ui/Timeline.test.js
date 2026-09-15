@@ -442,3 +442,75 @@ describe('accessible names on the transport and the tracks (live test, 2026-09-1
     expect(el.getAttribute('title')).toBe('A very long sound name that will not fit');
   });
 });
+
+describe('the two coordinate systems (reported from a phone, 2026-09-15)', () => {
+  let engine, grid, tl, host;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="dock"></div>';
+    host = document.getElementById('dock');
+    engine = createMockAudioEngine();
+    grid = createMockCanvasGrid();
+    tl = new Timeline(host, engine, grid);
+    tl.visible = true;
+    tl._headerW = 118;
+    tl.scrollX = 0;
+  });
+
+  it('keeps the viewport origin clear of the header and the lane origin at zero', () => {
+    expect(tl.timeToX(0)).toBe(118);
+    expect(tl.timeToLaneX(0)).toBe(0);
+  });
+
+  it('advances both systems at the same rate', () => {
+    const dx = tl.timeToX(60) - tl.timeToX(0);
+    const dl = tl.timeToLaneX(60) - tl.timeToLaneX(0);
+    expect(dx).toBeCloseTo(dl, 6);
+    expect(dl).toBeCloseTo(60 * tl.pixelsPerSecond, 6);
+  });
+
+  it('places a clip that starts at zero at the very start of its lane', () => {
+    addSource(engine, 't1', { name: 'Crickets' });
+    tl.ensureTiming('t1');
+    tl.sourceTimings.get('t1').startTime = 0;
+    tl._render();
+    // The clip sits inside the lane, which already begins after the header.
+    // Using the viewport function here drew it a full header width late, so a
+    // clip labelled 00:00 started around 01:10 on a phone.
+    expect(host.querySelector('.tl-clip').style.left).toBe('0px');
+  });
+
+  it('places a later clip at its own offset, not that offset plus the header', () => {
+    addSource(engine, 't1', { name: 'Elephant' });
+    tl.ensureTiming('t1');
+    tl.sourceTimings.get('t1').startTime = 60;
+    tl._render();
+    const left = parseFloat(host.querySelector('.tl-clip').style.left);
+    expect(left).toBeCloseTo(60 * tl.pixelsPerSecond, 3);
+    expect(left).toBeLessThan(tl._headerW + 60 * tl.pixelsPerSecond);
+  });
+
+  it('keeps keyframe marks inside their clip whatever the header width', () => {
+    addSource(engine, 't1', { name: 'Birdsong' });
+    tl.ensureTiming('t1');
+    tl.sourceTimings.get('t1').startTime = 60;
+    tl.setKeyframes('t1', [
+      { time: 60, x: 0, y: 0, z: 0, volume: 0 },
+      { time: 120, x: 1, y: 1, z: 0, volume: 0.5 },
+    ]);
+    for (const headerW of [80, 118, 168, 240]) {
+      tl._headerW = headerW;
+      tl._render();
+      const clipLeft = parseFloat(host.querySelector('.tl-clip').style.left);
+      const marks = [...host.querySelectorAll('.tl-kf')].map(k => parseFloat(k.style.left));
+      expect(marks.length, `headerW ${headerW}`).toBeGreaterThan(0);
+      // Marks are positioned inside the clip, so they must not depend on the
+      // header at all.
+      for (const m of marks) {
+        expect(m, `headerW ${headerW}`).toBeGreaterThanOrEqual(-1);
+        expect(m, `headerW ${headerW}`).toBeLessThanOrEqual(60 * tl.pixelsPerSecond + 1);
+      }
+      expect(clipLeft).toBeCloseTo(60 * tl.pixelsPerSecond, 3);
+    }
+  });
+});

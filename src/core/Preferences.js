@@ -42,6 +42,7 @@ export const DEFAULTS = Object.freeze({
   showGrid: true,
   showPaths: true,
   snap: true,
+  followDevice: false,
 });
 
 const num = (min, max) => (v, fallback) => {
@@ -75,6 +76,7 @@ const FIELDS = {
   showGrid: bool,
   showPaths: bool,
   snap: bool,
+  followDevice: bool,
 };
 
 /**

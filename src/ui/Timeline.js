@@ -6,7 +6,9 @@
  * canvas automations stand back (`src._timelineControlled`).
  *
  * Layout is a fixed-width header column plus a scrolling lane area. One
- * coordinate system: `timeToX(t) = headerW + t * pixelsPerSecond - scrollX`.
+ * Two coordinate systems, and mixing them is the mistake to avoid:
+ *   timeToX(t)     = headerW + t * pixelsPerSecond - scrollX   (viewport)
+ *   timeToLaneX(t) =           t * pixelsPerSecond - scrollX   (inside a lane)
  */
 import { createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand, createMoveKeyframeCommand } from '../core/UndoManager.js';
 import { getSound, soundName } from '../data/SoundLibrary.js';
@@ -345,7 +347,23 @@ export class Timeline {
   // Coordinates
   // ---------------------------------------------------------------------
 
+  /**
+   * Absolute x inside the viewport. For the ruler, the playhead and the section
+   * markers, which are positioned against the viewport and so have to clear the
+   * track header column.
+   */
   timeToX(t) { return this._headerW + t * this.pixelsPerSecond - this.scrollX; }
+
+  /**
+   * x inside a track lane. A lane already begins after the header, so anything
+   * drawn inside one must not add the header width a second time.
+   *
+   * The clip used timeToX and was therefore drawn a full header width late: a
+   * clip labelled 00:00 started around 01:10 on a phone, so the picture
+   * disagreed with the sound. The two systems are named separately now because
+   * the difference is invisible at a glance and cost a real bug.
+   */
+  timeToLaneX(t) { return t * this.pixelsPerSecond - this.scrollX; }
 
   _timeAt(clientX, snap = true) {
     const rect = this.viewport.getBoundingClientRect();
@@ -816,7 +834,7 @@ export class Timeline {
       const def = getSound(src.type);
       const color = (this.canvasGrid && this.canvasGrid.colorFor) ? this.canvasGrid.colorFor(src.type) : (def.color || '#888');
       const trackName = src.name || soundName(src.type);
-      const left = this.timeToX(timing.startTime);
+      const left = this.timeToLaneX(timing.startTime);
       const width = Math.max(18, timing.duration * pps);
       const active = this.playheadTime >= timing.startTime && this.playheadTime <= timing.startTime + timing.duration;
       const dimmed = state.muted || (soloing && !state.solo);
@@ -824,7 +842,7 @@ export class Timeline {
       const kfs = this.keyframes.get(id) || [];
 
       const dots = kfs.map((kf, i) => {
-        const x = this.timeToX(kf.time) - left;
+        const x = this.timeToLaneX(kf.time) - left;
         if (x < -8 || x > width + 8) return '';
         const y = (1 - clamp(kf.volume, 0, 1)) * (LANE_H - 18) + 4;
         return `<div class="tl-kf" data-kf-index="${i}" style="left:${x}px;top:${y}px" title="${fmt(kf.time)} · ${Math.round(kf.volume * 100)}%"></div>`;
@@ -864,7 +882,7 @@ export class Timeline {
   /** Volume envelope as an inline SVG polyline inside the clip. */
   _envelopeSvg(kfs, clipLeft, clipWidth) {
     const pts = kfs.map(kf => {
-      const x = this.timeToX(kf.time) - clipLeft;
+      const x = this.timeToLaneX(kf.time) - clipLeft;
       const y = (1 - clamp(kf.volume, 0, 1)) * (LANE_H - 14) + 3;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
