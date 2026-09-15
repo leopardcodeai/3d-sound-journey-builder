@@ -93,13 +93,33 @@ const soundscapeTimer = new SoundscapeTimer(audioEngine, {
  * the user's back without saying so, and any manual choice switches it off:
  * a control that moves on its own reads as a fault.
  */
+/**
+ * What a posture preset actually put into the engine.
+ *
+ * applyPosturePreset sets head tilt and both filter strengths, and storing only
+ * the posture name lost all three: the next launch applied the preset and then
+ * wrote the stale stored values straight back over it. Choosing "lying on side"
+ * and reloading gave a full quarter turn instead of the 75 degrees the preset
+ * means, which is the one angle at which the map loses its left and right
+ * entirely, plus the wrong shoulder and pinna strengths. Nothing on screen said
+ * so, because the sliders were showing the stale values too.
+ */
+function posturePrefs(posture) {
+  return {
+    posture,
+    headTilt: audioEngine.headTilt,
+    shoulder: audioEngine.shoulderStrength,
+    pinna: audioEngine.pinnaStrength,
+  };
+}
+
 const postureSensor = new PostureSensor({
   onPosture: (posture) => {
     if (!prefsFollowDevice()) return;
     audioEngine.applyPosturePreset(posture);
     audioEngine.updateListenerPose(posture, audioEngine.headTilt, audioEngine.headTurn);
     syncPostureUI(posture);
-    savePrefs({ posture });
+    savePrefs(posturePrefs(posture));
     showToast(`${t('postureFromDevice')}: ${t(POSTURE_KEY[posture] || posture)}`);
   },
 });
@@ -811,7 +831,7 @@ function bindUI() {
     if (!btn) return;
     audioEngine.applyPosturePreset(btn.dataset.posture);
     syncPostureUI(btn.dataset.posture);
-    savePrefs({ posture: btn.dataset.posture });
+    savePrefs(posturePrefs(btn.dataset.posture));
     // Choosing by hand wins over the sensor, and says so by clearing the box.
     const follow = $('#follow-device');
     if (follow && follow.checked) {
