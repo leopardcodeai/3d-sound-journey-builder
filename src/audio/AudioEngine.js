@@ -230,8 +230,16 @@ export class SpatialAudioEngine {
     const rad = (headTilt * Math.PI) / 180;
     let fx = 0, fy = 0, fz = -1, ux = 0, uy = 1, uz = 0;
     if (posture === 'lying-back') {
+      // Face the ceiling, crown towards the top of the map.
+      //
+      // This used to point the crown at the bottom of the map, exactly 180
+      // degrees out. The consequence was audible: a sound drawn on the right of
+      // the map arrived at the right ear, when lying on your back it should
+      // arrive at the left. You are looking up at the screen rather than down
+      // at it, so the image is mirrored, and the map only agrees with what you
+      // hear once the crown points the way your head actually does.
       fx = 0; fy = 1; fz = 0;
-      ux = Math.sin(rad); uy = 0; uz = Math.cos(rad);
+      ux = -Math.sin(rad); uy = 0; uz = -Math.cos(rad);
     } else if (posture === 'lying-side') {
       fx = 0; fy = 0; fz = -1;
       ux = Math.cos(rad); uy = Math.sin(rad); uz = 0;

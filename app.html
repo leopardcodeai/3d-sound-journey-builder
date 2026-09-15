@@ -129,12 +129,15 @@
           <option value="surround-5.1" data-i18n="surround51">5.1 surround</option>
           <option value="custom" data-i18n="customSpeakers">Custom speakers</option>
         </select>
+        <!-- The list shows whichever layout is active, so it sits outside the
+             block that only appears for a custom one. Only adding and moving
+             speakers is specific to custom. -->
+        <div class="speaker-list" id="speaker-list"></div>
         <div id="custom-speakers" hidden>
           <div class="row-2">
             <button class="btn btn-ghost" id="add-speaker-btn"><span data-icon="plus" data-size="13"></span><span data-i18n="addSpeaker">Add speaker</span></button>
             <button class="btn btn-ghost" id="edit-speakers-btn"><span data-icon="move" data-size="13"></span><span data-i18n="editSpeakers">Move speakers</span></button>
           </div>
-          <div class="speaker-list" id="speaker-list"></div>
         </div>
         <label class="ctl">
           <span class="ctl-label" data-i18n="reverb">Room</span>

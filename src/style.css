@@ -628,6 +628,8 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .modal-build { font-size: var(--fs-xs); color: var(--text-4); margin: 6px 0 0; }
 /* The one checkbox in the app. Left unstyled it rendered as a bare white
    square, which is the only piece of default browser chrome on screen. */
+.speaker-where { font-size: var(--fs-xs); color: var(--text-3); margin-left: auto; }
+.scene-item .mono { flex: none; }
 .ctl-check { display: flex; align-items: center; gap: 9px; cursor: pointer; }
 .ctl-check input[type="checkbox"] {
   appearance: none; width: 16px; height: 16px; flex: none; margin: 0;

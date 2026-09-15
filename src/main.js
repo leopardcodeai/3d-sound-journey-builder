@@ -426,8 +426,11 @@ function openListenerSettings() {
   if (!drawer) return;
   drawer.hidden = false;
   drawer.classList.add('is-open');
+  // Output first: it sits directly above Listener, so scrolling there puts both
+  // the speaker layout and the listener controls in view. Where the sound comes
+  // from and where you are standing are the same question.
   const section = [...drawer.querySelectorAll('.drawer-title')]
-    .find(h => h.dataset.i18n === 'listener');
+    .find(h => h.dataset.i18n === 'output');
   if (section && section.scrollIntoView) section.scrollIntoView({ block: 'start', behavior: 'smooth' });
   document.body.dataset.panel = 'field';
   syncTabBar();
@@ -502,6 +505,7 @@ function applyPrefs(prefs) {
     speakerConfig.setConfig(prefs.output);
     const custom = $('#custom-speakers');
     if (custom) custom.hidden = prefs.output !== 'custom';
+    renderSpeakerList();
   }
 
   audioEngine.setReverbLevel(prefs.room);
@@ -544,14 +548,41 @@ function renderSceneList() {
     </div>`).join('');
 }
 
+/**
+ * Where the speakers stand, as a person would describe it.
+ *
+ * The list used to print raw coordinates for custom speakers only, so the
+ * preset layouts were invisible and "x 1.0, y 0.8" said nothing about where
+ * that actually is. Now every speaker of the active layout is listed with its
+ * distance and its direction, and only the custom ones can be removed.
+ */
 function renderSpeakerList() {
   const container = $('#speaker-list');
   if (!container) return;
-  container.innerHTML = speakerConfig.customSpeakers.map((sp, i) => `
+  const preset = SPEAKER_PRESETS[speakerConfig.currentPreset];
+  const custom = speakerConfig.currentPreset === 'custom';
+  const list = custom ? speakerConfig.customSpeakers : (preset && preset.speakerPositions) || [];
+
+  if (!list.length) {
+    container.innerHTML = `<p class="note">${escapeHtml(t('speakersNone'))}</p>`;
+    return;
+  }
+
+  container.innerHTML = list.map((sp, i) => {
+    const dist = Math.hypot(sp.x, sp.y);
+    // Bearing clockwise from the front, which is how people point at a room.
+    const deg = Math.round((Math.atan2(sp.x, sp.y) * 180) / Math.PI);
+    const side = deg === 0 ? t('ahead')
+      : Math.abs(deg) === 180 ? t('behind')
+        : `${Math.abs(deg)}\u00b0 ${deg > 0 ? t('rightShort') : t('leftShort')}`;
+    const where = sp.isSub ? t('speakerSub') : `${dist.toFixed(1)} m \u00b7 ${side}`;
+    return `
     <div class="scene-item">
-      <span class="mono">${escapeHtml(sp.label)} · ${sp.x.toFixed(1)}, ${sp.y.toFixed(1)}</span>
-      <button class="icon-btn speaker-del" data-index="${i}">${icon('close', { size: 12 })}</button>
-    </div>`).join('');
+      <span class="mono">${escapeHtml(sp.label)}</span>
+      <span class="speaker-where">${escapeHtml(where)}</span>
+      ${custom ? `<button class="icon-btn speaker-del" data-index="${i}" aria-label="${escapeAttr(named('removeNamed', sp.label))}">${icon('close', { size: 12 })}</button>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function renderJourneyList() {
@@ -631,6 +662,11 @@ function showShortcuts(on) {
   el.classList.toggle('is-visible', on);
 }
 
+/** "Remove L" rather than a row of identical close buttons. */
+function named(key, name) {
+  return t(key).replace('{name}', name);
+}
+
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
@@ -706,6 +742,8 @@ function bindUI() {
     $('#custom-speakers').hidden = key !== 'custom';
     showToast(SPEAKER_PRESETS[key].name);
     savePrefs({ output: key });
+    // The list shows the active layout, so it has to follow the choice.
+    renderSpeakerList();
   });
   $('#add-speaker-btn').addEventListener('click', () => {
     speakerConfig.addCustomSpeaker((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0, `S${speakerConfig.customSpeakers.length + 1}`);
