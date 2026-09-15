@@ -466,6 +466,21 @@ export class SpatialAudioEngine {
 
     src.pannerNode = ctx.createPanner();
     src.pannerNode.panningModel = 'HRTF';
+    // Sum to mono before the HRTF, and this is not a detail.
+    //
+    // Fed two channels, the HRTF panner applies the left response to the left
+    // input and the right response to the right input. IRCAM's own review of
+    // the Web Audio API calls the interpretation of that formula doubtful, and
+    // measurement says worse: a stereo source placed three metres to the right
+    // rendered at -0.9 dB right-minus-left, so it sounded slightly left of
+    // centre. It was not being placed at all. With the input summed first it
+    // measures +11.2 dB, which is where it belongs.
+    //
+    // Three bundled files are stereo, among them the gong, the singing bowl
+    // and the wind chimes, so this was audible in the sound bath.
+    src.pannerNode.channelCount = 1;
+    src.pannerNode.channelCountMode = 'explicit';
+    src.pannerNode.channelInterpretation = 'speakers';
     src.pannerNode.distanceModel = 'inverse';
     src.pannerNode.refDistance = 1.0;
     src.pannerNode.maxDistance = 10000;

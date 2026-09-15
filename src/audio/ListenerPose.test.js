@@ -96,3 +96,47 @@ describe('listener pose per posture', () => {
     expect(['map-top', 'map-bottom', 'map-left', 'map-right', 'sky', 'ground']).toContain(p.facing);
   });
 });
+
+describe('the panner input is summed to mono', () => {
+  function pannerOf() {
+    const made = [];
+    const param = (v = 0) => ({ value: v, setValueAtTime(x) { this.value = x; } });
+    const node = (extra = {}) => ({ connect() {}, disconnect() {}, start() {}, stop() {}, ...extra });
+    const ctx = {
+      currentTime: 0, sampleRate: 44100,
+      createGain: () => node({ gain: param(1) }),
+      createBiquadFilter: () => node({ type: '', Q: param(1), gain: param(0), frequency: param(1000) }),
+      createPanner: () => {
+        const p = node({
+          panningModel: '', distanceModel: '', refDistance: 0, maxDistance: 0, rolloffFactor: 0,
+          channelCount: 2, channelCountMode: 'clamped-max', channelInterpretation: 'speakers',
+          positionX: param(), positionY: param(), positionZ: param(),
+        });
+        made.push(p);
+        return p;
+      },
+      createChannelMerger: () => node(),
+      createChannelSplitter: () => node(),
+    };
+    const engine = new SpatialAudioEngine();
+    engine.ctx = ctx;
+    engine.isInitialized = true;
+    const src = { id: 'x', x: 0, y: 0, z: 0, inserts: {} };
+    engine._buildSpatialChain(src, node());
+    return made[0];
+  }
+
+  it('takes one channel explicitly, not whatever arrives', () => {
+    // Two channels in, and the panner applies the left response to the left
+    // input and the right to the right. Measured on a stereo file three metres
+    // to the right: -0.9 dB right-minus-left, so it sounded slightly left of
+    // centre and was not placed at all. Summed to mono first: +11.2 dB.
+    const p = pannerOf();
+    expect(p.channelCount).toBe(1);
+    expect(p.channelCountMode).toBe('explicit');
+  });
+
+  it('still renders through the HRTF model', () => {
+    expect(pannerOf().panningModel).toBe('HRTF');
+  });
+});
