@@ -1,0 +1,154 @@
+{
+  "_comment": "Candidate sounds for public/sounds/, one entry per file. 'page' is the human-readable source page; the script reads the audio URL and the credit line out of it rather than hard-coding a CDN path, because those paths move. 'credit' is what the page must say: only a recording credited to the agency itself is in the public domain. A recording credited to an outside person is that person's copyright and is rejected. Run scripts/fetch-sounds.mjs to check or fetch.",
+  "sources": {
+    "nps": {
+      "name": "US National Park Service, sound gallery",
+      "home": "https://www.nps.gov/subjects/sound/gallery.htm",
+      "licence": "Public domain (work of the US federal government)",
+      "licenceNote": "The gallery states the files are in the public domain and asks for credit. The NPS also warns that some content on its site is held by third parties, so a file is only accepted when the credit line leads with NPS. A credit of the form 'NPS / Name' is a staff recording and therefore a federal work; a credit that merely mentions NPS after an outside name is that person's copyright.",
+      "creditMustStartWith": [
+        "NPS"
+      ]
+    }
+  },
+  "entries": [
+    {
+      "type": "stream",
+      "file": "stream.mp3",
+      "name": "Stream",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-stream.htm",
+      "why": "Tier 1 gap: 12 of 16 surveyed apps ship a stream or creek, this one did not."
+    },
+    {
+      "type": "wolf",
+      "file": "wolf.mp3",
+      "name": "Wolves",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-wolf.htm",
+      "why": "Animal gap. Freesound has only 14 CC0 soundscapes for wolf howl."
+    },
+    {
+      "type": "owl",
+      "file": "owl.mp3",
+      "name": "Owl",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-spotted-owl.htm",
+      "why": "Animal gap, present in 4 of 16 apps."
+    },
+    {
+      "type": "frogs",
+      "file": "frogs.mp3",
+      "name": "Frogs",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-green-treefrog.htm",
+      "why": "Animal gap, present in 5 of 16 apps."
+    },
+    {
+      "type": "geese",
+      "file": "geese.mp3",
+      "name": "Geese",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-canada-geese.htm",
+      "why": "Present in none of the 16 surveyed apps. Cheap here, so a differentiator."
+    },
+    {
+      "type": "chickens",
+      "file": "chickens.mp3",
+      "name": "Chickens",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-chickens.htm",
+      "why": "Animal gap, present in 3 of 16 apps."
+    },
+    {
+      "type": "bees",
+      "file": "bees.mp3",
+      "name": "Bees",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-bee.htm",
+      "why": "Animal gap, present in 3 of 16 apps."
+    },
+    {
+      "type": "crows",
+      "file": "crows.mp3",
+      "name": "Ravens",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-common-raven.htm",
+      "why": "Animal gap, present in 2 of 16 apps."
+    },
+    {
+      "type": "woodpecker",
+      "file": "woodpecker.mp3",
+      "name": "Woodpecker",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-northern-flicker.htm",
+      "why": "Animal gap, present in 2 of 16 apps."
+    },
+    {
+      "type": "coyotes",
+      "file": "coyotes.mp3",
+      "name": "Coyotes",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-coyotes.htm",
+      "why": "Present in none of the 16. Sits next to wolf."
+    },
+    {
+      "type": "elk",
+      "file": "elk.mp3",
+      "name": "Elk",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-elk.htm",
+      "why": "Present in none of the 16."
+    },
+    {
+      "type": "orca",
+      "file": "orca.mp3",
+      "name": "Orca",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-orca.htm",
+      "why": "Extends the existing underwater set, which has whales and dolphins."
+    },
+    {
+      "type": "thrush",
+      "file": "thrush.mp3",
+      "name": "Hermit thrush",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-hermit-thrush.htm",
+      "why": "Species-level birdsong. Only myNoise does this; everyone else ships one generic birds loop."
+    },
+    {
+      "type": "robin",
+      "file": "robin.mp3",
+      "name": "Robin",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-american-robin.htm",
+      "why": "Second species-level songbird, for a dawn chorus built from named birds."
+    }
+  ],
+  "rejectedEntries": [
+    {
+      "type": "seagulls",
+      "file": "seagulls.mp3",
+      "name": "Seagulls",
+      "category": "nature",
+      "source": "nps",
+      "page": "https://www.nps.gov/subjects/sound/sounds-western-gull.htm",
+      "why": "Animal gap, present in 4 of 16 apps. Pairs with the existing shore set.",
+      "rejected": "2026-09-15: the source page serves audio but carries no credit line, so the recording cannot be confirmed as the agency own work. Look for a CC0 gull on Freesound instead (391 CC0 results, 270 of them soundscapes)."
+    }
+  ]
+}

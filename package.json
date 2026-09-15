@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "shoot": "node scripts/shoot.mjs",
-    "audit:audio": "node scripts/audit-audio.mjs"
+    "audit:audio": "node scripts/audit-audio.mjs",
+    "sounds:check": "node scripts/fetch-sounds.mjs",
+    "sounds:fetch": "node scripts/fetch-sounds.mjs --apply"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

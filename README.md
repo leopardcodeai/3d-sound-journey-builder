@@ -88,8 +88,18 @@ npm run dev        # http://localhost:5199
 npm test           # 254 unit tests
 npm run build      # landing page + app
 npm run audit:audio  # what is in public/sounds, and does the library agree
+npm run sounds:check # check the candidate sounds and their licences, write nothing
+npm run sounds:fetch # download the ones that passed
 npm run shoot      # the screenshots in docs/, against a running dev server
 ```
+
+`sounds:check` reads `scripts/sound-sources.json`, opens each source page, and
+reads both the audio link and the credit out of it. A file is accepted only
+when the credit line leads with the agency, because a US federal page is public
+domain only for the agency's own recordings. It writes nothing; `sounds:fetch`
+downloads what passed and records source, credit, licence, size, checksum and
+retrieval date in `docs/sound-provenance.json`. A new file still needs an entry
+in `src/data/SoundLibrary.js` before the app can use it.
 
 `shoot` reads four environment variables: `SHOOT_VIEW` (`field`, `3d`, `focus`
 or `landing`), `SHOOT_JOURNEY`, `SHOOT_OUT` and `SHOOT_SIZE` (`desktop` or
