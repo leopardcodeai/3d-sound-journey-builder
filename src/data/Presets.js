@@ -409,7 +409,7 @@ export const MODES = {
   clarity: {
     name: 'Clarity',
     icon: 'sun',
-    summary: 'Forty hertz, both binaural and isochronic, over a quiet drone.',
+    summary: 'Forty hertz isochronic, over a quiet drone.',
     minutes: 20,
     masterVolume: 0.5,
     layers: [

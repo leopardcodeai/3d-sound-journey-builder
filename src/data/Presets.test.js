@@ -286,3 +286,40 @@ describe('elevation stays inside what the renderer can express', () => {
     }
   });
 });
+
+/**
+ * The honest-labels rule applies to the copy, not only to the evidence grades.
+ * Clarity said "both binaural and isochronic" and played neither a binaural
+ * beat nor anything but one isochronic layer over a drone. A summary that
+ * names a technique has to be backed by a layer that actually uses it.
+ */
+describe('every focus mode describes what it plays', () => {
+  const CLAIMS = [
+    { word: 'binaural', layer: (t) => t.startsWith('bw_') },
+    { word: 'isochronic', layer: (t) => t.startsWith('iso_') },
+    { word: 'pink', layer: (t) => t === 'noise_pink' },
+    { word: 'brown', layer: (t) => t === 'noise_brown' },
+    { word: 'drone', layer: (t) => t === 'drone' },
+    { word: 'breath', layer: (t) => t === 'breath' },
+  ];
+
+  it('backs every technique a summary names with a layer that uses it', () => {
+    for (const [id, mode] of Object.entries(MODES)) {
+      const types = mode.layers.map(l => l.type);
+      const said = mode.summary.toLowerCase();
+      for (const claim of CLAIMS) {
+        if (!said.includes(claim.word)) continue;
+        expect(types.some(claim.layer), `${id} says "${claim.word}" but plays ${types.join(', ')}`).toBe(true);
+      }
+    }
+  });
+
+  it('names the beat frequency only where a beat is actually generated', () => {
+    for (const [id, mode] of Object.entries(MODES)) {
+      const named = /\b(alpha|theta|delta|gamma)\b/.exec(mode.summary.toLowerCase());
+      if (!named) continue;
+      const types = mode.layers.map(l => l.type).join(' ');
+      expect(types.includes(named[1]), `${id} names ${named[1]} but plays ${types}`).toBe(true);
+    }
+  });
+});
