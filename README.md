@@ -1,6 +1,6 @@
 # Sound Journey Builder
 
-[![Tests](https://img.shields.io/badge/tests-236%2F236%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
+[![Tests](https://img.shields.io/badge/tests-245%2F245%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
@@ -40,6 +40,7 @@ playing.
 |---|---|
 | **Spatial audio** | HRTF panner per source, shoulder and outer-ear filters that track elevation, three listener postures, head tracking through device orientation |
 | **Sound library** | About forty entries in seven categories: recorded ambience, sound-healing instruments, offline-rendered instruments, procedural frequency tools, generative layers, and your own files |
+| **Synthesised healing set** | The bowl strike, the gong and the seven chakra bowls are generated, not recorded. Each bowl sounds within ten cents of the frequency on its label, and a test measures it |
 | **Frequency tools** | Binaural, isochronic and monaural beats, pure and solfeggio tones, white, pink and brown noise, a breathing pacer, a 7.83 Hz pulse. Each carries an evidence label |
 | **Per-source inserts** | Low-pass, high-pass, playback speed, tremolo, reverb send, fade in, fade out, repeat cycle |
 | **Master bus** | Shared convolution reverb, soft limiter, stereo meters |
@@ -82,9 +83,14 @@ This is not a medical device.
 ```bash
 npm install
 npm run dev        # http://localhost:5199
-npm test           # 236 unit tests
+npm test           # 245 unit tests
 npm run build      # landing page + app
+npm run audit:audio  # what is in public/sounds, and does the library agree
 ```
+
+`audit:audio` reports every bundled file with its size, duration, encoder and
+embedded tags, and fails if the library references a file that is not there or
+a file sits unreferenced.
 
 The dev server serves the landing page at `/` and the app at `/app.html`.
 
@@ -145,6 +151,7 @@ they stay exact at any angle.
    [docs/research](docs/research) for vetted sources.
 2. Drop the file in `public/sounds/`.
 3. Add one entry to `SOUNDS` in `src/data/SoundLibrary.js`.
+   Run `npm run audit:audio` to confirm the file and the entry agree.
 4. Add the display name to both language tables in `src/i18n.js`.
 5. Record the source and licence in `docs/ATTRIBUTION.md`.
 
@@ -158,13 +165,13 @@ timeline lane and the inspector all read from that one entry.
 MIT, see [LICENSE](LICENSE) — for the code.
 
 ⚠️ The bundled audio is **not** covered by that licence and its provenance is
-only partly established. Ten files are byte-identical to
-[Moodist](https://github.com/remvze/moodist), whose own README says its sounds
-fall under the Pixabay Content License or CC0 rather than its MIT licence; the
-Pixabay licence forbids redistributing a file on its own, which is what a
-committed mp3 is. Twenty-two files have no traceable origin. One requires a
-credit we cannot give, one came out of GarageBand. Fine for local use; settle
-it before forking or shipping commercially. Details and the plan:
-[docs/ATTRIBUTION.md](docs/ATTRIBUTION.md).
+only partly established. Eight files whose terms were clearly unmet have been
+removed and are now synthesised instead. Of the twenty-six that remain, ten are
+byte-identical to [Moodist](https://github.com/remvze/moodist), whose own README
+says its sounds fall under the Pixabay Content License or CC0 rather than its
+MIT licence, and the Pixabay licence forbids redistributing a file on its own,
+which is what a committed mp3 is. Sixteen have no traceable origin. Fine for
+local use; settle it before forking or shipping commercially. Details and the
+remaining plan: [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md).
 
 Built by [LeopardCode.AI](https://leopardcode.ai).

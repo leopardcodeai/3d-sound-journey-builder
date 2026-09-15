@@ -6,14 +6,37 @@ Investigated on 2026-09-15 by comparing file bytes, reading the embedded
 encoder and tag data, and searching the public code index. Nothing here is
 assumed: each row says how it was established.
 
+Run `node scripts/audit-audio.mjs` for the current contents of the folder.
+
 ## Summary
+
+Eight of the original 34 files have been removed and replaced by synthesis.
+Twenty-six remain.
 
 | Group | Files | Established | Status |
 |---|---|---|---|
 | Identical to [remvze/moodist](https://github.com/remvze/moodist) | 10 | byte-for-byte identical, SHA-256 verified | licence unresolved, see below |
-| Unknown origin, LAME 3.99.5 group | 22 | shared encoder signature, no other trace | licence unknown |
-| SoundBible | 1 | tag inside the file | attribution required, author unknown |
-| GarageBand | 1 | tag inside the file | redistribution not permitted |
+| Unknown origin, LAME 3.99.5 group | 16 | shared encoder signature, no other trace | licence unknown |
+| ~~SoundBible~~ | ~~1~~ | tag inside the file | **removed**, synthesised instead |
+| ~~GarageBand~~ | ~~1~~ | tag inside the file | **removed**, synthesised instead |
+| ~~Chakra bowls~~ | ~~6~~ | unknown origin | **removed**, synthesised instead |
+
+## Already settled: the eight that are gone
+
+`bell.mp3` carried "SoundBible.com Must Credit" and needed a credit naming an
+author we never knew. `gong-old.mp3` came out of GarageBand, whose licence does
+not cover redistributing the file itself. `bowl-a`, `bowl-b`, `bowl-d`,
+`bowl-e`, `bowl-f` and `bowl-g` had no traceable origin at all.
+
+All eight are now generated at runtime by `src/audio/InstrumentSynth.js` and no
+longer exist in the repository. Nothing was lost in the app: the bowl strike,
+the gong and the seven chakra bowls all still appear under Sound healing.
+
+The chakra set came out better for it. It used to be one recording
+pitch-shifted six ways, so the realised pitch depended on that recording. It is
+now generated at the frequencies it claims, and a test measures each one:
+every bowl lands within ten cents of its label, where the old set drifted
+roughly thirty cents flat.
 
 ## The ten from Moodist
 
@@ -45,10 +68,9 @@ Being downloadable from a public repository is not a licence. A file that
 arrived under the Pixabay licence keeps that licence no matter how many
 repositories it passes through.
 
-## The twenty-two of unknown origin
+## The sixteen of unknown origin
 
-`bowl-a` `bowl-b` `bowl-d` `bowl-e` `bowl-f` `bowl-g`, `city-park`,
-`city-traffic`, `dolphins`, `elephant`, `gong`, `gong-chinese`,
+`city-park`, `city-traffic`, `dolphins`, `elephant`, `gong`, `gong-chinese`,
 `jungle-birds`, `jungle-night`, `jungle-river`, `leopard`, `monkeys`,
 `ocean-deep`, `subway`, `tropical-birds`, `underwater-ambient`, `whales`.
 
@@ -62,9 +84,11 @@ Origin unknown. Treat as unlicensed until established.
 
 ## The two with a name in them
 
-| File | Tag in the file | What it means |
+Both have been removed. Kept here as the record of why.
+
+| File | Tag in the file | What it meant |
 |---|---|---|
-| `bell.mp3` | title and artist both read `SoundBible.com Must Credit`, dated 2017 | SoundBible distributes under Creative Commons Attribution or Public Domain. "Must credit" means the Attribution licence: a credit naming the author is required, and we do not know who the author is. |
+| `bell.mp3` | title and artist both read `SoundBible.com Must Credit`, dated 2017 | SoundBible distributes under Creative Commons Attribution or Public Domain. "Must credit" means the Attribution licence: a credit naming the author is required, and we never knew who the author was. |
 | `gong-old.mp3` | `TSS = GarageBand 10.2.0` | Produced in GarageBand. Apple's licence permits using the output in your own work; it does not permit redistributing the material as a standalone file. |
 
 ## What follows from this
@@ -75,14 +99,16 @@ commercially, each file needs either a licence on record or a replacement.
 
 Order of work, by exposure:
 
-1. **Replace the two named files.** `bell.mp3` needs either a proper credit
-   with the author's name or a CC0 replacement. `gong-old.mp3` needs a
-   replacement outright.
-2. **Resolve the ten from Moodist.** Each one is either CC0 or Pixabay. Find
+1. ~~**Replace the two named files.**~~ Done: both removed, both synthesised.
+2. ~~**Replace the six chakra bowls.**~~ Done: synthesised at exact pitch.
+3. **Resolve the ten from Moodist.** Each one is either CC0 or Pixabay. Find
    the original on Pixabay or Freesound and record which; replace the Pixabay
-   ones with CC0 equivalents.
-3. **Replace the twenty-two unknowns** with CC0 files whose source URL is
-   recorded here as they are added.
+   ones with CC0 equivalents. Needs a Freesound account, which only the owner
+   can create.
+4. **Replace the sixteen unknowns** with CC0 files whose source URL is
+   recorded here as they are added. Several of them are short one-shots
+   (`jungle-river` is one second, `monkeys` two) that a generator could cover
+   as convincingly as a sample.
 
 Vetted sources and the licence rules that apply to each are listed in
 [research/2026-09-15-sound-sources-and-licensing.md](research/2026-09-15-sound-sources-and-licensing.md).

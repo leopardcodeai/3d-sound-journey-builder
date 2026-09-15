@@ -599,6 +599,7 @@ async function startApp(mode) {
 
   const synth = new InstrumentSynth(audioEngine);
   synth.preloadAll('C4');
+  synth.preloadHealing();
 
   document.body.classList.remove('pre-start');
   $('#welcome').classList.add('is-hidden');

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "shoot": "node scripts/shoot.mjs"
+    "shoot": "node scripts/shoot.mjs",
+    "audit:audio": "node scripts/audit-audio.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

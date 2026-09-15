@@ -18,6 +18,9 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
   ring that follows the breathing pacer, a live frequency readout and per-layer
   controls.
 - **Landing page** at `/` describing the features, with the app at `/app`.
+- **`npm run audit:audio`**: reports every bundled audio file with its size,
+  duration, encoder and embedded tags, and fails when the library and the
+  folder disagree.
 - **Evidence labels** on every frequency tool, sourced from a literature review
   in `docs/research`, shown in the library and the inspector.
 - **Per-source inserts**: low-pass, high-pass, playback speed, tremolo and a
@@ -40,11 +43,20 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 - **Suggested mode** for the current hour in the focus view.
 - **Two journeys**: Restore, built only from water and birdsong, and an
   hour-long Sound bath with the seven chakra bowls entering in order.
-- **Tests**: 236 unit tests across the engine, generators, camera, timeline,
-  library, focus view, presets, scenes, undo and i18n, up from 104.
+- **Tests**: 245 unit tests across the engine, generators, camera, timeline,
+  library, focus view, instrument synthesis, presets, scenes, undo and i18n,
+  up from 104.
 
 ### Changed
 
+- **Audio provenance**: the bundled files were traced. Ten are byte-identical
+  to Moodist, whose sounds are Pixabay- or CC0-licensed rather than covered by
+  its MIT licence; sixteen have no traceable origin; eight had terms that were
+  clearly unmet and have been removed.
+- **The healing set is synthesised**, not recorded: the bowl strike, the gong
+  and the seven chakra bowls. The chakra set used to be one recording
+  pitch-shifted six ways, which tied its pitch to that file; it is now
+  generated at the frequencies it claims, measured to within ten cents.
 - **Research**: two literature reviews in `docs/research`, one on competing
   apps and the evidence behind each technique, one on where audio and
   frequency data can be sourced and what each licence allows.
@@ -66,6 +78,10 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 
 ### Fixed
 
+- A slow wobble in the bowl generator was written as `sin(2*pi*f(t)*t)`, which
+  is phase distortion rather than frequency modulation. It dragged the pitch
+  about two percent flat and further off the longer the note rang. The phase is
+  now accumulated per sample, so the written frequency is the heard one.
 - **Security**: a shared link could run script in the reader's browser. Display
   names were escaped everywhere, but a source's identifier was written into a
   `data-id` attribute unescaped, and a scene from a URL is written by whoever
@@ -115,6 +131,10 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 
 ### Removed
 
+- Eight audio files whose licence terms could not be met: `bell.mp3` (required
+  a credit naming an author that was never recorded), `gong-old.mp3` (produced
+  in GarageBand, whose licence does not cover redistributing the file), and the
+  six chakra bowl recordings of unknown origin. All eight are synthesised now.
 - `ControlPanel.js`, `ControlPanelEvents.js` and `EventBindings.js`, replaced by
   `Library.js`, `Inspector.js`, `FocusView.js` and a slimmer `main.js`.
 

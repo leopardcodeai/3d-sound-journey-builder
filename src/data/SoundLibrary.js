@@ -70,21 +70,22 @@ export const SOUNDS = [
   S('subway',       { file: 'subway.mp3',       category: 'places', nameKey: 'subway',      glyph: 'tunnel', color: '#8a8cf0', desc: 'Underground station' }),
 
   // ---- Healing ------------------------------------------------------------
-  S('bell',         { file: 'bell.mp3',         category: 'healing', nameKey: 'bell',        glyph: 'bell',   color: '#e0b458', desc: 'Bright singing bowl strike' }),
+  Y('bell',         { category: 'healing', nameKey: 'bell',        glyph: 'bell',   color: '#e0b458', desc: 'Bright bowl strike, 528 Hz. Synthesised.' }),
   S('singing-bowl', { file: 'singing-bowl.mp3', category: 'healing', nameKey: 'singingBowl', glyph: 'bowl',   color: '#d4a24c', desc: 'Deep singing bowl' }),
   S('gong',         { file: 'gong.mp3',         category: 'healing', nameKey: 'gong',        glyph: 'gong',   color: '#f0a35a', desc: 'Deep gong strike' }),
   S('gong_chinese', { file: 'gong-chinese.mp3', category: 'healing', nameKey: 'gongChinese', glyph: 'gong',   color: '#e08a4a', desc: 'Chinese gong' }),
-  S('gong_old',     { file: 'gong-old.mp3',     category: 'healing', nameKey: 'gongOld',     glyph: 'gong',   color: '#c98a5a', desc: 'Old temple gong' }),
+  Y('gong_old',     { category: 'healing', nameKey: 'gongOld',     glyph: 'gong',   color: '#c98a5a', desc: 'Deep gong that blooms after the strike. Synthesised.' }),
   S('wind-chimes',  { file: 'wind-chimes.mp3',  category: 'healing', nameKey: 'windChimes',  glyph: 'chimes', color: '#9ed8ff', desc: 'Wind chimes in a breeze' }),
-  // Chakra bowls: real recordings where available, the missing note is
-  // pitch-shifted from the deep bowl by InstrumentSynth.
-  S('bowl_c', { file: 'singing-bowl.mp3', synthNote: 'C', category: 'healing', nameKey: 'bowlC', glyph: 'bowl', color: '#e5484d', desc: 'Root, 256 Hz' }),
-  S('bowl_d', { file: 'bowl-d.mp3', category: 'healing', nameKey: 'bowlD', glyph: 'bowl', color: '#f0883e', desc: 'Sacral, 288 Hz' }),
-  S('bowl_e', { file: 'bowl-e.mp3', category: 'healing', nameKey: 'bowlE', glyph: 'bowl', color: '#e5c53a', desc: 'Solar plexus, 320 Hz' }),
-  S('bowl_f', { file: 'bowl-f.mp3', category: 'healing', nameKey: 'bowlF', glyph: 'bowl', color: '#46a758', desc: 'Heart, 341 Hz' }),
-  S('bowl_g', { file: 'bowl-g.mp3', category: 'healing', nameKey: 'bowlG', glyph: 'bowl', color: '#3e9bf0', desc: 'Throat, 384 Hz' }),
-  S('bowl_a', { file: 'bowl-a.mp3', category: 'healing', nameKey: 'bowlA', glyph: 'bowl', color: '#8e4ec6', desc: 'Third eye, 426 Hz' }),
-  S('bowl_b', { file: 'bowl-b.mp3', category: 'healing', nameKey: 'bowlB', glyph: 'bowl', color: '#e6e6e6', desc: 'Crown, 480 Hz' }),
+  // Chakra bowls are synthesised at their exact frequencies by InstrumentSynth.
+  // They used to be pitch-shifted copies of a recording, which tied the realised
+  // pitch to that file and left seven unlicensed mp3s in the repository.
+  Y('bowl_c', { category: 'healing', nameKey: 'bowlC', glyph: 'bowl', color: '#e5484d', desc: 'Root, 256 Hz' }),
+  Y('bowl_d', { category: 'healing', nameKey: 'bowlD', glyph: 'bowl', color: '#f0883e', desc: 'Sacral, 288 Hz' }),
+  Y('bowl_e', { category: 'healing', nameKey: 'bowlE', glyph: 'bowl', color: '#e5c53a', desc: 'Solar plexus, 320 Hz' }),
+  Y('bowl_f', { category: 'healing', nameKey: 'bowlF', glyph: 'bowl', color: '#46a758', desc: 'Heart, 341 Hz' }),
+  Y('bowl_g', { category: 'healing', nameKey: 'bowlG', glyph: 'bowl', color: '#3e9bf0', desc: 'Throat, 384 Hz' }),
+  Y('bowl_a', { category: 'healing', nameKey: 'bowlA', glyph: 'bowl', color: '#8e4ec6', desc: 'Third eye, 426 Hz' }),
+  Y('bowl_b', { category: 'healing', nameKey: 'bowlB', glyph: 'bowl', color: '#e6e6e6', desc: 'Crown, 480 Hz' }),
 
   // ---- Instruments (offline-rendered) -------------------------------------
   Y('instr_piano',      { category: 'instruments', nameKey: 'piano',     glyph: 'piano',   color: '#e6e6e6', desc: 'Soft piano tone' }),
