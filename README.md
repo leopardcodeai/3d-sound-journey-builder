@@ -1,6 +1,6 @@
 # Sound Journey Builder
 
-[![Tests](https://img.shields.io/badge/tests-245%2F245%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
+[![Tests](https://github.com/leopardcodeai/3d-sound-journey-builder/actions/workflows/tests.yml/badge.svg)](https://github.com/leopardcodeai/3d-sound-journey-builder/actions/workflows/tests.yml)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 

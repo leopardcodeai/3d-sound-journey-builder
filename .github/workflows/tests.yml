@@ -1,0 +1,33 @@
+# Runs the unit suite and a production build on every push and pull request.
+#
+# The README carries a test badge. Without this workflow that badge was a
+# hand-written number that nothing checked, so it could only ever be as true as
+# the last person to edit it remembered to make it.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Audio folder matches the library
+        run: npm run audit:audio
