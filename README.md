@@ -169,6 +169,33 @@ World space is metres: x to the right, y forward, z up. Web Audio takes
 and perspective; picking and dragging run through the inverse projection, so
 they stay exact at any angle.
 
+### What the renderer can and cannot place
+
+The browser's own HRTF does the binaural work, and it has limits worth stating
+rather than discovering. Measured in Chrome 152 with an `OfflineAudioContext`,
+comparing rendered buffers sample by sample:
+
+| | |
+|---|---|
+| Azimuth | interpolated, smooth between grid points |
+| Elevation | **not** interpolated, snaps to a 15 degree grid |
+| Below -45 degrees | **no data**: -50, -60, -75 and -90 render bit-identical to -45 |
+| Distance | gain only. The interaural level difference at 0.2 m, 1 m and 3 m is the same 11.193 dB |
+
+So sideways movement is smooth, vertical movement is a staircase, nothing can be
+placed steeply underfoot, and bringing a sound to your ear only makes it louder.
+The shoulder and pinna filters move continuously with elevation and carry some
+cue past the floor, but the spatial image does not follow. No bundled journey or
+set crosses that floor, and a test keeps it that way.
+
+Sources feeding the panner are summed to mono first. A stereo buffer in HRTF
+mode gets the left response applied to the left channel and the right to the
+right, which does not place the sound at all: measured at -0.9 dB right minus
+left for a source 3 m to the right, against +11.2 dB once summed.
+
+Full working and sources: [docs/research/2026-09-15-spatial-audio-and-head-tracking.md](docs/research/2026-09-15-spatial-audio-and-head-tracking.md),
+which also records why AirPods head tracking cannot reach a web page.
+
 ---
 
 ## Adding a sound

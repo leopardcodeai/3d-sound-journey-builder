@@ -257,7 +257,7 @@ export const JOURNEYS = {
     sources: [
       src('jo_waves', 'waves', 'Surface', hold({ at: [0, 4, 1], start: 0, end: 300, volume: [0.45, 0.3, 0.16], fadeIn: 6, fadeOut: 45 })),
       src('jo_deep', 'ocean_deep', 'Deep ocean', hold({ at: [0, -4, -2], start: 120, end: 900, volume: [0.46, 0.5, 0.44], fadeIn: 20, fadeOut: 40 })),
-      src('jo_under', 'underwater_ambient', 'Underwater', arc({ from: 20, to: 340, radius: 3.5, z: [-1, -4], volume: [0.36, 0.42, 0.32], start: 180, end: 900, steps: 8, fadeIn: 14, fadeOut: 40 })),
+      src('jo_under', 'underwater_ambient', 'Underwater', arc({ from: 20, to: 340, radius: 4.5, z: [-1, -4], volume: [0.36, 0.42, 0.32], start: 180, end: 900, steps: 8, fadeIn: 14, fadeOut: 40 })),
       src('jo_whales', 'whales', 'Whales', arc({ from: 160, to: 200, radius: [9, 5], z: [-2, -5], volume: [0.36, 0.44, 0.26], start: 300, end: 600, steps: 7, fadeIn: 8, fadeOut: 30 })),
       src('jo_dolphins', 'dolphins', 'Dolphins', arc({ from: 300, to: 60, radius: 4.5, z: [1, 3], volume: [0.26, 0.32, 0.18], start: 660, end: 780, steps: 6, fadeIn: 4, fadeOut: 20 })),
       src('jo_bowl', 'bowl_g', 'Throat bowl', hold({ at: [0, -2, 3], start: 540, end: 900, volume: [0.22, 0.16], fadeIn: 10, fadeOut: 40 })),
@@ -505,7 +505,7 @@ export const SOUND_SETS = {
     summary: 'Whale song below you, the hull of the ocean around, dolphins passing.',
     masterVolume: 0.5,
     sources: [
-      { id: 'set_deep_ambient', type: 'underwater_ambient', name: 'Underwater', x: 0, y: 0, z: -1, volume: 0.45 },
+      { id: 'set_deep_ambient', type: 'underwater_ambient', name: 'Underwater', x: 0, y: -2.5, z: -1.6, volume: 0.45 },
       { id: 'set_deep_whales', type: 'whales', name: 'Whales', x: -3, y: 6, z: -3, volume: 0.42 },
       { id: 'set_deep_ocean', type: 'ocean_deep', name: 'Deep ocean', x: 4, y: -3, z: -2, volume: 0.3 },
       { id: 'set_deep_dolphins', type: 'dolphins', name: 'Dolphins', x: 5, y: 4, z: 1, volume: 0.2 },

@@ -224,3 +224,65 @@ describe('session phases', () => {
     expect(modeForHour(19)).toBe('calm');
   });
 });
+
+/**
+ * The browser's HRTF database stops at 45 degrees below the horizon. Measured
+ * in Chrome 152 with an OfflineAudioContext: a source rendered at -50, -60, -75
+ * and -90 degrees comes out bit-identical to the same source at -45. Elevation
+ * is also not interpolated, so it snaps to a 15 degree grid either way.
+ *
+ * So a source placed steeply below the listener is drawn in one place and heard
+ * in another, and the last part of any descent past that angle is silent as
+ * movement. The app's own shoulder and pinna filters still move with elevation
+ * and carry some cue, but the spatial image does not follow.
+ *
+ * Two bundled placements crossed this line before it was measured: the
+ * Underwater layer of the ocean journey, which descended to -48.8 degrees, and
+ * the Underwater source of the Deep set, which sat directly beneath the
+ * listener at -90. Both were moved rather than left to mislead. This test
+ * keeps them there. See docs/research/2026-09-15-spatial-audio-and-head-tracking.md.
+ */
+describe('elevation stays inside what the renderer can express', () => {
+  const HRTF_FLOOR_DEG = -45;
+  const elevation = (x, y, z) => Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI;
+
+  it('keeps every journey keyframe above the HRTF floor', () => {
+    for (const [id, j] of Object.entries(JOURNEYS)) {
+      for (const s of j.sources) {
+        for (const k of s.keyframes) {
+          const deg = elevation(k.x, k.y, k.z);
+          expect(deg, `${id}/${s.id} at ${k.time}s is ${deg.toFixed(1)} degrees`)
+            .toBeGreaterThanOrEqual(HRTF_FLOOR_DEG);
+        }
+      }
+    }
+  });
+
+  it('keeps every sound set source above the HRTF floor', () => {
+    for (const [id, set] of Object.entries(SOUND_SETS)) {
+      for (const s of set.sources) {
+        const deg = elevation(s.x, s.y, s.z);
+        expect(deg, `${id}/${s.id} is ${deg.toFixed(1)} degrees`)
+          .toBeGreaterThanOrEqual(HRTF_FLOOR_DEG);
+      }
+    }
+  });
+
+  it('never places a source directly above or below the listener', () => {
+    // A source with no horizontal offset has no azimuth to render. At the
+    // listener's own position that is deliberate and fine: the two pink noise
+    // beds sit there because a masking bed should not come from a direction.
+    // With a height on it, though, it is the degenerate case, a sound meant to
+    // be overhead or underfoot that the panner cannot express at all.
+    const all = [
+      ...Object.entries(SOUND_SETS).flatMap(([id, s]) => s.sources.map(x => [id, x.id, x])),
+      ...Object.entries(JOURNEYS).flatMap(([id, j]) => j.sources.flatMap(
+        s => s.keyframes.map(k => [id, s.id, k]),
+      )),
+    ];
+    for (const [id, sid, p] of all) {
+      if (Math.hypot(p.x, p.y) > 0.25) continue;
+      expect(Math.abs(p.z), `${id}/${sid} has height but no direction`).toBeLessThan(0.25);
+    }
+  });
+});
