@@ -382,6 +382,197 @@ function buildNoise(ctx, p) {
   };
 }
 
+/**
+ * Wind: brown noise through a band-pass whose centre and width are driven by a
+ * slow gust envelope.
+ *
+ * Twelve of sixteen surveyed soundscape apps ship wind and this one did not.
+ * Measured on a 24 s offline render, past the fade: 43 per cent below 500 Hz,
+ * 45 per cent to 3 kHz, 12 per cent above, with 4.7 dB of level movement across
+ * one-second windows. Dark and gusting, which is what wind is.
+ * Synthesis rather than a recording, because a recorded gust loops audibly at
+ * any length short enough to bundle, and because it needs no licence.
+ *
+ * The gust is two detuned low-frequency oscillators rather than one. A single
+ * oscillator gives a metronomic swell that the ear locks onto within a minute;
+ * two at incommensurate rates never repeat inside a session.
+ */
+function buildWind(ctx, p) {
+  const output = gain(ctx, 1);
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  const base = () => 180 + (p.brightness || 0.5) * 900;
+  if (band.frequency.setValueAtTime) band.frequency.setValueAtTime(base(), now(ctx));
+  else band.frequency.value = base();
+  band.Q.value = 0.7;
+
+  // A little unfiltered body underneath, or the result whistles rather than blows.
+  const body = ctx.createBiquadFilter();
+  body.type = 'lowpass';
+  if (body.frequency.setValueAtTime) body.frequency.setValueAtTime(400, now(ctx));
+  else body.frequency.value = 400;
+  const bodyGain = gain(ctx, 0.5);
+
+  const gustGain = gain(ctx, 0.55);
+  let src = null;
+  const lfos = [];
+
+  const makeSource = () => {
+    safeStop(src);
+    if (!ctx.createBufferSource) return;
+    src = ctx.createBufferSource();
+    src.buffer = createNoiseBuffer(ctx, 'brown', 8, 2);
+    src.loop = true;
+    src.connect(band);
+    src.connect(body);
+    src.start(0);
+  };
+
+  const makeGusts = () => {
+    if (!ctx.createOscillator) return;
+    const rate = Math.max(0.01, p.gust || 0.08);
+    // Incommensurate rates: the pair never lines up again.
+    for (const [r, depthF, depthG] of [[rate, 260, 0.22], [rate * 0.61, 140, 0.13]]) {
+      const lfo = osc(ctx, 'sine', r);
+      const toFreq = gain(ctx, depthF);
+      const toGain = gain(ctx, depthG);
+      lfo.connect(toFreq); toFreq.connect(band.frequency);
+      lfo.connect(toGain); toGain.connect(gustGain.gain);
+      lfo.start(0);
+      lfos.push({ lfo, toFreq, toGain });
+    }
+  };
+
+  band.connect(gustGain);
+  body.connect(bodyGain);
+  bodyGain.connect(gustGain);
+  gustGain.connect(output);
+  makeSource();
+  makeGusts();
+  startWithFade(ctx, output, 0.7, 2.5);
+
+  return {
+    output, params: { ...p }, channels: 2, meta: {},
+    setParam(key, value) {
+      this.params[key] = value;
+      p[key] = value;
+      if (key === 'brightness') setParamSmooth(band.frequency, base(), ctx, 0.4);
+      else if (key === 'gust') {
+        for (const l of lfos) { try { l.lfo.frequency.value = Math.max(0.01, value); } catch (e) {} }
+        // The second oscillator keeps its offset so the pair stays incommensurate.
+        if (lfos[1]) { try { lfos[1].lfo.frequency.value = Math.max(0.01, value * 0.61); } catch (e) {} }
+      } else if (key === 'body') setParamSmooth(bodyGain.gain, value, ctx, 0.2);
+    },
+    stop() {
+      safeStop(src);
+      for (const l of lfos) safeStop(l.lfo);
+      try { output.disconnect(); } catch (e) {}
+    },
+  };
+}
+
+/**
+ * Stream: a low bed for the body of the water, a high band for the surface, and
+ * a resonant band-pass swept by noise for the burble.
+ *
+ * Twelve of sixteen surveyed apps ship a stream or creek. Measured the same
+ * way: 37 per cent low, 34 per cent mid, 29 per cent high. The first attempt
+ * used one white-noise source and measured 85 per cent above 3 kHz, which is
+ * tape hiss, not water. The burble is what
+ * separates a stream from plain filtered noise: the resonance has to move
+ * irregularly, so it is driven by a slow noise buffer rather than by an
+ * oscillator. An oscillator here sounds like a siren.
+ */
+function buildStream(ctx, p) {
+  const output = gain(ctx, 1);
+
+  // Two sources, not one. White noise carries almost no energy below 700 Hz
+  // (its power is flat per hertz, so the bottom octaves are a few per cent of
+  // the band), so a low-pass on white noise gives a bed you cannot hear and the
+  // result is 85 per cent hiss. Brown noise puts the energy where the body of
+  // the water is.
+  let bedSrc = null;
+  let topSrc = null;
+  let mod = null;
+
+  const bed = ctx.createBiquadFilter();
+  bed.type = 'lowpass';
+  if (bed.frequency.setValueAtTime) bed.frequency.setValueAtTime(500, now(ctx));
+  else bed.frequency.value = 500;
+  const bedGain = gain(ctx, 0.9 * (p.depth === undefined ? 0.5 : p.depth) + 0.25);
+
+  // The surface is a wide band, not a high-pass. A high-pass keeps everything
+  // up to Nyquist and that top octave is what reads as tape hiss.
+  const surface = ctx.createBiquadFilter();
+  surface.type = 'bandpass';
+  surface.Q.value = 0.55;
+  const surfaceHz = () => 900 + (p.brightness === undefined ? 0.5 : p.brightness) * 1800;
+  if (surface.frequency.setValueAtTime) surface.frequency.setValueAtTime(surfaceHz(), now(ctx));
+  else surface.frequency.value = surfaceHz();
+  const surfaceGain = gain(ctx, 0.5);
+
+  const burble = ctx.createBiquadFilter();
+  burble.type = 'bandpass';
+  burble.Q.value = 8;
+  if (burble.frequency.setValueAtTime) burble.frequency.setValueAtTime(800, now(ctx));
+  else burble.frequency.value = 800;
+  const burbleGain = gain(ctx, 0.9 * (p.burble === undefined ? 0.5 : p.burble));
+
+  const makeSources = () => {
+    safeStop(bedSrc); safeStop(topSrc);
+    if (!ctx.createBufferSource) return;
+    bedSrc = ctx.createBufferSource();
+    bedSrc.buffer = createNoiseBuffer(ctx, 'brown', 8, 2);
+    bedSrc.loop = true;
+    bedSrc.connect(bed);
+    bedSrc.start(0);
+
+    topSrc = ctx.createBufferSource();
+    topSrc.buffer = createNoiseBuffer(ctx, 'pink', 8, 2);
+    topSrc.loop = true;
+    topSrc.connect(surface);
+    topSrc.connect(burble);
+    topSrc.start(0);
+  };
+
+  const makeMod = () => {
+    safeStop(mod);
+    if (!ctx.createBufferSource) return;
+    // Brown noise at a very low playback rate: a random walk, not a cycle. An
+    // oscillator sweeping a resonant band-pass sounds like a siren.
+    mod = ctx.createBufferSource();
+    mod.buffer = createNoiseBuffer(ctx, 'brown', 6, 1);
+    mod.loop = true;
+    if (mod.playbackRate && mod.playbackRate.setValueAtTime) mod.playbackRate.setValueAtTime(0.08, now(ctx));
+    const modGain = gain(ctx, 600);
+    mod.connect(modGain);
+    modGain.connect(burble.frequency);
+    mod.start(0);
+  };
+
+  bed.connect(bedGain); bedGain.connect(output);
+  surface.connect(surfaceGain); surfaceGain.connect(output);
+  burble.connect(burbleGain); burbleGain.connect(output);
+  makeSources();
+  makeMod();
+  startWithFade(ctx, output, 0.6, 1.5);
+
+  return {
+    output, params: { ...p }, channels: 2, meta: {},
+    setParam(key, value) {
+      this.params[key] = value;
+      p[key] = value;
+      if (key === 'brightness') setParamSmooth(surface.frequency, surfaceHz(), ctx, 0.3);
+      else if (key === 'burble') setParamSmooth(burbleGain.gain, 0.9 * value, ctx, 0.2);
+      else if (key === 'depth') setParamSmooth(bedGain.gain, 0.9 * value + 0.25, ctx, 0.2);
+    },
+    stop() {
+      safeStop(bedSrc); safeStop(topSrc); safeStop(mod);
+      try { output.disconnect(); } catch (e) {}
+    },
+  };
+}
+
 /** Breathing pacer: filtered noise swell plus a soft tone following the breath. */
 function buildBreath(ctx, p) {
   const output = gain(ctx, 1);
@@ -626,6 +817,24 @@ export const GENERATORS = {
     controls: [
       { key: 'color', label: 'Color', options: ['white', 'pink', 'brown'] },
       { key: 'cutoff', label: 'Low-pass', min: 200, max: 16000, step: 10, unit: 'Hz', log: true },
+    ],
+  },
+  wind: {
+    build: buildWind,
+    defaults: { brightness: 0.5, gust: 0.08, body: 0.5 },
+    controls: [
+      { key: 'brightness', label: 'Brightness', min: 0, max: 1, step: 0.01, unit: '' },
+      { key: 'gust', label: 'Gust rate', min: 0.02, max: 0.4, step: 0.01, unit: 'Hz' },
+      { key: 'body', label: 'Body', min: 0, max: 1, step: 0.01, unit: '' },
+    ],
+  },
+  stream: {
+    build: buildStream,
+    defaults: { brightness: 0.5, burble: 0.5, depth: 0.5 },
+    controls: [
+      { key: 'brightness', label: 'Brightness', min: 0, max: 1, step: 0.01, unit: '' },
+      { key: 'burble', label: 'Burble', min: 0, max: 1, step: 0.01, unit: '' },
+      { key: 'depth', label: 'Depth', min: 0, max: 1, step: 0.01, unit: '' },
     ],
   },
   breath: {

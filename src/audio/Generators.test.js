@@ -288,3 +288,103 @@ describe('master bus', () => {
     expect(src.inserts.lowpass).toBe(ceiling);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wind and stream: measured, not assumed
+// ---------------------------------------------------------------------------
+
+/** A context that records what a generator actually created. */
+function makeCtx() {
+  const ctx = createMockContext();
+  ctx._oscillators = [];
+  ctx._bufferSources = [];
+  const osc = ctx.createOscillator;
+  ctx.createOscillator = vi.fn(() => { const n = osc(); ctx._oscillators.push(n); return n; });
+  const buf = ctx.createBufferSource;
+  ctx.createBufferSource = vi.fn(() => { const n = buf(); ctx._bufferSources.push(n); return n; });
+  return ctx;
+}
+
+describe('wind and stream generators', () => {
+  it('are registered with defaults that match their controls', () => {
+    for (const name of ['wind', 'stream']) {
+      const g = GENERATORS[name];
+      expect(g, name).toBeTruthy();
+      expect(typeof g.build, name).toBe('function');
+      for (const c of g.controls) {
+        expect(g.defaults[c.key], `${name}.${c.key}`).toBeDefined();
+        if (c.min !== undefined) {
+          expect(g.defaults[c.key], `${name}.${c.key} in range`).toBeGreaterThanOrEqual(c.min);
+          expect(g.defaults[c.key], `${name}.${c.key} in range`).toBeLessThanOrEqual(c.max);
+        }
+      }
+    }
+  });
+
+  it('clamps a hostile parameter instead of passing it on', () => {
+    for (const name of ['wind', 'stream']) {
+      for (const c of GENERATORS[name].controls) {
+        if (c.min === undefined) continue;
+        expect(Number.isFinite(clampParam(name, c.key, NaN))).toBe(true);
+        expect(clampParam(name, c.key, 1e9)).toBeLessThanOrEqual(c.max);
+        expect(clampParam(name, c.key, -1e9)).toBeGreaterThanOrEqual(c.min);
+      }
+    }
+  });
+
+  it('builds and stops without throwing on a stub context', () => {
+    for (const name of ['wind', 'stream']) {
+      const ctx = makeCtx();
+      const h = buildGenerator(ctx, name, GENERATORS[name].defaults);
+      expect(h.output, name).toBeTruthy();
+      expect(h.channels, name).toBe(2);
+      expect(() => h.stop()).not.toThrow();
+    }
+  });
+
+  it('accepts every one of its own controls through setParam', () => {
+    for (const name of ['wind', 'stream']) {
+      const ctx = makeCtx();
+      const h = buildGenerator(ctx, name, GENERATORS[name].defaults);
+      for (const c of GENERATORS[name].controls) {
+        expect(() => h.setParam(c.key, c.max)).not.toThrow();
+        expect(h.params[c.key]).toBe(c.max);
+        expect(() => h.setParam(c.key, c.min)).not.toThrow();
+      }
+      h.stop();
+    }
+  });
+
+  it('ignores a parameter it does not know rather than corrupting state', () => {
+    const ctx = makeCtx();
+    const h = buildGenerator(ctx, 'wind', GENERATORS.wind.defaults);
+    expect(() => h.setParam('nonsense', 1)).not.toThrow();
+    expect(h.params.brightness).toBe(GENERATORS.wind.defaults.brightness);
+    h.stop();
+  });
+
+  it('gives wind two gust oscillators at incommensurate rates', () => {
+    const ctx = makeCtx();
+    const h = buildGenerator(ctx, 'wind', { brightness: 0.5, gust: 0.1, body: 0.5 });
+    // The helper schedules the rate rather than assigning .value, so the
+    // scheduled call is what carries it, not the parameter's resting value.
+    const rates = ctx._oscillators
+      .flatMap(o => o.frequency.setValueAtTime.mock.calls.map(c => c[0]))
+      .filter(Number.isFinite);
+    expect(rates.length).toBeGreaterThanOrEqual(2);
+    // Two identical rates would beat as one slow metronome the ear locks onto.
+    const ratio = Math.max(...rates) / Math.min(...rates);
+    expect(ratio).toBeGreaterThan(1.2);
+    h.stop();
+  });
+
+  it('drives the stream burble from noise, not from an oscillator', () => {
+    const ctx = makeCtx();
+    const h = buildGenerator(ctx, 'stream', GENERATORS.stream.defaults);
+    // An oscillator sweeping a resonant band-pass sounds like a siren, so the
+    // stream must use a slow noise source for its burble instead.
+    expect(ctx._oscillators.length).toBe(0);
+    expect(ctx._bufferSources.length).toBeGreaterThanOrEqual(2);
+    h.stop();
+  });
+});

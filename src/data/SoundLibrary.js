@@ -119,6 +119,8 @@ export const SOUNDS = [
   G('breath', { gen: 'breath', spatial: false, params: { bpm: 6, inhale: 0.45, tone: 0.5 }, category: 'frequencies', nameKey: 'breath', glyph: 'breath', color: '#94d2bd', desc: 'Breathing pacer, 6 breaths per minute', evidence: 'moderate', noteKey: 'noteBreath' }),
 
   // ---- Generative ---------------------------------------------------------
+  G('wind',    { gen: 'wind',    params: { brightness: 0.5, gust: 0.08, body: 0.5 },                          category: 'nature',     nameKey: 'genWind',    glyph: 'waves',   color: '#9fb8c9', desc: 'Gusting wind, synthesised', restorative: true }),
+  G('stream',  { gen: 'stream',  params: { brightness: 0.5, burble: 0.5, depth: 0.5 },                        category: 'nature',     nameKey: 'genStream',  glyph: 'drop',    color: '#6fb4c9', desc: 'A running creek, synthesised', restorative: true }),
   G('pad',     { gen: 'pad',     params: { root: 110, chord: 'sus2', brightness: 0.4, movement: 0.4, detune: 7 }, category: 'generative', nameKey: 'genPad',     glyph: 'layers',  color: '#b5a0ff', desc: 'Slowly evolving chord pad' }),
   G('drone',   { gen: 'drone',   params: { freq: 55, richness: 0.5, movement: 0.3 },                            category: 'generative', nameKey: 'genDrone',   glyph: 'drone',   color: '#7c6cff', desc: 'Deep sub drone' }),
   G('shimmer', { gen: 'shimmer', params: { root: 880, density: 0.35, decay: 5 },                                category: 'generative', nameKey: 'genShimmer', glyph: 'sparkle', color: '#ffd6a5', desc: 'Sparse bell-like notes' }),
