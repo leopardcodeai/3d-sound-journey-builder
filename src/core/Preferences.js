@@ -51,7 +51,10 @@ const FIELDS = {
   output: oneOf(OUTPUT_MODES),
   room: num(0, 1),
   posture: oneOf(POSTURES),
-  headTilt: num(-45, 45),
+  // The slider runs to plus and minus 90 and the listener maths handles any
+  // angle, so the store must not be narrower than the control. It was, and a
+  // tilt of 80 degrees came back as 45 after a reload without saying so.
+  headTilt: num(-90, 90),
   shoulder: num(0, 1),
   pinna: num(0, 1),
   masterVolume: num(0, 1),

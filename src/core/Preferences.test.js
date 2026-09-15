@@ -30,7 +30,11 @@ describe('sanitisePrefs', () => {
   it('clamps numbers into range instead of passing them on', () => {
     expect(sanitisePrefs({ room: 99 }).room).toBe(1);
     expect(sanitisePrefs({ room: -4 }).room).toBe(0);
-    expect(sanitisePrefs({ headTilt: 900 }).headTilt).toBe(45);
+    expect(sanitisePrefs({ headTilt: 900 }).headTilt).toBe(90);
+    expect(sanitisePrefs({ headTilt: -900 }).headTilt).toBe(-90);
+    // The store must not be narrower than the slider, or a value is silently
+    // trimmed on reload. The slider runs to plus and minus 90.
+    expect(sanitisePrefs({ headTilt: 80 }).headTilt).toBe(80);
     expect(sanitisePrefs({ masterVolume: 2.5 }).masterVolume).toBe(1);
   });
 
@@ -107,7 +111,7 @@ describe('preference storage', () => {
     localStorage.setItem(KEY, JSON.stringify({ output: 'evil', room: NaN, headTilt: 1e9 }));
     const p = loadPrefs();
     expect(p.output).toBe(DEFAULTS.output);
-    expect(p.headTilt).toBe(45);
+    expect(p.headTilt).toBe(90);
     expect(Number.isFinite(p.room)).toBe(true);
   });
 

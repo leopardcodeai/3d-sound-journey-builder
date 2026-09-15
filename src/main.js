@@ -74,6 +74,15 @@ const soundscapeTimer = new SoundscapeTimer(audioEngine, {
       : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   },
   onStop: () => { $('#timer-display').textContent = '--:--'; $('#timer-cancel').hidden = true; },
+  // The timer pausing every source is not enough on its own: a running
+  // timeline puts them straight back, because _applyKeyframes restarts
+  // anything inside its clip window. Measured after a fade: two sources were
+  // audible again within a second. The transport has to stop too.
+  onComplete: () => {
+    if (timeline && timeline.isPlaying) timeline.pause();
+    if (focusView && focusView.running) focusView.pause();
+    showToast(t('timerDone'));
+  },
 });
 
 const headTracker = new HeadTracker(audioEngine, {

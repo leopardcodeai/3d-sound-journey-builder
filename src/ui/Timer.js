@@ -35,29 +35,45 @@ export class SoundscapeTimer {
       clearInterval(this.interval);
       this.interval = null;
     }
+    if (this._fadeTimer) { clearTimeout(this._fadeTimer); this._fadeTimer = null; }
     this.running = false;
     this.duration = 0;
     this.remaining = 0;
     if (this.callbacks.onStop) this.callbacks.onStop();
   }
 
+  /**
+   * Fades the master out over three seconds, then pauses every source and puts
+   * the master back where it was.
+   *
+   * The restore is the part that matters. Without it the gain stays at zero
+   * after the timer expires while the fader still reads its old value, so the
+   * next press of play produces silence and nothing on screen explains why.
+   * The level has to come back once the sources are already stopped, which is
+   * why it happens inside the same timeout rather than on the ramp.
+   */
   _fadeAndPause() {
     const engine = this.audioEngine;
     if (!engine.isInitialized || !engine.ctx || !engine.masterGain) return;
 
-    const currentVolume = engine.masterGain.gain.value;
     const ctx = engine.ctx;
+    // Read the level before scheduling anything: _lastVolume is what the fader
+    // says, and the live gain value is the fallback if the engine has not seen
+    // a set yet.
+    const level = typeof engine._lastVolume === 'number' ? engine._lastVolume : engine.masterGain.gain.value;
 
     engine.masterGain.gain.cancelScheduledValues(ctx.currentTime);
-    engine.masterGain.gain.setValueAtTime(currentVolume, ctx.currentTime);
+    engine.masterGain.gain.setValueAtTime(engine.masterGain.gain.value, ctx.currentTime);
     engine.masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 3);
 
-    setTimeout(() => {
+    this._fadeTimer = setTimeout(() => {
+      this._fadeTimer = null;
       for (const src of engine.sources.values()) {
-        if (src.isPlaying) {
-          engine.toggleSource(src.id);
-        }
+        if (src.isPlaying) engine.toggleSource(src.id);
       }
+      const t = engine.ctx ? engine.ctx.currentTime : 0;
+      engine.masterGain.gain.cancelScheduledValues(t);
+      engine.masterGain.gain.setValueAtTime(level, t);
       if (this.callbacks.onComplete) this.callbacks.onComplete();
     }, 3100);
   }
