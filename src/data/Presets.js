@@ -283,6 +283,53 @@ export const JOURNEYS = {
     ],
   },
 
+  restore: {
+    name: 'Restore',
+    icon: 'leaf',
+    summary: 'Water and birdsong only. The two categories with the clearest evidence for stress recovery.',
+    duration: 1200,
+    masterVolume: 0.55,
+    sections: [
+      { time: 0, name: 'Arrive' },
+      { time: 240, name: 'Open ground' },
+      { time: 960, name: 'Wind-down' },
+    ],
+    sources: [
+      src('jr_river', 'jungle_river', 'River', hold({ at: [-3.5, 1.5, 0], start: 0, end: 1200, volume: [0.42, 0.46, 0.44, 0.34], fadeIn: 8, fadeOut: 90 })),
+      src('jr_waves', 'waves', 'Shore', arc({ from: 240, to: 300, radius: 7, z: 0, volume: [0.3, 0.36, 0.26], start: 0, end: 1200, steps: 7, fadeIn: 12, fadeOut: 90 })),
+      src('jr_birds', 'birds', 'Birdsong', arc({ from: 50, to: 130, radius: 5, z: [2, 3.4], volume: [0.3, 0.36, 0.26], start: 60, end: 1140, steps: 8, fadeIn: 12, fadeOut: 60 })),
+      src('jr_tropical', 'tropical_birds', 'Tropical birds', arc({ from: 330, to: 250, radius: 6, z: 3, volume: [0.2, 0.26, 0.18], start: 300, end: 1080, steps: 7, fadeIn: 14, fadeOut: 60 })),
+      src('jr_rain', 'rain', 'Light rain', hold({ at: [0, -4.5, 1], start: 480, end: 1200, volume: [0.24, 0.3, 0.22], fadeIn: 20, fadeOut: 90 })),
+    ],
+  },
+
+  soundbath: {
+    name: 'Sound bath',
+    icon: 'bowl',
+    summary: 'An hour of bowls entering one at a time, root to crown, with the room opening as it goes.',
+    duration: 3600,
+    masterVolume: 0.5,
+    posture: 'lying-back',
+    sections: [
+      { time: 0, name: 'Grounding' },
+      { time: 900, name: 'Rising' },
+      { time: 2400, name: 'Full circle' },
+      { time: 3150, name: 'Return' },
+    ],
+    sources: [
+      src('jb_gong', 'gong', 'Opening gong', hold({ at: [0, 5, 3], start: 0, end: 120, volume: [0.34, 0.2], fadeIn: 2, fadeOut: 40 })),
+      src('jb_c', 'bowl_c', 'Root bowl', arc({ from: 270, to: 330, radius: 3.4, z: 0.5, volume: [0.34, 0.38, 0.26], start: 60, end: 3400, steps: 8, fadeIn: 12, fadeOut: 180 })),
+      src('jb_d', 'bowl_d', 'Sacral bowl', arc({ from: 330, to: 30, radius: 3.6, z: 1, volume: [0.3, 0.34, 0.24], start: 420, end: 3400, steps: 8, fadeIn: 16, fadeOut: 180 })),
+      src('jb_e', 'bowl_e', 'Solar plexus bowl', arc({ from: 30, to: 90, radius: 3.8, z: 1.6, volume: [0.28, 0.32, 0.22], start: 780, end: 3400, steps: 8, fadeIn: 16, fadeOut: 180 })),
+      src('jb_f', 'bowl_f', 'Heart bowl', arc({ from: 90, to: 150, radius: 4, z: 2.2, volume: [0.28, 0.34, 0.22], start: 1140, end: 3400, steps: 8, fadeIn: 16, fadeOut: 180 })),
+      src('jb_g', 'bowl_g', 'Throat bowl', arc({ from: 150, to: 210, radius: 4.2, z: 2.8, volume: [0.24, 0.3, 0.2], start: 1500, end: 3400, steps: 8, fadeIn: 16, fadeOut: 180 })),
+      src('jb_a', 'bowl_a', 'Third eye bowl', arc({ from: 210, to: 250, radius: 4.4, z: 3.4, volume: [0.22, 0.28, 0.18], start: 1860, end: 3400, steps: 7, fadeIn: 16, fadeOut: 180 })),
+      src('jb_b', 'bowl_b', 'Crown bowl', hold({ at: [0, 0.5, 5], start: 2220, end: 3400, volume: [0.2, 0.26, 0.16], fadeIn: 20, fadeOut: 180 })),
+      src('jb_chimes', 'wind-chimes', 'Wind chimes', arc({ from: 20, to: 340, radius: 6.5, z: 3, volume: [0.16, 0.2, 0.14], start: 900, end: 3300, steps: 9, fadeIn: 25, fadeOut: 150 })),
+      src('jb_close', 'gong_old', 'Closing gong', hold({ at: [0, 4, 3], start: 3300, end: 3540, volume: [0.3, 0.18], fadeIn: 3, fadeOut: 90 })),
+    ],
+  },
+
   dawn: {
     name: 'Dawn',
     icon: 'sun',
@@ -340,6 +387,8 @@ export const MODES = {
     summary: 'Six breaths a minute with a theta beat underneath.',
     minutes: 10,
     masterVolume: 0.55,
+    fadeOut: 60,
+    taper: true,
     layers: [
       { type: 'breath', volume: 0.4, params: { bpm: 6, inhale: 0.45, tone: 0.5 } },
       { type: 'bw_theta', volume: 0.26, params: { beat: 6, carrier: 180, bed: 0.2 } },
@@ -352,6 +401,7 @@ export const MODES = {
     minutes: 45,
     masterVolume: 0.42,
     fadeOut: 180,
+    taper: true,
     layers: [
       { type: 'noise_brown', volume: 0.4 },
       { type: 'bw_delta', volume: 0.24, params: { beat: 2.5, carrier: 150, bed: 0.25 } },
@@ -415,5 +465,48 @@ export const TEMPLATE_SCENES = {
 };
 
 /** Journey ids in display order. */
-export const JOURNEY_ORDER = ['focus', 'meditate', 'sleep', 'jungle', 'ocean', 'storm', 'dawn'];
+export const JOURNEY_ORDER = ['focus', 'restore', 'meditate', 'soundbath', 'sleep', 'jungle', 'ocean', 'storm', 'dawn'];
 export const MODE_ORDER = ['focus', 'deepWork', 'calm', 'sleep', 'clarity', 'tone'];
+
+// ---------------------------------------------------------------------------
+// Session phases and time of day
+// ---------------------------------------------------------------------------
+
+/**
+ * Split a session into settling, main and wind-down. The wind-down is where a
+ * session should taper rather than stop: it is the mode's own fade when it has
+ * one, otherwise a fifth of the session, capped at five minutes.
+ * @param {Object} mode
+ * @returns {{intro:number, windDown:number, total:number}} seconds
+ */
+export function sessionPhases(mode, minutes) {
+  const total = (minutes || mode.minutes) * 60;
+  const intro = Math.min(90, total * 0.1);
+  const windDown = Math.min(mode.fadeOut || total * 0.2, total * 0.4, 300);
+  return { intro, windDown, total };
+}
+
+/** Which phase a session is in at `elapsed` seconds. */
+export function phaseAt(mode, minutes, elapsed) {
+  const { intro, windDown, total } = sessionPhases(mode, minutes);
+  if (elapsed < intro) return { id: 'intro', progress: intro > 0 ? elapsed / intro : 1 };
+  if (elapsed > total - windDown) {
+    const span = Math.max(1, windDown);
+    return { id: 'windDown', progress: Math.min(1, (elapsed - (total - windDown)) / span) };
+  }
+  const span = Math.max(1, total - windDown - intro);
+  return { id: 'sustain', progress: (elapsed - intro) / span };
+}
+
+/**
+ * A mode to suggest for the current hour. No sensors, no profile: just a
+ * reasonable default that the user can ignore.
+ */
+export function modeForHour(hour) {
+  if (hour >= 22 || hour < 6) return 'sleep';
+  if (hour < 10) return 'focus';
+  if (hour < 14) return 'deepWork';
+  if (hour < 18) return 'focus';
+  if (hour < 21) return 'calm';
+  return 'calm';
+}

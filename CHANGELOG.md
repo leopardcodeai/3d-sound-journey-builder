@@ -30,11 +30,27 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 - **Camera module** with a tested inverse projection, so picking and dragging
   are exact in the tilted 3D view.
 - **Line icon set** used by both the DOM and the canvas.
-- **Tests**: 177 unit tests across the engine, generators, camera, timeline,
+- **Evidence notes**: each frequency tool carries a one-line reason next to its
+  grade, not just a verdict. A binaural source shows a headphone warning and a
+  one-click swap to an isochronic pulse that survives on speakers.
+- **Session phases**: focus sessions run settling, main and wind-down. A
+  calming session tapers its own generators on the way out, slowing the beat
+  toward delta, darkening the noise and dulling the pad, instead of only
+  lowering the master.
+- **Suggested mode** for the current hour in the focus view.
+- **Two journeys**: Restore, built only from water and birdsong, and an
+  hour-long Sound bath with the seven chakra bowls entering in order.
+- **Tests**: 181 unit tests across the engine, generators, camera, timeline,
   presets, scenes, undo and i18n, up from 104.
 
 ### Changed
 
+- **Research**: two literature reviews in `docs/research`, one on competing
+  apps and the evidence behind each technique, one on where audio and
+  frequency data can be sourced and what each licence allows.
+- **Attribution**: `docs/ATTRIBUTION.md` records that the provenance of the
+  bundled samples was never documented and states what has to happen before
+  they can be treated as redistributable.
 - **Sound library** is now one registry (`src/data/SoundLibrary.js`) that every
   surface reads from. Adding a sound is a single entry.
 - **Journeys** are generated from path and envelope helpers instead of

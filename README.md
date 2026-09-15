@@ -1,6 +1,6 @@
 # Sound Journey Builder
 
-[![Tests](https://img.shields.io/badge/tests-177%2F177%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
+[![Tests](https://img.shields.io/badge/tests-181%2F181%20passing-brightgreen)](https://github.com/leopardcodeai/3d-sound-journey-builder)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-black)](https://3d-sound-journey-builder.vercel.app)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
@@ -30,6 +30,8 @@ playing.
 
 ![The focus view](docs/screenshot_focus.png)
 
+![The landing page](docs/screenshot_landing.png)
+
 ---
 
 ## What is in it
@@ -42,8 +44,8 @@ playing.
 | **Per-source inserts** | Low-pass, high-pass, playback speed, tremolo, reverb send, fade in, fade out, repeat cycle |
 | **Master bus** | Shared convolution reverb, soft limiter, stereo meters |
 | **Timeline** | Clips, draggable keyframes with volume envelopes, mute and solo, named sections, zoom-aware snapping, fit to view |
-| **Journeys** | Seven built in, from a twenty-five minute deep-work block to a thirty minute sleep descent that ends in silence |
-| **Focus modes** | Six single-screen sessions with a countdown ring and live frequency readout |
+| **Journeys** | Nine built in, from a twenty-five minute deep-work block to an hour-long sound bath and a thirty minute sleep descent |
+| **Focus modes** | Six single-screen sessions with a countdown ring, a live frequency readout, a settling and wind-down phase, and a taper that slows the frequencies on the way out |
 | **Output** | Headphones with HRTF, stereo speakers, 5.1, or a custom speaker layout placed by dragging |
 | **Editing** | One undo stack across moves, adds, deletes, clip edits, keyframe edits, parameters and motion paths |
 | **Sharing** | Scenes in local storage, plus links that carry the whole journey in the URL |
@@ -60,8 +62,12 @@ not a promised effect.
 | Tool | Grade |
 |---|---|
 | Pink and white noise, breathing pacer at six breaths a minute | Some evidence |
-| Binaural, isochronic and monaural beats, brown noise | Weak evidence |
+| Binaural, isochronic and monaural beats, brown noise, 40 Hz gamma | Weak evidence |
 | Solfeggio tones, 432 Hz tuning, 7.83 Hz Schumann | No evidence |
+
+Each grade comes with a one-line reason. Select a binaural beat and the
+inspector says it needs headphones, and offers to swap it for an isochronic
+pulse that survives on speakers.
 
 Forty hertz gamma stimulation has strong evidence in clinical Alzheimer's
 trials using combined light and sound devices. That does not transfer to a
@@ -76,7 +82,7 @@ This is not a medical device.
 ```bash
 npm install
 npm run dev        # http://localhost:5199
-npm test           # 177 unit tests
+npm test           # 181 unit tests
 npm run build      # landing page + app
 ```
 

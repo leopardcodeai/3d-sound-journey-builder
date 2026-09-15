@@ -266,6 +266,27 @@ const EN = {
   redo: 'Redo',
   shortcuts: 'Shortcuts',
   dragHint: 'Drag to move · Alt-drag for height · Right-drag to orbit',
+
+  // --- evidence notes (see docs/research) ---
+  noteBinaural: 'Meta-analysis finds a modest average effect; the entrainment mechanism itself is contested. Needs headphones.',
+  noteIsochronic: 'Thinner evidence than binaural beats, but it works on speakers.',
+  noteNoiseFocus: 'Trials point to attention support, clearest for people with ADHD.',
+  noteNoiseBrown: 'Popular, but no trial covers brown noise specifically. Use it as masking and texture.',
+  noteBreath: 'Around six breaths a minute has the strongest support in this app, measured on heart rate variability.',
+  noteSolfeggio: 'No mechanistic or clinical support. Offered because people ask for it.',
+  noteSchumann: 'Real atmospheric physics, no evidence for an effect on people. Treat it as a drone.',
+  noteGamma: 'Clinical 40 Hz work uses light and sound together, daily, with diagnosed patients. That does not transfer to listening here.',
+  noteTone: 'A plain tone. Small trials on 432 Hz tuning show modest effects; a generic tone has none.',
+  headphoneCheck: 'Binaural beats need headphones',
+  headphoneCheckHelp: 'Each ear needs its own frequency. On speakers the two mix in the air and the beat disappears.',
+  switchToIsochronic: 'Switch to isochronic',
+  suggested: 'Suggested now',
+  windDown: 'Wind-down',
+  intro: 'Settling in',
+  sustain: 'Main phase',
+  phaseOf: 'Phase',
+  restore: 'Restore',
+  soundBath: 'Sound bath',
 };
 
 const DE = {
@@ -516,6 +537,27 @@ const DE = {
   redo: 'Wiederholen',
   shortcuts: 'Tastenkürzel',
   dragHint: 'Ziehen bewegt · Alt-Ziehen ändert die Höhe · Rechts-Ziehen dreht die Kamera',
+
+  // --- Evidenz-Hinweise (siehe docs/research) ---
+  noteBinaural: 'Eine Metaanalyse findet einen kleinen Durchschnittseffekt, der Mechanismus selbst ist umstritten. Braucht Kopfhörer.',
+  noteIsochronic: 'Dünnere Studienlage als binaurale Beats, funktioniert dafür über Lautsprecher.',
+  noteNoiseFocus: 'Studien deuten auf Aufmerksamkeitsunterstützung hin, am deutlichsten bei ADHS.',
+  noteNoiseBrown: 'Beliebt, aber keine Studie betrachtet braunes Rauschen im Besonderen. Nimm es als Maskierung und Textur.',
+  noteBreath: 'Etwa sechs Atemzüge pro Minute haben in dieser App die beste Belegung, gemessen an der Herzratenvariabilität.',
+  noteSolfeggio: 'Kein Wirkmechanismus, keine klinischen Belege. Enthalten, weil danach gefragt wird.',
+  noteSchumann: 'Echte Atmosphärenphysik, kein Beleg für eine Wirkung auf Menschen. Betrachte es als Drone.',
+  noteGamma: 'Klinische 40-Hz-Studien nutzen Licht und Ton zusammen, täglich, bei diagnostizierten Patienten. Das überträgt sich nicht aufs Zuhören hier.',
+  noteTone: 'Ein einfacher Ton. Kleine Studien zur 432-Hz-Stimmung zeigen geringe Effekte, ein beliebiger Ton gar keine.',
+  headphoneCheck: 'Binaurale Beats brauchen Kopfhörer',
+  headphoneCheckHelp: 'Jedes Ohr braucht seine eigene Frequenz. Über Lautsprecher mischen sich beide in der Luft und der Beat verschwindet.',
+  switchToIsochronic: 'Auf isochron wechseln',
+  suggested: 'Jetzt passend',
+  windDown: 'Ausklang',
+  intro: 'Ankommen',
+  sustain: 'Hauptteil',
+  phaseOf: 'Phase',
+  restore: 'Erholung',
+  soundBath: 'Klangbad',
 };
 
 const STRINGS = { en: EN, de: DE };

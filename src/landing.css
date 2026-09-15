@@ -104,7 +104,8 @@ h4 { font-size: 14px; font-weight: 600; }
 }
 .hero h1 { margin-bottom: 18px; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
-.hero-stats { display: grid; grid-template-columns: repeat(4, auto); gap: 26px; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-soft); }
+.hero-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-soft); }
+.hero-stats > div { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; min-height: 48px; }
 .hero-stats dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
 .hero-stats dd { font-size: 19px; color: var(--text); margin-top: 2px; }
 .hero-visual { display: flex; flex-direction: column; gap: 10px; align-items: center; }

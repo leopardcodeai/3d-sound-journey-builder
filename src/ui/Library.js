@@ -158,6 +158,7 @@ export class Library {
       const name = s.nameKey ? t(s.nameKey) : (s.name || s.type);
       const meta = describeMeta(s);
       const evidence = s.evidence ? `<span class="tag tag-${s.evidence}">${t(`evidence${cap(s.evidence)}`)}</span>` : '';
+      const note = s.noteKey ? `<span class="card-note">${escapeHtml(t(s.noteKey))}</span>` : '';
       return `
         <article class="card-sound" data-type="${s.type}" draggable="true" tabindex="0">
           <span class="card-glyph" style="--tint:${s.color}">${icon(s.glyph || 'file', { size: 17 })}</span>
@@ -165,6 +166,7 @@ export class Library {
             <span class="card-name">${escapeHtml(name)}</span>
             <span class="card-desc">${escapeHtml(s.desc || '')}</span>
             <span class="card-meta">${meta}${evidence}</span>
+            ${note}
           </span>
           <button class="card-preview icon-btn" title="${t('audition')}" aria-label="${t('audition')}">${icon('play', { size: 11 })}</button>
           <span class="card-add icon-btn" title="${t('addSound')}" aria-hidden="true">${icon('plus', { size: 13 })}</span>

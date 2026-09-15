@@ -118,7 +118,8 @@ export class Inspector {
       const kf = e.target.closest('.insp-add-kf');
       if (kf && this.timeline) { this.timeline.addKeyframeAt(this.nodeId, this.timeline.playheadTime); this._renderPane(); return; }
       const solf = e.target.closest('.solf-btn');
-      if (solf) { this._apply('freq', parseFloat(solf.dataset.freq), true); this._renderPane(); }
+      if (solf) { this._apply('freq', parseFloat(solf.dataset.freq), true); this._renderPane(); return; }
+      if (e.target.closest('.insp-to-iso')) this._convertToIsochronic();
     });
   }
 
@@ -204,7 +205,21 @@ export class Inspector {
     }
 
     if (def.evidence) {
-      rows.push(`<p class="note note-${def.evidence}">${t(`evidence${def.evidence.charAt(0).toUpperCase()}${def.evidence.slice(1)}`)}. ${t('evidenceNote')}</p>`);
+      const grade = t(`evidence${def.evidence.charAt(0).toUpperCase()}${def.evidence.slice(1)}`);
+      const note = def.noteKey ? ` ${t(def.noteKey)}` : ` ${t('evidenceNote')}`;
+      rows.push(`<p class="note note-${def.evidence}"><strong>${grade}.</strong>${note}</p>`);
+    }
+
+    // Binaural beats fall apart on speakers, so say so and offer the swap.
+    if (node.gen === 'binaural') {
+      rows.push(`<div class="callout callout-action">
+        ${icon('headphones', { size: 15 })}
+        <div>
+          <strong>${t('headphoneCheck')}</strong>
+          <p>${t('headphoneCheckHelp')}</p>
+          <button class="btn btn-ghost insp-to-iso">${icon('pulse', { size: 13 })}<span>${t('switchToIsochronic')}</span></button>
+        </div>
+      </div>`);
     }
 
     if (node.kind === 'sample') {
@@ -377,6 +392,28 @@ export class Inspector {
     else if (next) grid.setAutomation(node.id, next.type, true, next);
     else grid.automations.delete(node.id);
     this._renderPane();
+  }
+
+  /**
+   * Rebuild a binaural source as an isochronic one at the same beat rate, so a
+   * listener on speakers still gets a pulse instead of nothing.
+   */
+  _convertToIsochronic() {
+    const node = this._node();
+    if (!node || node.gen !== 'binaural') return;
+    const { id, name, x, y, z, volume } = node;
+    const beat = node.params.beat;
+    const carrier = node.params.carrier || 220;
+    this.audioEngine.removeSource(id);
+    const next = this.audioEngine.addSource(id, node.type, name, x, y, z, volume, {
+      gen: 'isochronic',
+      params: { beat, freq: carrier, duty: 0.5 },
+    });
+    if (next) {
+      this.canvasGrid.selectedNodeId = id;
+      this.show(next);
+      if (this.timeline && this.timeline.visible) this.timeline._render();
+    }
   }
 
   _remove() {

@@ -5,7 +5,7 @@
  * plain focus player. The same audio engine and the same sources back it, so
  * switching to the field mid-session keeps everything playing.
  */
-import { MODES, MODE_ORDER } from '../data/Presets.js';
+import { MODES, MODE_ORDER, phaseAt, sessionPhases, modeForHour } from '../data/Presets.js';
 import { getSound, soundName, bandForBeat, SOLFEGGIO } from '../data/SoundLibrary.js';
 import { GENERATORS } from '../audio/Generators.js';
 import { icon } from './Icons.js';
@@ -174,13 +174,16 @@ export class FocusView {
     for (const id of [...this.audioEngine.sources.keys()]) this.audioEngine.removeSource(id);
     this.audioEngine.setMasterVolume(mode.masterVolume);
 
+    this._baseParams = new Map();
     mode.layers.forEach((layer, i) => {
       const def = getSound(layer.type);
       const id = `focus_${modeId}_${i}`;
-      this.audioEngine.addSource(id, layer.type, soundName(layer.type), 0, 0, 0, layer.volume, {
+      const src = this.audioEngine.addSource(id, layer.type, soundName(layer.type), 0, 0, 0, layer.volume, {
         params: { ...(def.params || {}), ...(layer.params || {}) },
       });
+      if (src) this._baseParams.set(id, { ...src.params });
     });
+    this._tapered = false;
 
     this.renderModes();
     this._renderLengths();
@@ -230,27 +233,67 @@ export class FocusView {
     this.ringProgress.style.strokeDashoffset = String(this._ringLength * (1 - progress));
     this.orbTime.textContent = fmtClock(this.running || this.elapsed > 0 ? total - this.elapsed : total);
     const mode = this.modeId ? MODES[this.modeId] : null;
+
     if (mode && this.running) {
       const left = total - this.elapsed;
-      const fading = mode.fadeOut && left <= mode.fadeOut;
-      this.phaseEl.textContent = fading ? t('rampDown') : `${mode.name} · ${t('remaining')} ${fmtClock(left)}`;
-      if (fading && this.audioEngine.masterGain && !this._fadeStarted) {
-        this._fadeStarted = true;
-        const ctx = this.audioEngine.ctx;
-        const g = this.audioEngine.masterGain.gain;
-        g.cancelScheduledValues(ctx.currentTime);
-        g.setValueAtTime(g.value, ctx.currentTime);
-        g.linearRampToValueAtTime(0.0001, ctx.currentTime + mode.fadeOut);
+      const phase = phaseAt(mode, this.minutes, this.elapsed);
+      this.phaseEl.textContent = `${t(phase.id)} · ${t('remaining')} ${fmtClock(left)}`;
+
+      if (phase.id === 'windDown') {
+        if (mode.taper) this._applyTaper(phase.progress);
+        if (mode.fadeOut && this.audioEngine.masterGain && !this._fadeStarted) {
+          this._fadeStarted = true;
+          const ctx = this.audioEngine.ctx;
+          const g = this.audioEngine.masterGain.gain;
+          g.cancelScheduledValues(ctx.currentTime);
+          g.setValueAtTime(g.value, ctx.currentTime);
+          g.linearRampToValueAtTime(0.0001, ctx.currentTime + Math.max(1, left));
+        }
       }
     } else if (!this.running) {
       this.phaseEl.textContent = mode ? mode.summary : '';
     }
+
     if (this.elapsed >= total) {
       this.pause();
       this.elapsed = 0;
       this._fadeStarted = false;
+      this._restoreParams();
       if (this.audioEngine.masterGain && mode) this.audioEngine.setMasterVolume(mode.masterVolume);
+      this._tick();
     }
+  }
+
+  /**
+   * During the wind-down, move every generator toward its calmer end: a slower
+   * beat, a darker noise, a duller pad. `p` runs 0 to 1 across the phase.
+   */
+  _applyTaper(p) {
+    if (!this._baseParams) return;
+    const k = Math.min(1, Math.max(0, p));
+    const lerp = (a, b) => a + (b - a) * k;
+    for (const [id, base] of this._baseParams.entries()) {
+      const src = this.audioEngine.sources.get(id);
+      if (!src) continue;
+      if (base.beat !== undefined) this.audioEngine.setSourceParam(id, 'beat', round2(lerp(base.beat, Math.max(1.5, base.beat * 0.3))));
+      if (base.cutoff !== undefined) this.audioEngine.setSourceParam(id, 'cutoff', Math.round(lerp(base.cutoff, 900)));
+      if (base.brightness !== undefined) this.audioEngine.setSourceParam(id, 'brightness', round2(lerp(base.brightness, 0.08)));
+      if (base.movement !== undefined) this.audioEngine.setSourceParam(id, 'movement', round2(lerp(base.movement, 0.08)));
+      if (base.bpm !== undefined) this.audioEngine.setSourceParam(id, 'bpm', round2(lerp(base.bpm, 4.5)));
+    }
+    this._tapered = true;
+    this.renderReadout();
+  }
+
+  _restoreParams() {
+    if (!this._tapered || !this._baseParams) return;
+    for (const [id, base] of this._baseParams.entries()) {
+      if (!this.audioEngine.sources.has(id)) continue;
+      for (const [key, value] of Object.entries(base)) this.audioEngine.setSourceParam(id, key, value);
+    }
+    this._tapered = false;
+    this.renderLayers();
+    this.renderReadout();
   }
 
   /** Per-frame visuals: the breath ring follows a breath generator if present. */
@@ -279,10 +322,23 @@ export class FocusView {
   // ------------------------------------------------------------------
 
   renderModes() {
+    const suggested = modeForHour(new Date().getHours());
     this.root.querySelectorAll('.focus-mode').forEach(btn => {
       const on = btn.dataset.mode === this.modeId;
       btn.classList.toggle('is-on', on);
       btn.setAttribute('aria-selected', on);
+      btn.classList.toggle('is-suggested', btn.dataset.mode === suggested);
+      let badge = btn.querySelector('.focus-mode-badge');
+      if (btn.dataset.mode === suggested) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'focus-mode-badge';
+          btn.appendChild(badge);
+        }
+        badge.textContent = t('suggested');
+      } else if (badge) {
+        badge.remove();
+      }
     });
   }
 
@@ -351,6 +407,8 @@ function formatParam(key, value) {
   if (key === 'bpm') return `${value}/min`;
   return String(Math.round(value * 100) / 100);
 }
+
+function round2(v) { return Math.round(v * 100) / 100; }
 
 function fmtClock(sec) {
   const s = Math.max(0, Math.round(sec));

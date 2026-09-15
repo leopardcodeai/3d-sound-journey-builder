@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { JOURNEYS, JOURNEY_ORDER, MODES, MODE_ORDER, TEMPLATE_SCENES, arc, hold } from './Presets.js';
+import { JOURNEYS, JOURNEY_ORDER, MODES, MODE_ORDER, TEMPLATE_SCENES, arc, hold, sessionPhases, phaseAt, modeForHour } from './Presets.js';
 import { SOUND_INDEX } from './SoundLibrary.js';
 
 describe('preset helpers', () => {
@@ -154,5 +154,41 @@ describe('journey envelopes', () => {
         }
       }
     }
+  });
+});
+
+describe('session phases', () => {
+  const mode = { minutes: 20, fadeOut: 120, taper: true };
+
+  it('splits a session into settling, main and wind-down', () => {
+    const p = sessionPhases(mode);
+    expect(p.total).toBe(1200);
+    expect(p.intro).toBe(90);        // capped at 90 s
+    expect(p.windDown).toBe(120);    // the mode's own fade
+  });
+
+  it('caps the wind-down when a mode declares none', () => {
+    const p = sessionPhases({ minutes: 60 });
+    expect(p.windDown).toBe(300);    // 20 % would be 720 s, capped at 5 min
+  });
+
+  it('reports the phase and its progress', () => {
+    expect(phaseAt(mode, 20, 10).id).toBe('intro');
+    expect(phaseAt(mode, 20, 10).progress).toBeCloseTo(10 / 90, 3);
+    expect(phaseAt(mode, 20, 600).id).toBe('sustain');
+    expect(phaseAt(mode, 20, 1140).id).toBe('windDown');
+    expect(phaseAt(mode, 20, 1140).progress).toBeCloseTo(0.5, 2);
+    expect(phaseAt(mode, 20, 1200).progress).toBe(1);
+  });
+
+  it('suggests a mode that exists for every hour of the day', () => {
+    for (let h = 0; h < 24; h++) {
+      const id = modeForHour(h);
+      expect(MODES[id], `hour ${h} -> ${id}`).toBeTruthy();
+    }
+    expect(modeForHour(23)).toBe('sleep');
+    expect(modeForHour(3)).toBe('sleep');
+    expect(modeForHour(9)).toBe('focus');
+    expect(modeForHour(19)).toBe('calm');
   });
 });

@@ -242,6 +242,9 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: none;
 .callout .ic { color: var(--accent); margin-top: 2px; }
 .callout strong { display: block; color: var(--text); font-size: var(--fs-sm); margin-bottom: 3px; }
 .callout p { font-size: var(--fs-xs); line-height: 1.55; }
+.callout-action { margin-top: 14px; }
+.callout-action .btn { margin-top: 9px; width: 100%; }
+.note strong { color: var(--text); font-weight: 600; }
 
 .readout { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; margin-bottom: 12px; }
 .readout > div { background: var(--surface); padding: 7px 8px; }
@@ -334,6 +337,11 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .card-desc { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; }
 .card-meta:empty { display: none; }
+.card-note {
+  display: none; margin-top: 5px; font-size: var(--fs-xs); line-height: 1.5;
+  color: var(--text-3);
+}
+.card-sound:hover .card-note, .card-sound:focus-within .card-note { display: block; }
 .card-preview { width: 24px; height: 24px; opacity: 0; }
 .card-sound:hover .card-preview { opacity: 1; }
 .card-preview.is-on { opacity: 1; color: var(--accent-2); }
@@ -562,6 +570,12 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 }
 .focus-mode:hover { border-color: var(--line-strong); background: var(--surface-2); }
 .focus-mode.is-on { border-color: var(--accent-line); background: var(--accent-dim); }
+.focus-mode.is-suggested { border-color: rgba(62, 207, 142, 0.3); }
+.focus-mode-badge {
+  align-self: flex-start; margin-top: 2px; padding: 1px 7px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.02em;
+  color: var(--ok); border: 1px solid rgba(62, 207, 142, 0.3); border-radius: 3px;
+}
 .focus-mode-icon { color: var(--accent); }
 .focus-mode-name { font-size: var(--fs-sm); font-weight: 500; }
 .focus-mode-sum { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
