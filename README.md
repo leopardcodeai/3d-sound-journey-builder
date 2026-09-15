@@ -24,6 +24,8 @@ to move it on the ground plane, hold Alt to lift it, right-drag to orbit. The
 2D map and the 3D view are one camera blended between orthographic and
 perspective, so switching does not cut.
 
+![The 3D view with the sound bath journey and the inspector open](docs/screenshot_builder.png)
+
 **The focus view.** One screen, one button. Pick a mode and a length, press the
 ring. No map, no timeline, and a readout that names every frequency currently
 playing.
