@@ -174,3 +174,44 @@ describe('CanvasGrid sizing', () => {
     expect(back.y).toBeCloseTo(200, 3);
   });
 });
+
+describe('CanvasGrid label placement', () => {
+  let canvas, engine, grid, ctx;
+
+  beforeEach(() => {
+    canvas = createMockCanvas();
+    engine = createMockAudioEngine();
+    vi.stubGlobal('window', { innerWidth: 800, innerHeight: 600, addEventListener: vi.fn(), devicePixelRatio: 1 });
+    grid = new CanvasGrid(canvas, engine);
+    grid._labelRects = [];
+    ctx = canvas.getContext('2d');
+  });
+
+  it('keeps the first label on its wanted line', () => {
+    expect(grid._placeLabel(ctx, 'Breath pacer', 200, 100, 12)).toBe(100);
+  });
+
+  it('pushes a colliding label onto the next free line', () => {
+    grid._placeLabel(ctx, 'Breath pacer', 200, 100, 12);
+    expect(grid._placeLabel(ctx, 'Alpha binaural', 204, 100, 12)).toBe(112);
+  });
+
+  it('drops a label once three lines are taken', () => {
+    for (let i = 0; i < 3; i++) grid._placeLabel(ctx, `s${i}`, 200, 100, 12);
+    expect(grid._placeLabel(ctx, 'fourth', 200, 100, 12)).toBeNull();
+  });
+
+  it('still draws a selected label when every line is taken', () => {
+    for (let i = 0; i < 3; i++) grid._placeLabel(ctx, `s${i}`, 200, 100, 12);
+    expect(grid._placeLabel(ctx, 'selected', 200, 100, 12, true)).toBe(100);
+  });
+
+  it('leaves labels alone when they do not overlap horizontally', () => {
+    grid._placeLabel(ctx, 'left', 100, 100, 12);
+    expect(grid._placeLabel(ctx, 'right', 400, 100, 12)).toBe(100);
+  });
+
+  it('measures text without measureText', () => {
+    expect(grid._textWidth({}, 'abcd')).toBe(24);
+  });
+});

@@ -309,6 +309,8 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 
 .lib-cats { display: flex; gap: 3px; overflow-x: auto; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); flex: none; scrollbar-width: none; }
 .lib-cats::-webkit-scrollbar { display: none; }
+.lib-cats.is-scrollable { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); }
+.lib-cats.is-scrollable.at-end { -webkit-mask-image: none; mask-image: none; }
 .lib-cat {
   display: flex; align-items: center; gap: 5px; padding: 5px 9px; white-space: nowrap;
   background: none; border: 1px solid transparent; border-radius: var(--r-sm);

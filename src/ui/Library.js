@@ -69,6 +69,8 @@ export class Library {
       this.render();
     });
 
+    this.catsEl.addEventListener('scroll', () => this._edgeFade(), { passive: true });
+
     this.listEl.addEventListener('click', (e) => {
       const card = e.target.closest('.card-sound');
       if (!card) return;
@@ -157,7 +159,40 @@ export class Library {
         ${icon(c.icon, { size: 15 })}<span>${t(c.nameKey)}</span>
       </button>
     `).join('');
+    this._revealActiveCat();
     this.renderList();
+  }
+
+  /**
+   * Scrolls the active category button into the strip's visible range and marks
+   * whether the strip overflows. Needed because the category can be set from
+   * code (an upload switches to "custom", the last tab), which would otherwise
+   * leave the panel with no visible active tab.
+   */
+  _revealActiveCat() {
+    const el = this.catsEl;
+    if (!el) return;
+    const view = el.clientWidth;
+    if (!view || el.scrollWidth <= view) {
+      el.classList.remove('is-scrollable', 'at-end');
+      return;
+    }
+    el.classList.add('is-scrollable');
+    const btn = el.querySelector('.lib-cat.is-on');
+    if (btn) {
+      const left = btn.offsetLeft;
+      const right = left + btn.offsetWidth;
+      if (left < el.scrollLeft) el.scrollLeft = Math.max(0, left - 10);
+      else if (right > el.scrollLeft + view) el.scrollLeft = right - view + 10;
+    }
+    this._edgeFade();
+  }
+
+  /** Drops the right-edge fade once the strip is scrolled to its end. */
+  _edgeFade() {
+    const el = this.catsEl;
+    if (!el) return;
+    el.classList.toggle('at-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
   }
 
   renderList() {

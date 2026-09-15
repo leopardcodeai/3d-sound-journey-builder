@@ -112,6 +112,39 @@ export class CanvasGrid {
     return this._monoFont;
   }
 
+  /** Text width with a fallback, because jsdom's canvas stub has no measureText. */
+  _textWidth(ctx, text) {
+    if (!ctx.measureText) return String(text).length * 6;
+    const m = ctx.measureText(text);
+    return (m && Number.isFinite(m.width)) ? m.width : String(text).length * 6;
+  }
+
+  /**
+   * Finds a free line for a centred label and reserves it. Two sources can sit
+   * almost on top of each other (head-locked ones share one arc), and their
+   * labels then overprint into an unreadable run of words.
+   *
+   * Tries the wanted line first, then two lines below it. Returns the y to draw
+   * at, or null when every line is taken. A selected or hovered label is drawn
+   * regardless: hiding what the user is pointing at is worse than an overlap.
+   */
+  _placeLabel(ctx, text, cx, y, lineHeight, priority = false) {
+    if (!this._labelRects) this._labelRects = [];
+    const half = this._textWidth(ctx, text) / 2 + 3;
+    for (let i = 0; i < 3; i++) {
+      const ty = y + i * lineHeight;
+      const rect = { x0: cx - half, x1: cx + half, y0: ty, y1: ty + lineHeight };
+      const hit = this._labelRects.some(o =>
+        rect.x0 < o.x1 && rect.x1 > o.x0 && rect.y0 < o.y1 && rect.y1 > o.y0);
+      if (!hit) { this._labelRects.push(rect); return ty; }
+    }
+    if (priority) {
+      this._labelRects.push({ x0: cx - half, x1: cx + half, y0: y, y1: y + lineHeight });
+      return y;
+    }
+    return null;
+  }
+
   _withAlpha(color, alpha) {
     if (!color) return `rgba(0,0,0,${alpha})`;
     if (color.startsWith('#')) {
@@ -724,6 +757,7 @@ export class CanvasGrid {
 
     this._syncCamera();
     this._hitRegions = [];
+    this._labelRects = [];
     if (this.showGrid) this.drawGround();
     this.drawListener();
     this.drawSpeakers();
@@ -799,7 +833,11 @@ export class CanvasGrid {
       const s = cam.project(r, 0, 0);
       const fog = this._fog(s.depth);
       ctx.fillStyle = `rgba(255, 246, 236, ${0.38 * fog})`;
-      ctx.fillText(`${r} m`, s.sx + 5, s.sy - 8);
+      const text = `${r} m`;
+      // Drop a ring label that would be cut off by the canvas edge. A clipped
+      // "8" reads as a different number, which is worse than no label.
+      if (s.sx + 5 + this._textWidth(ctx, text) > this.w - 4) continue;
+      ctx.fillText(text, s.sx + 5, s.sy - 8);
     }
 
     // Cardinal labels
@@ -1140,12 +1178,17 @@ export class CanvasGrid {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.font = `500 11px ${this._uiFont()}`;
-        ctx.fillStyle = `rgba(255, 246, 236, ${(isSelected || isHovered ? 0.9 : 0.62) * baseAlpha})`;
-        ctx.fillText(src.name || src.type, p.sx, p.sy + r + 8);
-        if (isSelected || isHovered) {
-          ctx.font = `10px ${this._mono()}`;
-          ctx.fillStyle = `rgba(255, 246, 236, ${0.45 * baseAlpha})`;
-          ctx.fillText(this._readout(src), p.sx, p.sy + r + 22);
+        const priority = isSelected || isHovered;
+        const name = src.name || src.type;
+        const ly = this._placeLabel(ctx, name, p.sx, p.sy + r + 8, 12, priority);
+        if (ly !== null) {
+          ctx.fillStyle = `rgba(255, 246, 236, ${(priority ? 0.9 : 0.62) * baseAlpha})`;
+          ctx.fillText(name, p.sx, ly);
+          if (priority) {
+            ctx.font = `10px ${this._mono()}`;
+            ctx.fillStyle = `rgba(255, 246, 236, ${0.45 * baseAlpha})`;
+            ctx.fillText(this._readout(src), p.sx, ly + 14);
+          }
         }
       }
 
