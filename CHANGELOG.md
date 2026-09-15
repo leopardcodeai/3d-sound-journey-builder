@@ -40,8 +40,8 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 - **Suggested mode** for the current hour in the focus view.
 - **Two journeys**: Restore, built only from water and birdsong, and an
   hour-long Sound bath with the seven chakra bowls entering in order.
-- **Tests**: 181 unit tests across the engine, generators, camera, timeline,
-  presets, scenes, undo and i18n, up from 104.
+- **Tests**: 200 unit tests across the engine, generators, camera, timeline,
+  library, focus view, presets, scenes, undo and i18n, up from 104.
 
 ### Changed
 
@@ -66,6 +66,14 @@ A rebuild of the audio engine, the spatial view, the timeline and the interface.
 
 ### Fixed
 
+- The field sized its canvas from the window rather than from its own box. It
+  sits below the top bar, so the backing store was 48 pixels too tall and got
+  squashed: the drawn centre was 24 pixels off and every click landed short of
+  its target. Found by the external review.
+- The audition button of a previously previewed sound stayed stuck showing the
+  stop icon. Found by the external review.
+- A focus layer whose main parameter has fixed options, such as the noise
+  colour, rendered a numeric slider and displayed NaN. Those now get a select.
 - Level meters read silence as silence. An analyser with no path to the
   destination never ran, so an unwritten buffer was being measured as full
   scale.
