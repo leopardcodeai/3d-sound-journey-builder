@@ -613,6 +613,7 @@ body.timeline-open .panel { bottom: calc(var(--dock-h) + 20px); }
 .focus-layer-glyph { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--tint); }
 .focus-layer-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .focus-layer-ctl { display: flex; align-items: center; gap: 8px; }
+.focus-layer-ctl select { max-width: 120px; }
 .focus-layer-ctl output { font-size: var(--fs-xs); color: var(--text-2); min-width: 50px; text-align: right; }
 .focus-layer .chips { grid-column: 1 / -1; }
 .focus-foot { display: flex; justify-content: center; }
