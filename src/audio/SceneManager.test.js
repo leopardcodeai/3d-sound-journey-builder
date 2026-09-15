@@ -130,7 +130,7 @@ describe('SceneManager', () => {
       sceneManager.saveScene('Test Scene');
       await sceneManager.loadScene('Test Scene');
 
-      expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('standing', 0);
+      expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('standing', 0, 0);
     });
 
     it('restores automations', async () => {
@@ -377,7 +377,7 @@ describe('listener anatomy and ramps', () => {
 
     vi.clearAllMocks();
     await manager.loadScene('Side');
-    expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('lying-side', -45);
+    expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('lying-side', -45, 0);
     expect(mockAudioEngine.updateShoulderStrength).toHaveBeenCalledWith(0.9);
     expect(mockAudioEngine.updatePinnaStrength).toHaveBeenCalledWith(0.15);
   });
@@ -583,5 +583,40 @@ describe('sanitiseScene', () => {
     raw.sources[0].name = '<img src=x>'.repeat(50);
     const out = sanitiseScene(raw);
     expect(out.sources[0].name.length).toBe(64);
+  });
+});
+
+describe('head turn in scenes (external review, 2026-09-15)', () => {
+  const withTurn = (headTurn) => ({
+    masterVolume: 0.6, posture: 'standing', headTilt: 0, headTurn,
+    sources: [{ id: 's1', type: 'rain', name: 'Rain', x: 1, y: 2, z: 0, volume: 0.5, isPlaying: true }],
+    automations: {}, timeline: null,
+  });
+
+  it('saves the head turn and restores it', async () => {
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    mockAudioEngine.headTurn = 90;
+    mockAudioEngine.headTilt = 12;
+    mockAudioEngine.posture = 'standing';
+    manager.saveScene('turned');
+    const stored = JSON.parse(localStorage.getItem('spatializer_scenes')).turned;
+    expect(stored.headTurn).toBe(90);
+
+    mockAudioEngine.updateListenerPose.mockClear();
+    await manager.loadScene('turned');
+    expect(mockAudioEngine.updateListenerPose).toHaveBeenCalledWith('standing', 12, 90);
+  });
+
+  it('clamps a hostile head turn out of a stored scene', () => {
+    expect(Math.abs(sanitiseScene(withTurn(1e9)).headTurn)).toBeLessThanOrEqual(180);
+    expect(Math.abs(sanitiseScene(withTurn(-1e9)).headTurn)).toBeLessThanOrEqual(180);
+    expect(Number.isFinite(sanitiseScene(withTurn(NaN)).headTurn)).toBe(true);
+    expect(sanitiseScene(withTurn(45)).headTurn).toBe(45);
+  });
+
+  it('gives an older scene without a head turn a defined value', () => {
+    const old = withTurn(undefined);
+    delete old.headTurn;
+    expect(sanitiseScene(old).headTurn).toBe(0);
   });
 });

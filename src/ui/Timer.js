@@ -35,7 +35,16 @@ export class SoundscapeTimer {
       clearInterval(this.interval);
       this.interval = null;
     }
-    if (this._fadeTimer) { clearTimeout(this._fadeTimer); this._fadeTimer = null; }
+    // Cancelling the restore timeout is not enough on its own: the ramp to zero
+    // is already scheduled on the audio clock and keeps running. Starting a new
+    // timer calls stop() first, so without this the master fades to silence and
+    // stays there while the sources play on. Found by an external review and
+    // reproduced: master 0.0000 with five sources still audible.
+    if (this._fadeTimer) {
+      clearTimeout(this._fadeTimer);
+      this._fadeTimer = null;
+      this._abortFade();
+    }
     this.running = false;
     this.duration = 0;
     this.remaining = 0;
@@ -76,6 +85,16 @@ export class SoundscapeTimer {
       engine.masterGain.gain.setValueAtTime(level, t);
       if (this.callbacks.onComplete) this.callbacks.onComplete();
     }, 3100);
+  }
+
+  /** Drops a fade in progress and puts the master back where the fader is. */
+  _abortFade() {
+    const engine = this.audioEngine;
+    if (!engine || !engine.isInitialized || !engine.ctx || !engine.masterGain) return;
+    const t = engine.ctx.currentTime;
+    const level = typeof engine._lastVolume === 'number' ? engine._lastVolume : 0.8;
+    engine.masterGain.gain.cancelScheduledValues(t);
+    engine.masterGain.gain.setValueAtTime(level, t);
   }
 
   getRemaining() {

@@ -340,3 +340,40 @@ Rohausgaben: /Users/alexanderbrunker/Coding/company/tools/review_agent/laeufe/20
 | gemini | uebersprungen | Kontingent: Kontingent erschoepft (429) (bis 2026-09-15) |
 
 Rohausgaben: /Users/alexanderbrunker/Coding/company/tools/review_agent/laeufe/2026-09-15/3d_sound_app-2
+
+
+## Weiterer Lauf 09:17 (Zweck tief)
+
+| Reviewer | Stand | Anmerkung |
+|---|---|---|
+| codex | gelesen | 2534 Bytes Ausgabe |
+| coderabbit | gelesen | 0 Befunde |
+| gemini | uebersprungen | Kontingent: Kontingent erschoepft (429) (bis 2026-09-15) |
+
+Rohausgaben: /Users/alexanderbrunker/Coding/company/tools/review_agent/laeufe/2026-09-15/3d_sound_app-3
+
+## Verifikation des Codex-Laufs vom 15.09.2026
+
+Sieben Befunde, alle am Code geprueft, keiner verworfen. CodeRabbit meldete im
+selben Lauf null.
+
+**Behoben:**
+
+| Befund | Status |
+|---|---|
+| `Timer.js` `stop()` bricht den Wiederherstellungs-Timer ab, laesst aber die geplante Rampe auf null stehen | bestaetigt und reproduziert: neuer Timer waehrend des Ausblendens liess den Master dauerhaft auf 0,0000, waehrend fuenf Quellen weiterliefen. Behoben, beide Wege nachgemessen. |
+| `SceneManager.js` speichert `headTurn` nicht | bestaetigt durch Lesen: `headTilt` wurde gespeichert und wiederhergestellt, `headTurn` nicht. Meine Luecke von heute. Behoben, drei Tests. |
+| `UndoManager.js` raeumt `trackState` beim Loeschen nicht | bestaetigt: nur `sourceTimings` und `keyframes` wurden entfernt. Loescht man die einzige Solo-Spur, bleibt `_anySolo()` wahr und alles andere stumm. An **zwei** Stellen behoben, nicht einer: derselbe Block steht im Rueckgaengig-Pfad des Hinzufuegens. |
+| `FocusView.js` Sitzung laeuft nach dem Verlassen der Ansicht weiter | bestaetigt: `hide()` stoppte nur die Grafik. Der Abklingvorgang blendete spaeter aus, was das Feld inzwischen geladen hatte. Behoben. |
+
+**Bestaetigt, noch offen.** Drei aeltere Befunde am Szenenladen, jeder braucht
+eigene Sorgfalt und einen eigenen Commit:
+
+- `SceneManager._preloadFor` wertet die Rueckgabe von `preloadSound` nicht aus.
+  Faellt ein Sample aus, werden die bisherigen Quellen trotzdem entfernt, die
+  fehlenden uebersprungen, und `loadScene()` meldet Erfolg.
+- Wiederhergestellte Mute- und Solo-Zustaende landen in `trackState`, werden
+  aber bis zum naechsten `_applyKeyframes` nicht auf die Gains angewandt. Eine
+  stummgeschaltete Spur ist nach dem Laden zunaechst hoerbar.
+- Szenenwechsel hat keinen Schutz gegen ueberholte Ladevorgaenge. Journeys und
+  Sets teilen sich dafuer `journeyLoad`; Szenen nicht.

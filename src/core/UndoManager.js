@@ -141,6 +141,10 @@ export function createAddCommand(audioEngine, canvasGrid, sourceData, timeline) 
       if (timeline) {
         timeline.sourceTimings.delete(sourceData.id);
         timeline.keyframes.delete(sourceData.id);
+        // Mute and solo live in trackState, which was not cleared. Deleting the
+        // only soloed track left _anySolo() true, so every remaining track
+        // stayed silent with no soloed track on screen to explain it.
+        if (timeline.trackState) timeline.trackState.delete(sourceData.id);
         if (timeline.visible) timeline._render();
       }
     }
@@ -171,6 +175,10 @@ export function createDeleteCommand(audioEngine, canvasGrid, sourceData, timelin
       if (timeline) {
         timeline.sourceTimings.delete(sourceData.id);
         timeline.keyframes.delete(sourceData.id);
+        // Mute and solo live in trackState, which was not cleared. Deleting the
+        // only soloed track left _anySolo() true, so every remaining track
+        // stayed silent with no soloed track on screen to explain it.
+        if (timeline.trackState) timeline.trackState.delete(sourceData.id);
         if (timeline.visible) timeline._render();
       }
     },

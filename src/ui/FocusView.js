@@ -209,6 +209,9 @@ export class FocusView {
     this.root.classList.remove('is-visible');
     // A hidden canvas still costs a frame each tick, so the loop stops with it.
     if (this.field) this.field.stop();
+    // The session kept running after the view was gone, so its taper later
+    // faded out whatever the field had loaded in the meantime.
+    if (this.running) this.pause();
   }
 
   /**

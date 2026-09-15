@@ -67,6 +67,7 @@ export class SceneManager {
       masterVolume: this.audioEngine.masterGain ? this.audioEngine.masterGain.gain.value : 0.8,
       posture: this.audioEngine.posture,
       headTilt: this.audioEngine.headTilt,
+      headTurn: this.audioEngine.headTurn || 0,
       // The posture preset also sets these two, and a listener can move them
       // afterwards. Restoring the pose alone would leave the wrong filtering.
       shoulderStrength: round(this.audioEngine.shoulderStrength, 3),
@@ -98,9 +99,9 @@ export class SceneManager {
     // scenes have no strengths stored, so fall back to the posture preset.
     if (scene.shoulderStrength === undefined || scene.pinnaStrength === undefined) {
       this.audioEngine.applyPosturePreset(scene.posture);
-      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
+      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt, scene.headTurn);
     } else {
-      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt);
+      this.audioEngine.updateListenerPose(scene.posture, scene.headTilt, scene.headTurn);
       this.audioEngine.updateShoulderStrength(scene.shoulderStrength);
       this.audioEngine.updatePinnaStrength(scene.pinnaStrength);
     }
@@ -338,6 +339,7 @@ export function sanitiseScene(raw) {
     masterVolume: num(raw.masterVolume, 0, 1, 0.7),
     posture: ['standing', 'lying-back', 'lying-side'].includes(raw.posture) ? raw.posture : 'standing',
     headTilt: num(raw.headTilt, -90, 90, 0),
+    headTurn: num(raw.headTurn, -180, 180, 0),
     shoulderStrength: raw.shoulderStrength === undefined ? undefined : num(raw.shoulderStrength, 0, 1, 0.5),
     pinnaStrength: raw.pinnaStrength === undefined ? undefined : num(raw.pinnaStrength, 0, 1, 0.5),
     sources,
