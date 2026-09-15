@@ -1066,6 +1066,9 @@ export class CanvasGrid {
     const ctx = this.ctx;
     const cam = this.camera;
     const now = Date.now();
+    // Labels are collected here and painted after every node body, so a node
+    // drawn later cannot cover the label of one drawn earlier.
+    const labels = [];
     const timing = this.timeline && this.timeline.sourceTimings;
     const playhead = this.timeline ? this.timeline.playheadTime : 0;
 
@@ -1175,24 +1178,41 @@ export class CanvasGrid {
 
       // Labels
       if (this.showLabels && ctx.fillText) {
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.font = `500 11px ${this._uiFont()}`;
         const priority = isSelected || isHovered;
-        const name = src.name || src.type;
-        const ly = this._placeLabel(ctx, name, p.sx, p.sy + r + 8, 12, priority);
-        if (ly !== null) {
-          ctx.fillStyle = `rgba(255, 246, 236, ${(priority ? 0.9 : 0.62) * baseAlpha})`;
-          ctx.fillText(name, p.sx, ly);
-          if (priority) {
-            ctx.font = `10px ${this._mono()}`;
-            ctx.fillStyle = `rgba(255, 246, 236, ${0.45 * baseAlpha})`;
-            ctx.fillText(this._readout(src), p.sx, ly + 14);
-          }
-        }
+        labels.push({
+          name: src.name || src.type,
+          readout: priority ? this._readout(src) : null,
+          sx: p.sx, y: p.sy + r + 8, priority, alpha: baseAlpha,
+        });
       }
 
       this._hitRegions.push({ id, sx: p.sx, sy: p.sy, r });
+    }
+
+    this._paintLabels(labels);
+  }
+
+  /**
+   * Second pass of drawEmitters: paints the collected node labels. Selected and
+   * hovered ones go last so they claim their line and sit above the rest.
+   */
+  _paintLabels(labels) {
+    const ctx = this.ctx;
+    if (!ctx.fillText || labels.length === 0) return;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const ordered = [...labels].sort((a, b) => (a.priority ? 1 : 0) - (b.priority ? 1 : 0));
+    for (const l of ordered) {
+      ctx.font = `500 11px ${this._uiFont()}`;
+      const y = this._placeLabel(ctx, l.name, l.sx, l.y, 12, l.priority);
+      if (y === null) continue;
+      ctx.fillStyle = `rgba(255, 246, 236, ${(l.priority ? 0.9 : 0.62) * l.alpha})`;
+      ctx.fillText(l.name, l.sx, y);
+      if (l.readout) {
+        ctx.font = `10px ${this._mono()}`;
+        ctx.fillStyle = `rgba(255, 246, 236, ${0.45 * l.alpha})`;
+        ctx.fillText(l.readout, l.sx, y + 14);
+      }
     }
   }
 
