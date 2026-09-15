@@ -758,6 +758,7 @@ export class CanvasGrid {
     this._syncCamera();
     this._hitRegions = [];
     this._labelRects = [];
+    this._pathLabels = [];
     if (this.showGrid) this.drawGround();
     this.drawListener();
     this.drawSpeakers();
@@ -1026,38 +1027,167 @@ export class CanvasGrid {
     ctx.restore();
   }
 
+  /**
+   * Time intervals a tick dot may sit on, in seconds. A fixed ladder rather
+   * than span/n, so the dots mean the same thing at every zoom and the reader
+   * can learn one spacing instead of a new one per journey.
+   */
+  _tickStep(span) {
+    const LADDER = [5, 10, 15, 30, 60, 120, 300, 600];
+    for (const step of LADDER) if (span / step <= 60) return step;
+    return span / 60;
+  }
+
+  /**
+   * The motion path of the selected source, carrying time.
+   *
+   * A plain polyline says where a source goes but not when or how fast: a
+   * thirty-second leg and a three-second leg look identical. Four devices fix
+   * that, and all four are the settled convention in Maya, Blender, After
+   * Effects and Unreal:
+   *
+   *  - Tick dots at a fixed time interval. Their spacing is the speed readout,
+   *    close together slow, far apart fast. Sampling runs through the
+   *    timeline's own easing, so the spacing is the real motion rather than an
+   *    even division of the line.
+   *  - A split at the playhead, so travelled and remaining are distinguishable.
+   *    Blender uses red and green for this; here it is the source's own colour
+   *    at two alphas, because red and green already mean danger and ok.
+   *  - A marker at the current position, the one thing on the path that is now.
+   *  - One arrowhead, because a path that loops back on itself is otherwise
+   *    ambiguous about which way it runs.
+   *
+   * Drawn for the selected source only, which is the unanimous default.
+   */
   _drawKeyframePath() {
     if (!this.timeline || !this.selectedNodeId) return;
     const kfs = this.timeline.keyframes && this.timeline.keyframes.get ? this.timeline.keyframes.get(this.selectedNodeId) : null;
     if (!kfs || kfs.length < 2) return;
     const src = this.audioEngine.sources && this.audioEngine.sources.get ? this.audioEngine.sources.get(this.selectedNodeId) : null;
     if (src && src.spatial === false) return;
+
     const color = src ? this.colorFor(src.type) : '#ffffff';
     const ctx = this.ctx;
+    const playhead = this.timeline.playheadTime || 0;
+    const t0 = kfs[0].time;
+    const t1 = kfs[kfs.length - 1].time;
+    const span = t1 - t0;
+    if (!(span > 0)) return;
+
+    const sample = (t) => (this.timeline._sampleKeyframes
+      ? this.timeline._sampleKeyframes(kfs, t)
+      : kfs[0]);
+
     ctx.save();
     this._syncCamera();
+
+    // Split the line at the playhead so travelled and remaining read apart.
+    const past = [];
+    const future = [];
+    const step = this._tickStep(span);
+    const ticks = [];
+    for (let t = t0; t <= t1 + 1e-6; t += step) {
+      const p = sample(Math.min(t, t1));
+      const pt = [p.x, p.y, p.z || 0];
+      (t <= playhead ? past : future).push(pt);
+      ticks.push({ pt, before: t <= playhead });
+    }
+    // The two halves must share the crossing point or the line breaks there.
+    if (past.length && future.length) future.unshift(past[past.length - 1]);
+
     ctx.setLineDash([5, 6]);
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = this._withAlpha(color, 0.45);
-    this._strokeWorldPoly(kfs.map(k => [k.x, k.y, k.z || 0]));
+    if (past.length > 1) {
+      ctx.strokeStyle = this._withAlpha(color, 0.16);
+      this._strokeWorldPoly(past);
+    }
+    if (future.length > 1) {
+      ctx.strokeStyle = this._withAlpha(color, 0.5);
+      this._strokeWorldPoly(future);
+    }
     ctx.setLineDash([]);
-    ctx.font = `9px ${this._mono()}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
+
+    // Tick dots: spacing is the speed.
+    for (const { pt, before } of ticks) {
+      const s = this.camera.project(pt[0], pt[1], pt[2]);
+      ctx.fillStyle = this._withAlpha(color, before ? 0.2 : 0.45);
+      ctx.beginPath();
+      ctx.arc(s.sx, s.sy, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    this._drawPathArrow(kfs, sample, color, t0, t1);
+
+    // Keyframes themselves.
+    if (!this._pathLabels) this._pathLabels = [];
+    const labelEvery = Math.max(1, Math.ceil(kfs.length / 6));
     kfs.forEach((k, i) => {
       const s = this.camera.project(k.x, k.y, k.z || 0);
+      const before = k.time <= playhead;
       const d = i === 0 ? 5 : 4;
-      ctx.fillStyle = this._withAlpha(color, i === 0 ? 0.85 : 0.6);
+      ctx.fillStyle = this._withAlpha(color, before ? 0.3 : (i === 0 ? 0.85 : 0.6));
       ctx.beginPath();
       ctx.moveTo(s.sx, s.sy - d); ctx.lineTo(s.sx + d, s.sy); ctx.lineTo(s.sx, s.sy + d); ctx.lineTo(s.sx - d, s.sy);
       ctx.closePath();
       ctx.fill();
-      if (ctx.fillText) {
-        ctx.fillStyle = 'rgba(255, 246, 236, 0.45)';
-        ctx.fillText(formatTime(k.time), s.sx + 7, s.sy - 7);
+      // Every keyframe labelled unconditionally is how "15:25" ended up printed
+      // over "15:00". Thin them out, and let the node labels claim space first.
+      if (i % labelEvery === 0 || i === kfs.length - 1) {
+        this._pathLabels.push({ text: formatTime(k.time), sx: s.sx + 7, y: s.sy - 12, before });
       }
     });
+
+    // Where the timeline says the source is, drawn only when that is not where
+    // the source is drawn. Normally the two coincide and a marker there would
+    // say nothing, sitting invisibly under the node. They part during a drag,
+    // and then this is the one thing on screen that says the timeline will pull
+    // the source back. A view that shows intent rather than state gets
+    // mistrusted, so it is worth the few lines.
+    if (playhead > t0 && playhead < t1 && src) {
+      const p = sample(playhead);
+      const g = this.camera.project(p.x, p.y, p.z || 0);
+      const wp = this._sourceWorldPos(src);
+      const n = this.camera.project(wp.x, wp.y, wp.z);
+      if (Math.hypot(g.sx - n.sx, g.sy - n.sy) > 6) {
+        ctx.strokeStyle = 'rgba(255, 246, 236, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(n.sx, n.sy); ctx.lineTo(g.sx, g.sy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = 'rgba(255, 246, 236, 0.55)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(g.sx, g.sy, 5.5, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
     ctx.restore();
+  }
+
+  /** One arrowhead at the middle of the path, so its direction is unambiguous. */
+  _drawPathArrow(kfs, sample, color, t0, t1) {
+    const ctx = this.ctx;
+    const mid = (t0 + t1) / 2;
+    const dt = Math.max(0.5, (t1 - t0) / 200);
+    const a = sample(Math.max(t0, mid - dt));
+    const b = sample(Math.min(t1, mid + dt));
+    const pa = this.camera.project(a.x, a.y, a.z || 0);
+    const pb = this.camera.project(b.x, b.y, b.z || 0);
+    const dx = pb.sx - pa.sx;
+    const dy = pb.sy - pa.sy;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0.5)) return;          // standing still: an arrow would be a lie
+    const ux = dx / len;
+    const uy = dy / len;
+    const cx = (pa.sx + pb.sx) / 2;
+    const cy = (pa.sy + pb.sy) / 2;
+    const size = 5;
+    ctx.fillStyle = this._withAlpha(color, 0.55);
+    ctx.beginPath();
+    ctx.moveTo(cx + ux * size, cy + uy * size);
+    ctx.lineTo(cx - ux * size * 0.6 - uy * size * 0.55, cy - uy * size * 0.6 + ux * size * 0.55);
+    ctx.lineTo(cx - ux * size * 0.6 + uy * size * 0.55, cy - uy * size * 0.6 - ux * size * 0.55);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // ---- emitters ----
@@ -1221,6 +1351,19 @@ export class CanvasGrid {
         ctx.fillText(l.readout, l.sx, y + 14);
       }
     }
+
+    // Keyframe times last: they are secondary to knowing what a node is, so
+    // they take whatever lines the node labels left free, and are dropped
+    // rather than allowed to overprint.
+    ctx.textAlign = 'left';
+    ctx.font = `9px ${this._mono()}`;
+    for (const l of this._pathLabels || []) {
+      const y = this._placeLabel(ctx, l.text, l.sx + this._textWidth(ctx, l.text) / 2, l.y, 11);
+      if (y === null) continue;
+      ctx.fillStyle = `rgba(255, 246, 236, ${l.before ? 0.2 : 0.45})`;
+      ctx.fillText(l.text, l.sx, y);
+    }
+    ctx.textAlign = 'center';
   }
 
   _readout(src) {
