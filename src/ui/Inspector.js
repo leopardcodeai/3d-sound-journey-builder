@@ -8,6 +8,7 @@
  * Every committed change goes through the undo stack.
  */
 import { GENERATORS } from '../audio/Generators.js';
+import { cutoffCeiling } from '../audio/AudioEngine.js';
 import { getSound, soundName, SOLFEGGIO, bandForBeat } from '../data/SoundLibrary.js';
 import { icon } from './Icons.js';
 import { syncRangeFills } from './sliders.js';
@@ -249,7 +250,10 @@ export class Inspector {
 
     if (node.kind === 'sample') {
       rows.push(section(t('tabSound')));
-      rows.push(row({ key: 'lowpass', label: t('lowpass'), min: 200, max: 20000, step: 50, value: node.inserts.lowpass, unit: 'Hz' }));
+      // The slider stops where the filter actually stops. Letting it run to
+      // 20 kHz would display a number the engine then clamps away.
+      const ceiling = cutoffCeiling(this.audioEngine.ctx);
+      rows.push(row({ key: 'lowpass', label: t('lowpass'), min: 200, max: ceiling, step: 50, value: Math.min(node.inserts.lowpass, ceiling), unit: 'Hz' }));
       rows.push(row({ key: 'highpass', label: t('highpass'), min: 20, max: 4000, step: 10, value: node.inserts.highpass, unit: 'Hz' }));
       rows.push(row({ key: 'rate', label: t('playbackRate'), min: 0.5, max: 1.5, step: 0.01, value: node.inserts.rate, format: v => `${v.toFixed(2)}x` }));
       rows.push(row({ key: 'modRate', label: t('modRate'), min: 0, max: 20, step: 0.1, value: node.inserts.modRate, unit: 'Hz' }));

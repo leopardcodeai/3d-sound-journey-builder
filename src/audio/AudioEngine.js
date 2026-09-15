@@ -32,8 +32,12 @@ export const INSERT_DEFAULTS = { lowpass: 20000, highpass: 20, modRate: 0, modDe
  * at 40 percent of the sample rate: about 17.6 kHz at 44.1 kHz, above the top
  * of hearing and above what a 128 kbps mp3 carries, so nothing is lost.
  */
+export function cutoffCeiling(ctx) {
+  return Math.round((ctx && ctx.sampleRate ? ctx.sampleRate : 44100) * 0.4);
+}
+
 function safeCutoff(ctx, hz) {
-  const ceiling = (ctx && ctx.sampleRate ? ctx.sampleRate : 44100) * 0.4;
+  const ceiling = cutoffCeiling(ctx);
   const n = Number(hz);
   if (!Number.isFinite(n)) return ceiling;
   return Math.max(20, Math.min(n, ceiling));
@@ -97,9 +101,9 @@ export class SpatialAudioEngine {
     if (typeof ctx.createDynamicsCompressor === 'function') {
       this.limiter = ctx.createDynamicsCompressor();
       const p = (param, v) => { if (param && param.setValueAtTime) param.setValueAtTime(v, t); else if (param) param.value = v; };
-      p(this.limiter.threshold, -8);
-      p(this.limiter.knee, 10);
-      p(this.limiter.ratio, 6);
+      p(this.limiter.threshold, -3);
+      p(this.limiter.knee, 4);
+      p(this.limiter.ratio, 12);
       p(this.limiter.attack, 0.004);
       p(this.limiter.release, 0.18);
       this.masterGain.connect(this.limiter);
@@ -121,7 +125,10 @@ export class SpatialAudioEngine {
     this.rightAnalyser.fftSize = 1024;
     this.leftAnalyser.smoothingTimeConstant = 0.4;
     this.rightAnalyser.smoothingTimeConstant = 0.4;
-    this.masterGain.connect(splitter);
+    // Meter what actually leaves the app. Tapping the master gain instead would
+    // show the level before the limiter, which sits at full scale whenever the
+    // limiter is doing its job and so tells the listener nothing.
+    (this.limiter || this.masterGain).connect(splitter);
     splitter.connect(this.leftAnalyser, 0, 0);
     splitter.connect(this.rightAnalyser, 1, 0);
     this.leftAnalyser.connect(this.silentSink);
@@ -282,7 +289,8 @@ export class SpatialAudioEngine {
     // Inserts (pre-spatial)
     src.lowpass = ctx.createBiquadFilter();
     src.lowpass.type = 'lowpass';
-    src.lowpass.frequency.setValueAtTime(safeCutoff(ctx, src.inserts.lowpass), t);
+    src.inserts.lowpass = safeCutoff(ctx, src.inserts.lowpass);
+    src.lowpass.frequency.setValueAtTime(src.inserts.lowpass, t);
     src.highpass = ctx.createBiquadFilter();
     src.highpass.type = 'highpass';
     src.highpass.frequency.setValueAtTime(src.inserts.highpass, t);

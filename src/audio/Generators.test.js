@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fillNoise, fillPulse, fillBreath, buildGenerator, GENERATORS, clampParam, createPulseBuffer } from './Generators.js';
-import { SpatialAudioEngine } from './AudioEngine.js';
+import { SpatialAudioEngine, cutoffCeiling } from './AudioEngine.js';
 
 // Minimal Web Audio mock that records connections
 function param(v = 0) {
@@ -253,5 +253,38 @@ describe('filter stability', () => {
 
     // The stored value stays what the user asked for, so the UI still matches.
     expect(src.inserts.lowpass).toBe(800);
+  });
+});
+
+describe('master bus', () => {
+  it('meters after the limiter, so the reading is what leaves the app', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    // The limiter feeds the splitter; the master gain does not.
+    const splitter = engine.ctx.createChannelSplitter.mock.results[0].value;
+    const limiterTargets = engine.limiter.connect.mock.calls.map(c => c[0]);
+    const masterTargets = engine.masterGain.connect.mock.calls.map(c => c[0]);
+    expect(limiterTargets).toContain(splitter);
+    expect(masterTargets).not.toContain(splitter);
+    expect(masterTargets).toContain(engine.limiter);
+  });
+
+  it('sets the limiter to catch peaks rather than ride the whole mix', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    const threshold = engine.limiter.threshold.setValueAtTime.mock.calls[0][0];
+    expect(threshold).toBeGreaterThan(-6);
+    expect(threshold).toBeLessThan(0);
+  });
+
+  it('reports a cutoff ceiling below Nyquist and clamps the insert to it', () => {
+    const engine = new SpatialAudioEngine();
+    engine.init();
+    const ceiling = cutoffCeiling(engine.ctx);
+    expect(ceiling).toBeLessThan(engine.ctx.sampleRate / 2);
+    engine.addAudioBuffer('rain', { duration: 4, numberOfChannels: 2, length: 4, sampleRate: 44100, getChannelData: () => new Float32Array(4) });
+    const src = engine.addSource('r1', 'rain', 'Rain', 0, 0, 0, 0.5);
+    // The stored value is reachable, so the slider never shows a lie.
+    expect(src.inserts.lowpass).toBe(ceiling);
   });
 });
