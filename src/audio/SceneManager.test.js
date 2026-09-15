@@ -314,3 +314,43 @@ describe('generator sources', () => {
     expect(scene.sources[0].params.freq).toBe(432);
   });
 });
+
+describe('scene size', () => {
+  it('rounds coordinates and drops default inserts so a shared link stays short', () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('s1', {
+      id: 's1', type: 'rain', name: 'Rain',
+      x: 1.23456789, y: -2.3456789, z: 0.987654, volume: 0.5123456, isPlaying: true,
+      inserts: { lowpass: 20000, highpass: 20, modRate: 0, modDepth: 0, reverb: 0.25, rate: 1 },
+    });
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid);
+    const scene = manager.saveScene('Short');
+    const src = scene.sources[0];
+    expect(src.x).toBe(1.23);
+    expect(src.y).toBe(-2.35);
+    expect(src.volume).toBe(0.512);
+    // only the insert that differs from the default survives
+    expect(src.inserts).toEqual({ reverb: 0.25 });
+    expect(src.gen).toBeUndefined();
+    expect(src.params).toBeUndefined();
+  });
+
+  it('rounds keyframes and keeps only non-default track state', () => {
+    mockAudioEngine.sources.clear();
+    mockAudioEngine.sources.set('s1', { id: 's1', type: 'rain', name: 'Rain', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true });
+    mockAudioEngine.sources.set('s2', { id: 's2', type: 'birds', name: 'Birds', x: 0, y: 0, z: 0, volume: 0.5, isPlaying: true });
+    const timeline = {
+      totalDuration: 600,
+      sourceTimings: new Map([['s1', { startTime: 10.123456, duration: 100.987 }]]),
+      keyframes: new Map([['s1', [{ time: 1.23456, x: 1.23456, y: 2.34567, z: 0.5, volume: 0.4567891, easing: 'linear' }]]]),
+      trackState: new Map([['s1', { muted: true, solo: false }], ['s2', { muted: false, solo: false }]]),
+      sections: [{ time: 0, name: 'A' }],
+      pause: vi.fn(), setTotalDuration: vi.fn(), setKeyframes: vi.fn(), setSections: vi.fn(), _render: vi.fn(), visible: false,
+    };
+    const manager = new SceneManager(mockAudioEngine, mockCanvasGrid, timeline);
+    const scene = manager.saveScene('Rounded');
+    expect(scene.timeline.timings.s1).toEqual({ startTime: 10.1, duration: 101 });
+    expect(scene.timeline.keyframes.s1[0]).toEqual({ time: 1.2, x: 1.23, y: 2.35, z: 0.5, volume: 0.457, easing: 'linear' });
+    expect(Object.keys(scene.timeline.tracks)).toEqual(['s1']);
+  });
+});

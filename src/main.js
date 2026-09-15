@@ -638,5 +638,5 @@ function updateMeter() {
 boot();
 
 if (import.meta.env && import.meta.env.DEV) {
-  window.__app = { audioEngine, canvasGrid, timeline, sceneManager, library, inspector, focusView, loadJourney, addSound, setView, MODES };
+  window.__app = { audioEngine, canvasGrid, timeline, sceneManager, library, inspector, focusView, undoManager, speakerConfig, soundscapeTimer, loadJourney, addSound, setView, showTimeline, MODES };
 }

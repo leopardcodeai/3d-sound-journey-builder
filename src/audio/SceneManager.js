@@ -5,6 +5,22 @@
  */
 const STORAGE_KEY = 'spatializer_scenes';
 
+const round = (v, d = 2) => {
+  const f = Math.pow(10, d);
+  return Math.round((v || 0) * f) / f;
+};
+
+/** Drop keys whose value is null, undefined or an empty object. */
+const compact = (obj) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) continue;
+    out[k] = v;
+  }
+  return out;
+};
+
 export class SceneManager {
   constructor(audioEngine, canvasGrid, timeline = null) {
     this.audioEngine = audioEngine;
@@ -17,15 +33,17 @@ export class SceneManager {
   saveScene(name) {
     const sources = [];
     for (const [id, src] of this.audioEngine.sources.entries()) {
-      sources.push({
+      // Rounded and compacted: a shared scene travels in a URL, so every
+      // needless digit costs characters.
+      sources.push(compact({
         id, type: src.type, name: src.name,
-        x: src.x, y: src.y, z: src.z, volume: src.volume,
+        x: round(src.x), y: round(src.y), z: round(src.z), volume: round(src.volume, 3),
         isPlaying: src.isPlaying,
         // Generators are rebuilt from their parameters, not from a buffer.
         gen: src.gen || null,
         params: src.params ? { ...src.params } : null,
-        inserts: src.inserts ? { ...src.inserts } : null,
-      });
+        inserts: src.inserts ? nonDefaultInserts(src.inserts) : null,
+      }));
     }
     const automations = {};
     for (const [id, auto] of this.canvasGrid.automations.entries()) {
@@ -83,16 +101,24 @@ export class SceneManager {
     if (!this.timeline) return null;
     const timings = {};
     for (const [id, t] of this.timeline.sourceTimings.entries()) {
-      if (this.audioEngine.sources.has(id)) timings[id] = { ...t };
+      if (this.audioEngine.sources.has(id)) timings[id] = { startTime: round(t.startTime, 1), duration: round(t.duration, 1) };
     }
     const keyframes = {};
     for (const [id, kfs] of this.timeline.keyframes.entries()) {
-      if (this.audioEngine.sources.has(id)) keyframes[id] = kfs.map(kf => ({ ...kf }));
+      if (this.audioEngine.sources.has(id)) {
+        keyframes[id] = kfs.map(kf => ({
+          time: round(kf.time, 1),
+          x: round(kf.x), y: round(kf.y), z: round(kf.z),
+          volume: round(kf.volume, 3),
+          easing: kf.easing || 'linear',
+        }));
+      }
     }
     const tracks = {};
     if (this.timeline.trackState) {
       for (const [id, state] of this.timeline.trackState.entries()) {
-        if (this.audioEngine.sources.has(id)) tracks[id] = { ...state };
+        // Only tracks that differ from the default are worth carrying.
+        if (this.audioEngine.sources.has(id) && (state.muted || state.solo)) tracks[id] = { ...state };
       }
     }
     return {
@@ -183,4 +209,17 @@ export class SceneManager {
       return new Map();
     }
   }
+}
+
+/**
+ * Only the inserts a user actually changed. Defaults are restored on load, so
+ * storing them would just pad the scene.
+ */
+function nonDefaultInserts(inserts) {
+  const defaults = { lowpass: 20000, highpass: 20, modRate: 0, modDepth: 0, reverb: 0, rate: 1 };
+  const out = {};
+  for (const [key, value] of Object.entries(inserts)) {
+    if (defaults[key] === undefined || Math.abs(value - defaults[key]) > 1e-6) out[key] = round(value, 3);
+  }
+  return out;
 }
