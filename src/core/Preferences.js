@@ -1,0 +1,121 @@
+/**
+ * Preferences: the settings that should survive a reload.
+ *
+ * Before this module the app remembered the interface language and saved
+ * scenes, nothing else. Output mode, listener posture, head tilt, the shoulder
+ * and ear filters, the room level, the master level and the choice of what to
+ * open on start were all rebuilt from hard-coded defaults on every visit, so a
+ * user on speakers had to switch away from HRTF every single time.
+ *
+ * Everything read back from storage is treated as hostile: the store is shared
+ * with whatever else runs on the origin, it survives version changes, and a
+ * NaN reaching an AudioParam throws and takes the graph down with it. Every
+ * field is clamped or dropped, and a blocked or corrupt store degrades to the
+ * defaults rather than failing.
+ */
+
+const KEY = 'sjb_prefs';
+
+export const OUTPUT_MODES = ['stereo-headphones', 'stereo-speakers', 'surround-5.1', 'custom'];
+export const POSTURES = ['standing', 'lying-back', 'lying-side'];
+
+/** What the app opens with. A journey id, a set id, or one of these two. */
+export const START_FOCUS = 'focus';
+export const START_EMPTY = 'empty';
+
+export const DEFAULTS = Object.freeze({
+  output: 'stereo-headphones',
+  room: 0.3,
+  posture: 'standing',
+  headTilt: 0,
+  shoulder: 0.5,
+  pinna: 0.5,
+  masterVolume: 0.5,
+  startWith: 'meditate',
+  rememberStart: true,
+});
+
+const num = (min, max) => (v, fallback) => {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+};
+
+const oneOf = (list) => (v, fallback) => (list.includes(v) ? v : fallback);
+
+const id = (v, fallback) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v) ? v : fallback);
+
+const bool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
+
+const FIELDS = {
+  output: oneOf(OUTPUT_MODES),
+  room: num(0, 1),
+  posture: oneOf(POSTURES),
+  headTilt: num(-45, 45),
+  shoulder: num(0, 1),
+  pinna: num(0, 1),
+  masterVolume: num(0, 1),
+  startWith: id,
+  rememberStart: bool,
+};
+
+/**
+ * Coerces an arbitrary object into a valid preferences object. Unknown keys are
+ * dropped, invalid values fall back to their default, and the result is always
+ * complete, so callers never have to guard a field.
+ */
+export function sanitisePrefs(raw) {
+  const out = { ...DEFAULTS };
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, coerce] of Object.entries(FIELDS)) {
+    if (Object.prototype.hasOwnProperty.call(raw, key)) {
+      out[key] = coerce(raw[key], DEFAULTS[key]);
+    }
+  }
+  return out;
+}
+
+function storage() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage;
+  } catch (e) {
+    return null;   // private mode, blocked site data
+  }
+}
+
+/** Reads the stored preferences, or the defaults when nothing usable is there. */
+export function loadPrefs() {
+  const store = storage();
+  if (!store) return { ...DEFAULTS };
+  try {
+    const text = store.getItem(KEY);
+    if (!text) return { ...DEFAULTS };
+    return sanitisePrefs(JSON.parse(text));
+  } catch (e) {
+    return { ...DEFAULTS };
+  }
+}
+
+/**
+ * Merges a patch into the stored preferences and writes them back.
+ * Returns the full preferences object as stored, so a caller can use the
+ * clamped value rather than the one it passed in.
+ */
+export function savePrefs(patch) {
+  const next = sanitisePrefs({ ...loadPrefs(), ...(patch || {}) });
+  const store = storage();
+  if (store) {
+    try { store.setItem(KEY, JSON.stringify(next)); } catch (e) { /* quota or blocked */ }
+  }
+  return next;
+}
+
+/** Drops the stored preferences. Used by "Clear all". */
+export function resetPrefs() {
+  const store = storage();
+  if (store) {
+    try { store.removeItem(KEY); } catch (e) { /* blocked */ }
+  }
+  return { ...DEFAULTS };
+}

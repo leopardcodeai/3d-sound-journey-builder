@@ -19,8 +19,9 @@ import { initKeyboardShortcuts } from './ui/KeyboardShortcuts.js';
 import { hydrateIcons, icon } from './ui/Icons.js';
 import { watchRangeFills, syncRangeFills, setRangeFill } from './ui/sliders.js';
 import { getSound, soundName, SOUND_URLS } from './data/SoundLibrary.js';
-import { JOURNEYS, JOURNEY_ORDER, MODES } from './data/Presets.js';
+import { JOURNEYS, JOURNEY_ORDER, MODES, SOUND_SETS, SET_ORDER } from './data/Presets.js';
 import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoManager.js';
+import { loadPrefs, savePrefs, resetPrefs, DEFAULTS, START_FOCUS, START_EMPTY } from './core/Preferences.js';
 import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -219,6 +220,69 @@ async function loadJourney(id) {
   showToast(journey.name);
 }
 
+/**
+ * Loads a set: a placed soundscape with no timeline. A journey is a composed
+ * piece that moves through sections over a fixed length; a set is a room you
+ * sit in until you stop it. Both place sources in the field, so a set is a
+ * starting point you can then edit and turn into a journey.
+ *
+ * Shares the load token with loadJourney so a set and a journey cannot race.
+ */
+async function loadSet(id) {
+  const set = SOUND_SETS[id];
+  if (!set) return;
+  const token = ++journeyLoad;
+  if (!audioEngine.isInitialized) audioEngine.init();
+  await audioEngine.resume();
+  if (token !== journeyLoad) return;
+
+  for (const sid of [...audioEngine.sources.keys()]) audioEngine.removeSource(sid);
+  canvasGrid.automations.clear();
+  canvasGrid.selectedNodeId = null;
+  timeline.pause();
+  timeline.playheadTime = 0;
+  timeline.keyframes.clear();
+  timeline.sourceTimings.clear();
+  timeline.trackState.clear();
+  timeline.setSections([]);
+
+  if (typeof set.masterVolume === 'number') {
+    audioEngine.setMasterVolume(set.masterVolume);
+    syncMasterUI(set.masterVolume);
+  }
+
+  setHint(t('loadingAudio'));
+  const needed = [...new Set(set.sources.map(s => s.type))]
+    .filter(type => getSound(type).kind === 'sample' && !audioEngine.hasBuffer(type));
+  await Promise.all(needed.map(type => audioEngine.preloadSound(type, getSound(type).url)));
+  if (token !== journeyLoad) return;
+  setHint('');
+
+  for (const s of set.sources) {
+    // addSource starts the buffer or generator itself and marks the source
+    // playing, so a set needs no separate start call.
+    audioEngine.addSource(s.id, s.type, s.name, s.x, s.y, s.z, s.volume);
+  }
+
+  showTimeline(false);
+  inspector.show(null);
+  refreshPanels();
+  showToast(set.name);
+}
+
+/**
+ * Opens whatever the user chose to start with: a journey, a set, the focus
+ * view, or an empty field. A stored id that no longer exists falls back to the
+ * default rather than leaving the field blank without explanation.
+ */
+async function openTarget(id) {
+  if (id === START_FOCUS) { setView('focus'); await focusView.applyMode('focus'); return; }
+  if (id === START_EMPTY) { showTimeline(false); return; }
+  if (SOUND_SETS[id]) { setView('field'); await loadSet(id); return; }
+  if (JOURNEYS[id]) { setView('field'); await loadJourney(id); return; }
+  await loadJourney(DEFAULTS.startWith in JOURNEYS ? DEFAULTS.startWith : 'meditate');
+}
+
 // ---------------------------------------------------------------------------
 // Views
 // ---------------------------------------------------------------------------
@@ -325,6 +389,37 @@ function syncPostureUI(posture) {
   updateSliderFills();
 }
 
+/**
+ * Puts the stored preferences into the engine and the controls. Runs once the
+ * audio context is live, because the filter and gain calls below write to
+ * AudioParams. Posture goes first: applyPosturePreset overwrites head tilt and
+ * the two filter strengths, so the saved values have to land on top of it.
+ */
+function applyPrefs(prefs) {
+  const speakerSelect = $('#speaker-config');
+  if (speakerSelect) {
+    speakerSelect.value = prefs.output;
+    speakerConfig.setConfig(prefs.output);
+    const custom = $('#custom-speakers');
+    if (custom) custom.hidden = prefs.output !== 'custom';
+  }
+
+  audioEngine.setReverbLevel(prefs.room);
+  const reverb = $('#reverb-level');
+  if (reverb) { reverb.value = prefs.room; reverb.nextElementSibling.textContent = `${Math.round(prefs.room * 100)}%`; }
+
+  audioEngine.applyPosturePreset(prefs.posture);
+  audioEngine.updateListenerPose(prefs.posture, prefs.headTilt);
+  audioEngine.updateShoulderStrength(prefs.shoulder);
+  audioEngine.updatePinnaStrength(prefs.pinna);
+  syncPostureUI(prefs.posture);
+
+  audioEngine.setMasterVolume(prefs.masterVolume);
+  syncMasterUI(prefs.masterVolume);
+
+  updateSliderFills();
+}
+
 function setHeadTrackerUI(active) {
   const btn = $('#head-tracker-btn');
   const status = $('#head-tracker-status');
@@ -372,6 +467,45 @@ function renderJourneyList() {
   }).join('');
 }
 
+function renderSetList() {
+  const container = $('#set-list');
+  if (!container) return;
+  container.innerHTML = SET_ORDER.map(id => {
+    const set = SOUND_SETS[id];
+    return `<button class="journey-btn" data-set="${id}">
+      <span class="journey-icon">${icon(set.icon, { size: 16 })}</span>
+      <span class="journey-text"><strong>${escapeHtml(set.name)}</strong><span>${escapeHtml(set.summary)}</span></span>
+      <span class="journey-len mono">${set.sources.length}</span>
+    </button>`;
+  }).join('');
+}
+
+/**
+ * Fills the "start with" select. Every journey, every set, plus the two entries
+ * that are not a placement at all. Grouped so the two kinds stay distinguishable.
+ */
+function renderStartWith(selected) {
+  const el = $('#start-with');
+  if (!el) return;
+  const opt = (value, label) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`;
+  el.innerHTML = [
+    `<optgroup label="${escapeAttr(t('sets'))}">`,
+    ...SET_ORDER.map(id => opt(id, SOUND_SETS[id].name)),
+    '</optgroup>',
+    `<optgroup label="${escapeAttr(t('journeys'))}">`,
+    ...JOURNEY_ORDER.map(id => opt(id, JOURNEYS[id].name)),
+    '</optgroup>',
+    `<optgroup label="${escapeAttr(t('more'))}">`,
+    opt(START_FOCUS, t('startFocus')),
+    opt(START_EMPTY, t('startEmpty')),
+    '</optgroup>',
+  ].join('');
+  // A stored id whose journey or set has since been removed would leave the
+  // select showing the first entry while the preference says something else.
+  const known = [...SET_ORDER, ...JOURNEY_ORDER, START_FOCUS, START_EMPTY];
+  el.value = known.includes(selected) ? selected : DEFAULTS.startWith;
+}
+
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
@@ -389,6 +523,7 @@ function bindUI() {
     const v = parseFloat(master.value);
     audioEngine.setMasterVolume(v);
     syncMasterUI(v);
+    savePrefs({ masterVolume: v });
   });
   $('#mute-btn').addEventListener('click', () => {
     const muted = audioEngine.toggleMasterMute();
@@ -433,6 +568,7 @@ function bindUI() {
     speakerConfig.setConfig(key);
     $('#custom-speakers').hidden = key !== 'custom';
     showToast(SPEAKER_PRESETS[key].name);
+    savePrefs({ output: key });
   });
   $('#add-speaker-btn').addEventListener('click', () => {
     speakerConfig.addCustomSpeaker((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0, `S${speakerConfig.customSpeakers.length + 1}`);
@@ -454,6 +590,7 @@ function bindUI() {
     const v = parseFloat(reverb.value);
     audioEngine.setReverbLevel(v);
     reverb.nextElementSibling.textContent = `${Math.round(v * 100)}%`;
+    savePrefs({ room: v });
   });
 
   // Listener
@@ -462,10 +599,11 @@ function bindUI() {
     if (!btn) return;
     audioEngine.applyPosturePreset(btn.dataset.posture);
     syncPostureUI(btn.dataset.posture);
+    savePrefs({ posture: btn.dataset.posture });
   });
-  bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v); return `${v}°`; });
-  bindRange('#shoulder-strength', (v) => { audioEngine.updateShoulderStrength(v); return `${Math.round(v * 100)}%`; });
-  bindRange('#pinna-strength', (v) => { audioEngine.updatePinnaStrength(v); return `${Math.round(v * 100)}%`; });
+  bindRange('#head-tilt', (v) => { audioEngine.updateListenerPose(audioEngine.posture, v); return `${v}°`; }, 'headTilt');
+  bindRange('#shoulder-strength', (v) => { audioEngine.updateShoulderStrength(v); return `${Math.round(v * 100)}%`; }, 'shoulder');
+  bindRange('#pinna-strength', (v) => { audioEngine.updatePinnaStrength(v); return `${Math.round(v * 100)}%`; }, 'pinna');
 
   $('#head-tracker-btn').addEventListener('click', async () => {
     if (!headTracker.isAvailable()) { showToast(t('headTrackerNotAvailable')); return; }
@@ -478,7 +616,18 @@ function bindUI() {
   // Journeys
   $('#journey-list').addEventListener('click', (e) => {
     const btn = e.target.closest('.journey-btn');
-    if (btn) loadJourney(btn.dataset.journey);
+    if (btn) { setView('field'); loadJourney(btn.dataset.journey); }
+  });
+
+  // Sets
+  $('#set-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.journey-btn');
+    if (btn) { setView('field'); loadSet(btn.dataset.set); }
+  });
+
+  $('#start-with').addEventListener('change', (e) => {
+    savePrefs({ startWith: e.target.value });
+    showToast(t('saved'));
   });
 
   // Scenes
@@ -545,6 +694,13 @@ function bindUI() {
     timeline._render();
   });
 
+  $('#reset-prefs-btn').addEventListener('click', () => {
+    const prefs = resetPrefs();
+    applyPrefs(prefs);
+    renderStartWith(prefs.startWith);
+    showToast(t('settingsReset'));
+  });
+
   // Language
   const lang = $('#lang-select');
   lang.value = getLanguage();
@@ -562,7 +718,7 @@ function bindUI() {
   $('#start-empty').addEventListener('click', () => startApp('empty'));
 }
 
-function bindRange(selector, handler) {
+function bindRange(selector, handler, prefKey) {
   const el = $(selector);
   if (!el) return;
   el.addEventListener('input', () => {
@@ -570,6 +726,7 @@ function bindRange(selector, handler) {
     const text = handler(v);
     const out = el.nextElementSibling;
     if (out && text !== undefined) out.textContent = text;
+    if (prefKey) savePrefs({ [prefKey]: v });
   });
 }
 
@@ -597,6 +754,11 @@ async function startApp(mode) {
   dot.classList.add('is-on');
   dot.querySelector('.status-text').textContent = t('audioActive');
 
+  // The stored preferences write to AudioParams, so they go in once the
+  // context is live and before anything is placed.
+  const prefs = loadPrefs();
+  applyPrefs(prefs);
+
   const synth = new InstrumentSynth(audioEngine);
   synth.preloadAll('C4');
   synth.preloadHealing();
@@ -605,14 +767,10 @@ async function startApp(mode) {
   $('#welcome').classList.add('is-hidden');
   setTimeout(() => { $('#welcome').style.display = 'none'; }, 400);
 
-  if (mode === 'journey') {
-    await loadJourney('meditate');
-  } else if (mode === 'focus') {
-    setView('focus');
-    await focusView.applyMode('focus');
-  } else {
-    showTimeline(false);
-  }
+  if (mode === 'journey') await openTarget(prefs.startWith);
+  else if (mode === 'focus') await openTarget(START_FOCUS);
+  else await openTarget(START_EMPTY);
+
   canvasGrid.resize();
 }
 
@@ -620,9 +778,18 @@ function boot() {
   hydrateIcons(document);
   applyTranslations(document);
   renderJourneyList();
+  renderSetList();
   renderSceneList();
   renderSpeakerList();
-  syncMasterUI(0.8);
+  // The controls are filled from storage before the context exists. Everything
+  // that writes to an AudioParam waits for applyPrefs in startApp.
+  const prefs = loadPrefs();
+  renderStartWith(prefs.startWith);
+  const speakerSelect = $('#speaker-config');
+  if (speakerSelect) speakerSelect.value = prefs.output;
+  const reverb = $('#reverb-level');
+  if (reverb) { reverb.value = prefs.room; reverb.nextElementSibling.textContent = `${Math.round(prefs.room * 100)}%`; }
+  syncMasterUI(prefs.masterVolume);
   watchRangeFills(document);
   bindUI();
   setFieldMode('2d');

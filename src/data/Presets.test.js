@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { JOURNEYS, JOURNEY_ORDER, MODES, MODE_ORDER, TEMPLATE_SCENES, arc, hold, sessionPhases, phaseAt, modeForHour } from './Presets.js';
+import { JOURNEYS, JOURNEY_ORDER, MODES, MODE_ORDER, SOUND_SETS, SET_ORDER, arc, hold, sessionPhases, phaseAt, modeForHour } from './Presets.js';
 import { SOUND_INDEX } from './SoundLibrary.js';
 
 describe('preset helpers', () => {
@@ -117,9 +117,41 @@ describe('modes and scenes', () => {
     }
   });
 
-  it('template scenes reference known sounds', () => {
-    for (const [id, s] of Object.entries(TEMPLATE_SCENES)) {
+  it('sets reference known sounds', () => {
+    for (const [id, s] of Object.entries(SOUND_SETS)) {
       for (const so of s.sources) expect(SOUND_INDEX.has(so.type), `${id}: ${so.type}`).toBe(true);
+    }
+  });
+
+  it('every set is listed in SET_ORDER exactly once', () => {
+    expect([...SET_ORDER].sort()).toEqual(Object.keys(SOUND_SETS).sort());
+    expect(new Set(SET_ORDER).size).toBe(SET_ORDER.length);
+  });
+
+  it('every set carries what the drawer renders', () => {
+    for (const [id, s] of Object.entries(SOUND_SETS)) {
+      expect(typeof s.name, id).toBe('string');
+      expect(typeof s.icon, id).toBe('string');
+      expect(typeof s.summary, id).toBe('string');
+      expect(s.sources.length, id).toBeGreaterThan(1);
+    }
+  });
+
+  it('set source ids are unique across all sets, so two sets cannot collide', () => {
+    const ids = Object.values(SOUND_SETS).flatMap(s => s.sources.map(x => x.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('set positions and levels are finite and in range', () => {
+    for (const [id, s] of Object.entries(SOUND_SETS)) {
+      for (const so of s.sources) {
+        for (const k of ['x', 'y', 'z', 'volume']) {
+          expect(Number.isFinite(so[k]), `${id}.${so.id}.${k}`).toBe(true);
+        }
+        expect(so.volume, `${id}.${so.id}`).toBeGreaterThan(0);
+        expect(so.volume, `${id}.${so.id}`).toBeLessThanOrEqual(1);
+        expect(Math.hypot(so.x, so.y), `${id}.${so.id} within the field`).toBeLessThanOrEqual(10);
+      }
     }
   });
 });

@@ -352,7 +352,6 @@ export const JOURNEYS = {
 };
 
 /** Backwards-compatible alias used by older callers. */
-export const ACTIVITY_PRESETS = JOURNEYS;
 
 // ---------------------------------------------------------------------------
 // Focus modes (single screen, frequency tools only)
@@ -431,38 +430,140 @@ export const MODES = {
 };
 
 // ---------------------------------------------------------------------------
-// Static scenes (no timeline, just a placement)
+// Sound sets: a placed soundscape with no timeline
 // ---------------------------------------------------------------------------
 
-export const TEMPLATE_SCENES = {
+/**
+ * A set is a room you sit in; a journey is a piece that moves through sections
+ * over a fixed length. A set has no clips, no keyframes and no end, so it is
+ * both the quickest way in and a starting point you can edit into a journey.
+ *
+ * Positions are metres in world space: x to the right, y forward, z up. They
+ * are chosen so the set reads as a place, not as a ring of speakers: the loud
+ * broadband source sits off to one side, detail sits above and behind.
+ */
+export const SOUND_SETS = {
   forest: {
     name: 'Forest clearing',
+    icon: 'tree',
+    summary: 'Birdsong overhead, a fire to one side, chimes behind you.',
     masterVolume: 0.55,
     sources: [
-      { id: 'st_forest_birds', type: 'birds', name: 'Birdsong', x: 3, y: 4, z: 2, volume: 0.5 },
-      { id: 'st_forest_fire', type: 'campfire', name: 'Campfire', x: -2, y: 3, z: 0, volume: 0.55 },
-      { id: 'st_forest_chimes', type: 'wind-chimes', name: 'Wind chimes', x: 0, y: -3, z: 3, volume: 0.28 },
+      { id: 'set_forest_birds', type: 'birds', name: 'Birdsong', x: 3, y: 4, z: 2, volume: 0.5 },
+      { id: 'set_forest_fire', type: 'campfire', name: 'Campfire', x: -2, y: 3, z: 0, volume: 0.55 },
+      { id: 'set_forest_chimes', type: 'wind-chimes', name: 'Wind chimes', x: 0, y: -3, z: 3, volume: 0.28 },
     ],
   },
-  ocean: {
+  shore: {
     name: 'Ocean shore',
+    icon: 'waves',
+    summary: 'Surf on your left, gulls inland, one bowl above the water.',
     masterVolume: 0.5,
     sources: [
-      { id: 'st_ocean_waves', type: 'waves', name: 'Waves', x: -4, y: 0, z: 0, volume: 0.6 },
-      { id: 'st_ocean_bowl', type: 'singing-bowl', name: 'Singing bowl', x: 0, y: -4, z: 4, volume: 0.32 },
-      { id: 'st_ocean_birds', type: 'birds', name: 'Birdsong', x: 5, y: 3, z: 1, volume: 0.2 },
+      { id: 'set_shore_waves', type: 'waves', name: 'Waves', x: -4, y: 0, z: 0, volume: 0.6 },
+      { id: 'set_shore_bowl', type: 'singing-bowl', name: 'Singing bowl', x: 0, y: -4, z: 4, volume: 0.32 },
+      { id: 'set_shore_birds', type: 'birds', name: 'Birdsong', x: 5, y: 3, z: 1, volume: 0.2 },
     ],
   },
   cafe: {
     name: 'Café window',
+    icon: 'cup',
+    summary: 'Room tone in front, rain on the glass behind, pink noise underneath.',
     masterVolume: 0.55,
     sources: [
-      { id: 'st_cafe_cafe', type: 'cafe', name: 'Café', x: 0, y: -3, z: 0, volume: 0.45 },
-      { id: 'st_cafe_rain', type: 'rain', name: 'Rain', x: 0, y: 4, z: 1, volume: 0.4 },
-      { id: 'st_cafe_pink', type: 'noise_pink', name: 'Pink noise', x: 0, y: 0, z: 0, volume: 0.15 },
+      { id: 'set_cafe_room', type: 'cafe', name: 'Café', x: 0, y: -3, z: 0, volume: 0.45 },
+      { id: 'set_cafe_rain', type: 'rain', name: 'Rain', x: 0, y: 4, z: 1, volume: 0.4 },
+      { id: 'set_cafe_pink', type: 'noise_pink', name: 'Pink noise', x: 0, y: 0, z: 0, volume: 0.15 },
+    ],
+  },
+  rainforest: {
+    name: 'Rainforest night',
+    icon: 'leaf',
+    summary: 'Insects all round, a river to one side, monkeys far off in the canopy.',
+    masterVolume: 0.52,
+    sources: [
+      { id: 'set_rf_night', type: 'jungle_night', name: 'Jungle night', x: 0, y: 2, z: 1, volume: 0.48 },
+      { id: 'set_rf_river', type: 'jungle_river', name: 'River', x: -4.5, y: -1, z: 0, volume: 0.4 },
+      { id: 'set_rf_crickets', type: 'crickets', name: 'Crickets', x: 3.5, y: -2.5, z: 0.5, volume: 0.3 },
+      { id: 'set_rf_monkeys', type: 'monkeys', name: 'Monkeys', x: 6, y: 5, z: 4, volume: 0.18 },
+    ],
+  },
+  storm: {
+    name: 'Storm porch',
+    icon: 'bolt',
+    summary: 'Heavy rain out front, thunder in the distance, a fire at your back.',
+    masterVolume: 0.55,
+    sources: [
+      { id: 'set_storm_rain', type: 'rain', name: 'Rain', x: 0, y: 4.5, z: 1.5, volume: 0.5 },
+      { id: 'set_storm_thunder', type: 'thunder', name: 'Thunder', x: -5, y: 7, z: 5, volume: 0.35 },
+      { id: 'set_storm_fire', type: 'campfire', name: 'Campfire', x: 1.5, y: -2.5, z: 0, volume: 0.42 },
+    ],
+  },
+  deep: {
+    name: 'Under the surface',
+    icon: 'whale',
+    summary: 'Whale song below you, the hull of the ocean around, dolphins passing.',
+    masterVolume: 0.5,
+    sources: [
+      { id: 'set_deep_ambient', type: 'underwater_ambient', name: 'Underwater', x: 0, y: 0, z: -1, volume: 0.45 },
+      { id: 'set_deep_whales', type: 'whales', name: 'Whales', x: -3, y: 6, z: -3, volume: 0.42 },
+      { id: 'set_deep_ocean', type: 'ocean_deep', name: 'Deep ocean', x: 4, y: -3, z: -2, volume: 0.3 },
+      { id: 'set_deep_dolphins', type: 'dolphins', name: 'Dolphins', x: 5, y: 4, z: 1, volume: 0.2 },
+    ],
+  },
+  savannah: {
+    name: 'Savannah dusk',
+    icon: 'paw',
+    summary: 'Elephants far off, a leopard somewhere behind, insects starting up.',
+    masterVolume: 0.5,
+    sources: [
+      { id: 'set_sav_crickets', type: 'crickets', name: 'Crickets', x: 0, y: 2, z: 0, volume: 0.42 },
+      { id: 'set_sav_birds', type: 'birds', name: 'Birdsong', x: 4, y: 5, z: 3, volume: 0.24 },
+      { id: 'set_sav_elephant', type: 'elephant', name: 'Elephant', x: -7, y: 6, z: 0, volume: 0.22 },
+      { id: 'set_sav_leopard', type: 'leopard', name: 'Leopard', x: 3, y: -6, z: 0, volume: 0.16 },
+    ],
+  },
+  city: {
+    name: 'City window',
+    icon: 'city',
+    summary: 'Traffic four floors down, rain on the pane, the park a block away.',
+    masterVolume: 0.5,
+    sources: [
+      { id: 'set_city_traffic', type: 'city_traffic', name: 'Traffic', x: 0, y: 5, z: -3, volume: 0.36 },
+      { id: 'set_city_rain', type: 'rain', name: 'Rain', x: 0, y: 3, z: 1, volume: 0.42 },
+      { id: 'set_city_park', type: 'city_park', name: 'Park', x: -6, y: 4, z: 0, volume: 0.2 },
+    ],
+  },
+  study: {
+    name: 'Quiet study',
+    icon: 'brain',
+    summary: 'Broadband masking, a fire for warmth, one drone holding the room.',
+    masterVolume: 0.5,
+    sources: [
+      { id: 'set_study_pink', type: 'noise_pink', name: 'Pink noise', x: 0, y: 0, z: 0, volume: 0.3 },
+      { id: 'set_study_fire', type: 'campfire', name: 'Campfire', x: -2.5, y: 2, z: 0, volume: 0.3 },
+      { id: 'set_study_drone', type: 'instr_drone', name: 'Drone', x: 3, y: -3, z: 1, volume: 0.16 },
+    ],
+  },
+  temple: {
+    name: 'Temple',
+    icon: 'bowl',
+    summary: 'Two bowls a fifth apart, chimes above, one gong behind you.',
+    masterVolume: 0.5,
+    sources: [
+      { id: 'set_temple_bowl_c', type: 'bowl_c', name: 'Root bowl', x: -2.5, y: 2, z: 0, volume: 0.34 },
+      { id: 'set_temple_bowl_g', type: 'bowl_g', name: 'Throat bowl', x: 2.5, y: 2, z: 0.5, volume: 0.3 },
+      { id: 'set_temple_chimes', type: 'wind-chimes', name: 'Wind chimes', x: 0, y: 1, z: 4, volume: 0.24 },
+      { id: 'set_temple_gong', type: 'gong_chinese', name: 'Gong', x: 0, y: -4, z: 1, volume: 0.26 },
     ],
   },
 };
+
+/** Set ids in display order: places first, then the two working rooms. */
+export const SET_ORDER = ['forest', 'shore', 'rainforest', 'storm', 'deep', 'savannah', 'city', 'cafe', 'study', 'temple'];
+
+/** @deprecated Kept for older saved links. Use SOUND_SETS. */
+export const TEMPLATE_SCENES = SOUND_SETS;
 
 /** Journey ids in display order. */
 export const JOURNEY_ORDER = ['focus', 'restore', 'meditate', 'soundbath', 'sleep', 'jungle', 'ocean', 'storm', 'dawn'];

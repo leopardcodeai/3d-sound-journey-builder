@@ -378,15 +378,21 @@ export class SpatialAudioEngine {
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
+    // Both filters get their real centre frequency here, not only later in
+    // _applyPosition. A BiquadFilterNode starts at 350 Hz, so without this the
+    // first render quantum runs a shoulder notch an octave and a half too low
+    // and an ear filter more than four octaves too low.
     src.shoulderFilter = ctx.createBiquadFilter();
     src.shoulderFilter.type = 'peaking';
     src.shoulderFilter.Q.value = 1.5;
     src.shoulderFilter.gain.value = -12 * this.shoulderStrength;
+    src.shoulderFilter.frequency.setValueAtTime(1700, t);
 
     src.pinnaFilter = ctx.createBiquadFilter();
     src.pinnaFilter.type = 'peaking';
     src.pinnaFilter.Q.value = 2.5;
     src.pinnaFilter.gain.value = -15 * this.pinnaStrength;
+    src.pinnaFilter.frequency.setValueAtTime(7500, t);
 
     src.pannerNode = ctx.createPanner();
     src.pannerNode.panningModel = 'HRTF';

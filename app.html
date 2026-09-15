@@ -141,7 +141,20 @@
       </section>
 
       <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="startWith">Start with</h3>
+        <p class="note" data-i18n="startWithHelp"></p>
+        <select class="input" id="start-with"></select>
+      </section>
+
+      <section class="drawer-section">
+        <h3 class="drawer-title" data-i18n="sets">Sets</h3>
+        <p class="note" data-i18n="setsHelp"></p>
+        <div class="journey-list" id="set-list"></div>
+      </section>
+
+      <section class="drawer-section">
         <h3 class="drawer-title" data-i18n="journeys">Journeys</h3>
+        <p class="note" data-i18n="journeysHelp"></p>
         <div class="journey-list" id="journey-list"></div>
       </section>
 
@@ -176,6 +189,7 @@
           <button class="btn btn-ghost" id="new-session-btn"><span data-icon="plus" data-size="13"></span><span data-i18n="newSession">New session</span></button>
           <button class="btn btn-danger" id="clear-all-btn"><span data-icon="trash" data-size="13"></span><span data-i18n="clearAll">Clear all</span></button>
         </div>
+        <button class="btn btn-ghost" id="reset-prefs-btn" style="margin-top:8px;width:100%"><span data-icon="undo" data-size="13"></span><span data-i18n="resetSettings">Reset settings</span></button>
       </section>
     </aside>
 
