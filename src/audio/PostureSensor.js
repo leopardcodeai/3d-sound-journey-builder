@@ -26,7 +26,10 @@ export const SETTLE_MS = 900;
  * Maps a device orientation to a listener posture.
  *
  * `beta` is the front-to-back tilt: 90 is upright with the screen facing you,
- * 0 is flat with the screen facing up, 180 is flat face down.
+ * 0 is flat with the screen facing up, 180 is flat face down. Confirmed against
+ * the W3C spec, which gives beta 0 for a device lying flat on a horizontal
+ * surface and beta 90 for one held upright. So a phone held above a face has
+ * its screen pointing down and reads near 180, not near 0.
  * `gamma` is the left-to-right tilt: 0 is level, plus or minus 90 is on its side.
  *
  * Returns null when the reading is unusable, rather than guessing a posture
@@ -43,15 +46,25 @@ export function postureFromOrientation(beta, gamma) {
   // show almost any beta.
   if (g > 55) return 'lying-side';
 
+  // Phone above the face, so the screen points down at you. That is beta near
+  // 180, not near zero, and it is the gesture the interface actually promises.
+  //
+  // This was the wrong way round. Near zero means flat with the screen facing
+  // the ceiling, which is a phone put down on a table, and that was read as
+  // lying on your back; meanwhile the real gesture, beta near 180, fell into
+  // the open-ended standing band and was read as standing. So the one posture
+  // the sensor exists to catch was the one it got wrong.
+  if (b > 145) return 'lying-back';
+
   // Held up in front of the face. The band is wide because nobody holds a
-  // phone at exactly 90 degrees.
-  if (b > 50) return 'standing';
+  // phone at exactly 90 degrees, but it is now bounded at the top: without
+  // that, a phone lying face down reported a standing listener.
+  if (b > 50 && b < 130) return 'standing';
 
-  // Flat, screen up: lying on the back with the phone above the face.
-  if (b < 35) return 'lying-back';
-
-  // In between, and honestly so. Keeping the previous posture is better than
-  // picking one at a boundary the user is still moving through.
+  // In between, and honestly so. That includes a phone flat with the screen
+  // up, which says where the phone is and nothing about the person holding it.
+  // Keeping the previous posture is better than picking one at a boundary the
+  // user is still moving through.
   return null;
 }
 

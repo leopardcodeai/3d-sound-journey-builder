@@ -336,7 +336,10 @@ it. The listener picks off, fixed or head-tracked. On the web this reaches only
 
 **This app doing its own binaural rendering** means computing the two-channel
 mix in Web Audio, with its own scene, its own listener pose and its own tracking.
-The operating system sees ordinary stereo and correctly leaves it alone.
+The operating system sees ordinary stereo, and leaves it alone as long as the
+listener has not switched Spatialize Stereo on for that application. That switch
+is the one thing that breaks the arrangement, and it belongs to the listener,
+not to the page.
 
 **They do not compose.** Run both and Apple's head-tracked spatializer sits on
 top of an already binaural mix, anchored to the device rather than to the scene.

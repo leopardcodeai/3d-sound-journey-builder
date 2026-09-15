@@ -57,7 +57,9 @@ const oneOf = (list) => (v, fallback) => (list.includes(v) ? v : fallback);
 
 // One optional kind prefix, so "journey:storm" and "set:storm" can be told
 // apart. They could not be: both were stored as "storm" and the set always won.
-const id = (v, fallback) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,20}:?[A-Za-z0-9_-]{0,40}$/.test(v) ? v : fallback);
+const id = (v, fallback) => (
+  typeof v === 'string' && /^(?:[A-Za-z0-9_-]{1,20}:)?[A-Za-z0-9_-]{1,40}$/.test(v) ? v : fallback
+);
 
 const bool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
 

@@ -526,3 +526,74 @@ Der Start blockiert den Hauptprozess **850 ms**, gemessen: 54 ms fuer
 Sekunden langen Chakra-Schalen und einem dreizehn Sekunden langen Gong. Auf
 einem mittleren Telefon ist das ein Mehrfaches. Es faellt genau dann an, wenn
 jemand gerade Start gedrueckt hat und noch nichts zu sehen ist.
+
+
+## Weiterer Lauf 15:05 (Zweck tief)
+
+| Reviewer | Stand | Anmerkung |
+|---|---|---|
+| coderabbit | gelesen | 3 Befunde |
+| codex | uebersprungen | Kontingent: Kontingent erschoepft (bis 2026-09-15) |
+| gemini | uebersprungen | Kontingent: Kontingent erschoepft (429) (bis 2026-09-15) |
+
+Rohausgaben: /Users/alexanderbrunker/Coding/company/tools/review_agent/laeufe/2026-09-15/3d_sound_app-5
+
+## Die drei Befunde, verifiziert
+
+Alle drei am Code nachgeprueft, keiner ungeprueft uebernommen. Einer war
+schwerer als gemeldet.
+
+### B22 · Hoch · Der Lagesensor hatte vorne und hinten vertauscht
+
+**Gemeldet als:** `b > 50` faengt auch beta 180, ein flach auf dem Gesicht
+liegendes Telefon meldet also einen stehenden Hoerer.
+
+**Nachgeprueft, und es ist mehr als das.** Die W3C-Spezifikation gibt fuer ein
+flach liegendes Geraet beta 0 und fuer ein aufrecht gehaltenes beta 90; heute
+gegen `https://www.w3.org/TR/orientation-event/` abgeglichen. Ein Telefon
+**ueber dem Gesicht** zeigt mit dem Bildschirm nach unten und liegt damit bei
+beta nahe **180**, nicht nahe 0.
+
+Damit war die Zuordnung verdreht, und zwar genau bei der Geste, fuer die der
+Sensor da ist:
+
+| Wirklich | beta | gemeldet als | richtig waere |
+|---|---|---|---|
+| Telefon ueber dem Gesicht | ~180 | **standing** | lying-back |
+| Telefon flach auf dem Tisch, Bildschirm oben | ~0 | **lying-back** | gar nichts |
+| Telefon aufrecht davor | ~90 | standing | standing |
+
+Die Oberflaeche verspricht woertlich "lie down with it above your face and you
+are on your back". Genau das wurde als Stehen gelesen. Der alte Test hat den
+Fehler mitgeschrieben, er pruefte beta 0 auf lying-back.
+
+**Behoben.** Ueber 145 Grad heisst auf dem Ruecken, zwischen 50 und 130 heisst
+stehend, alles andere sagt nichts. Ein flach abgelegtes Telefon sagt etwas
+ueber das Telefon und nichts ueber den Menschen. Drei Tests dagegen.
+
+⚠️ **Reichweite und Grenze.** `followDevice` ist voreingestellt aus, betroffen
+war also nur, wer "Dem Geraet folgen" eingeschaltet hat. Und: geprueft ist die
+Rechnung gegen die Spezifikation, **nicht an einem echten Telefon**. Ein
+Durchgang mit einem iPhone in der Hand steht aus.
+
+### B23 · Gering · Ein halber Praefix kam durch die Pruefung
+
+Der Ausdruck, den ich fuer die Praefixe `set:` und `journey:` geschrieben
+hatte, liess `"journey:"` ohne Rest durch und erlaubte unpraefixierte Werte bis
+60 Zeichen, wo die Grenze vorher 40 war. Nachgestellt, beides bestaetigt.
+Behoben mit dem vorgeschlagenen Ausdruck: der Rest muss nicht leer sein, die
+alte Laengengrenze gilt wieder. Gegengeprueft an acht Werten.
+
+### B24 · Gering · Ein Satz im Recherche-Dokument war zu absolut
+
+"The operating system sees ordinary stereo and correctly leaves it alone."
+Stimmt nur, solange niemand "Stereo raeumlich" fuer diese Anwendung
+einschaltet, und genau davor warnt dasselbe Dokument zwei Abschnitte weiter
+oben ausfuehrlich. Der Satz sagt die Ausnahme jetzt selbst.
+
+## Anmerkung zum Lauf
+
+Wieder hat **nur CodeRabbit** gelesen. Codex und Gemini waren erneut am
+Tageskontingent. Das ist der zweite Lauf hintereinander mit einem statt drei
+fremden Lesern. Der Codex-Blick, der als einziger "wer ruft das noch auf"
+beantwortet, fehlt weiterhin.
