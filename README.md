@@ -93,6 +93,13 @@ npm run sounds:fetch # download the ones that passed
 npm run shoot      # the screenshots in docs/, against a running dev server
 ```
 
+The build stamps its own identity: the version from `package.json`, the commit
+it was built from, and the date. The app shows all three on the welcome card and
+under Settings, About. Deployment here is a CLI upload rather than a git push,
+so nothing in the hosting platform knows which commit is live and the app has to
+say it itself. In development the values are read once when the dev server
+starts, so a version bump needs a restart to show.
+
 `sounds:check` reads `scripts/sound-sources.json`, opens each source page, and
 reads both the audio link and the credit out of it. A file is accepted only
 when the credit line leads with the agency, because a US federal page is public

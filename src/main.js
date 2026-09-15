@@ -23,6 +23,7 @@ import { JOURNEYS, JOURNEY_ORDER, MODES, SOUND_SETS, SET_ORDER } from './data/Pr
 import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoManager.js';
 import { loadPrefs, savePrefs, resetPrefs, DEFAULTS, START_FOCUS, START_EMPTY } from './core/Preferences.js';
 import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
+import { buildLabel } from './core/version.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -871,6 +872,13 @@ async function startApp(mode) {
 function boot() {
   hydrateIcons(document);
   applyTranslations(document);
+  // Which build is running. Named in two places because the two audiences
+  // differ: the welcome card is what someone reports from, the settings drawer
+  // is where you look when you already suspect a stale deployment.
+  for (const sel of ['#build-line', '#welcome-build']) {
+    const el = $(sel);
+    if (el) el.textContent = buildLabel();
+  }
   renderJourneyList();
   renderSetList();
   renderSceneList();

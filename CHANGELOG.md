@@ -4,6 +4,68 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-15
+
+Presets, preferences that survive a reload, a head-turn control, and a pass over
+accessibility driven by a live browser test and an external code review.
+
+### Added
+
+- **Sound sets**: ten placed soundscapes with no timeline, as a quicker way in
+  than a composed journey. Three scene templates existed in the data but were
+  never rendered anywhere; these replace them.
+- **Start with**: chooses what opens on start, across every set, every journey,
+  the focus view and an empty field. No app in the surveyed field offers this.
+- **Preferences that persist**: output mode, posture, head tilt, head turn,
+  shoulder and ear filters, room level, master level, 2D or 3D, labels, grid,
+  motion paths and timeline snapping. Previously only the language and saved
+  scenes survived a reload.
+- **Head turn**: a yaw control for the listener. The app had head tilt, which is
+  a roll; yaw existed only through device sensors and had no control at all.
+- **Keyboard sheet**: thirteen shortcuts that were not written down anywhere,
+  opened with `?`.
+- **Hide interface** in the focus view, leaving the orb and the field.
+- **Wind and stream** as generators, two of the largest gaps against comparable
+  apps, synthesised so no licence question arises.
+- **Circle field** behind the focus orb, built to a measured construction.
+- **Build identity**: version, commit and date, shown on the welcome card and in
+  the settings drawer.
+- `npm run sounds:check` and `sounds:fetch`: a tool that reads the licence and
+  the credit off a source page and refuses anything it cannot confirm.
+
+### Changed
+
+- **Colour**: 64 entries carried 58 unrelated hues and every category spanned
+  most of the colour wheel. Now one hue band per category, at least 20 degrees
+  apart and clear of the accent, with membership assigned by farthest-point
+  sampling so no two entries in a category are closer than 10.3 in CIE76. The
+  seven chakra bowls keep their spectrum, which is subject matter rather than
+  decoration.
+- **Motion paths** carry time: tick dots whose spacing is the speed, a split at
+  the playhead, a direction arrow, and thinned time labels.
+- **Secondary text contrast** raised from 2.98:1 to 4.81:1, measured against the
+  darkest ground each token actually appears on.
+- **Presets before technology** in the settings drawer.
+
+### Fixed
+
+- The timer faded the master to silence and never restored it, so the app went
+  quiet permanently while the fader still showed its old value. It also did not
+  stop a running journey, which restarted the sources it had just paused.
+- Adding a sound was mouse-only: the card was a focus stop with no effect and
+  the add affordance was hidden from assistive technology.
+- The view tabs lost their accessible names below 900px, and the master fader
+  disappeared entirely.
+- The transport announced "Play" while playing.
+- Solo, mute and remove buttons carried no track or sound name.
+- The mobile tab bar showed one selection across four buttons, so opening the
+  timeline un-highlighted the panel that was still on screen.
+- Deleting a source left its solo state behind, muting everything else.
+- Scenes did not store the head turn.
+- A focus session kept running after its view was closed.
+- Labels in the field overprinted each other and ran across other nodes.
+- The shoulder and ear filters ran their first render quantum at 350 Hz.
+
 ## [2.0.0] - 2026-09-15
 
 A rebuild of the audio engine, the spatial view, the timeline and the interface.
