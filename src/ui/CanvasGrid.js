@@ -1201,6 +1201,13 @@ export class CanvasGrid {
     if (!ctx.fillText || labels.length === 0) return;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
+    // The node glyphs are occupied space too. Without this a label reads across
+    // two or three other bowls, which is what a crowded journey looks like on a
+    // phone. A label that finds no free line is dropped; the selected and
+    // hovered ones are drawn regardless.
+    for (const n of this._hitRegions) {
+      this._labelRects.push({ x0: n.sx - n.r, x1: n.sx + n.r, y0: n.sy - n.r, y1: n.sy + n.r });
+    }
     const ordered = [...labels].sort((a, b) => (a.priority ? 1 : 0) - (b.priority ? 1 : 0));
     for (const l of ordered) {
       ctx.font = `500 11px ${this._uiFont()}`;

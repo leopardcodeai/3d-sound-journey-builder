@@ -2,7 +2,9 @@
  * Screenshot the app for the README.
  *   npm run dev   (port 5199)
  *   node scripts/shoot.mjs
- * Environment: SHOOT_URL, SHOOT_OUT, SHOOT_JOURNEY, SHOOT_VIEW (field|focus|3d)
+ * Environment: SHOOT_URL, SHOOT_OUT, SHOOT_JOURNEY, SHOOT_VIEW (field|focus|3d|landing),
+ * SHOOT_SIZE (desktop|mobile). "mobile" is 375x812, the iPhone 13 box, and is
+ * what the layout breakpoints are written against.
  */
 import { chromium } from 'playwright';
 
@@ -11,8 +13,11 @@ const OUT = process.env.SHOOT_OUT || 'docs/screenshot_app.png';
 const JOURNEY = process.env.SHOOT_JOURNEY || 'ocean';
 const VIEW = process.env.SHOOT_VIEW || '3d';   // field | 3d | focus | landing
 
+const SIZE = process.env.SHOOT_SIZE || 'desktop';
+const VIEWPORT = SIZE === 'mobile' ? { width: 375, height: 812 } : { width: 1600, height: 950 };
+
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1600, height: 950 }, deviceScaleFactor: 2 });
+const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 2 });
 
 if (VIEW === 'landing') {
   await page.goto(URL.replace(/\/app\.html$/, '/'), { waitUntil: 'networkidle' });

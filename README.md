@@ -85,10 +85,17 @@ This is not a medical device.
 ```bash
 npm install
 npm run dev        # http://localhost:5199
-npm test           # 245 unit tests
+npm test           # 254 unit tests
 npm run build      # landing page + app
 npm run audit:audio  # what is in public/sounds, and does the library agree
+npm run shoot      # the screenshots in docs/, against a running dev server
 ```
+
+`shoot` reads four environment variables: `SHOOT_VIEW` (`field`, `3d`, `focus`
+or `landing`), `SHOOT_JOURNEY`, `SHOOT_OUT` and `SHOOT_SIZE` (`desktop` or
+`mobile`, the 375x812 box the layout breakpoints are written against). The
+phone layout in [docs/screenshot_mobile.png](docs/screenshot_mobile.png) comes
+from `SHOOT_SIZE=mobile SHOOT_VIEW=field SHOOT_JOURNEY=soundbath`.
 
 `audit:audio` reports every bundled file with its size, duration, encoder and
 embedded tags, and fails if the library references a file that is not there or
