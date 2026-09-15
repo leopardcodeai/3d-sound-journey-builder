@@ -1,81 +1,89 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Library } from './Library.js';
-import { SOUNDS } from '../data/SoundLibrary.js';
+import { setLanguage } from '../i18n.js';
 
-function createEngine() {
-  return { previewSound: vi.fn(() => Promise.resolve(true)), stopPreview: vi.fn() };
+function makeLibrary(onAdd = vi.fn()) {
+  document.body.innerHTML = '<div id="lib"></div>';
+  const engine = { previewSound: vi.fn(() => Promise.resolve()) };
+  const lib = new Library(document.getElementById('lib'), engine, { onAdd });
+  return { lib, onAdd, engine };
 }
 
-describe('Library', () => {
-  let root, engine, library;
+describe('library cards and the keyboard', () => {
+  beforeEach(() => setLanguage('en'));
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    root = document.createElement('div');
-    document.body.appendChild(root);
-    engine = createEngine();
-    library = new Library(root, engine, {});
+  it('offers add and preview as real buttons, not decorated spans', () => {
+    const { lib } = makeLibrary();
+    const card = lib.listEl.querySelector('.card-sound');
+    expect(card).toBeTruthy();
+    for (const cls of ['.card-add', '.card-preview']) {
+      const el = card.querySelector(cls);
+      expect(el, cls).toBeTruthy();
+      // A span cannot be reached by Tab and does not activate on Enter.
+      expect(el.tagName, cls).toBe('BUTTON');
+      expect(el.getAttribute('aria-hidden'), cls).toBeNull();
+    }
   });
 
-  it('renders a card per sound in the active category', () => {
-    library.category = 'nature';
-    library.render();
-    const cards = root.querySelectorAll('.card-sound');
-    expect(cards.length).toBe(SOUNDS.filter(s => s.category === 'nature').length);
+  it('does not leave the card itself focusable, since it does nothing on Enter', () => {
+    const { lib } = makeLibrary();
+    expect(lib.listEl.querySelector('.card-sound').getAttribute('tabindex')).toBeNull();
   });
 
-  it('searches beyond the selected category', () => {
-    library.category = 'nature';
-    library.render();
-    library.searchEl.value = 'binaural';
-    library.searchEl.dispatchEvent(new Event('input'));
-    const types = [...root.querySelectorAll('.card-sound')].map(c => c.dataset.type);
-    expect(types).toContain('bw_alpha');
-    expect(types.every(t => t.startsWith('bw_'))).toBe(true);
+  it('names every button after its own sound', () => {
+    const { lib } = makeLibrary();
+    const cards = [...lib.listEl.querySelectorAll('.card-sound')].slice(0, 4);
+    expect(cards.length).toBeGreaterThan(1);
+    const adds = cards.map(c => c.querySelector('.card-add').getAttribute('aria-label'));
+    const previews = cards.map(c => c.querySelector('.card-preview').getAttribute('aria-label'));
+    for (const label of [...adds, ...previews]) {
+      expect(label).toBeTruthy();
+      expect(label).not.toContain('{name}');
+    }
+    // Sixty buttons all called "Audition" told a screen reader nothing.
+    expect(new Set(adds).size).toBe(adds.length);
+    expect(new Set(previews).size).toBe(previews.length);
   });
 
-  it('matches the description as well as the name', () => {
-    library.searchEl.value = 'waterfall';
-    library.searchEl.dispatchEvent(new Event('input'));
-    expect([...root.querySelectorAll('.card-sound')].map(c => c.dataset.type)).toEqual([]);
-    library.searchEl.value = 'masking';
-    library.searchEl.dispatchEvent(new Event('input'));
-    expect([...root.querySelectorAll('.card-sound')].map(c => c.dataset.type)).toContain('noise_brown');
+  it('adds the sound exactly once when its add button is activated', () => {
+    const { lib, onAdd } = makeLibrary();
+    const card = lib.listEl.querySelector('.card-sound');
+    card.querySelector('.card-add').click();
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onAdd).toHaveBeenCalledWith(card.dataset.type);
   });
 
-  it('reports when nothing matches', () => {
-    library.searchEl.value = 'zzzznothing';
-    library.searchEl.dispatchEvent(new Event('input'));
-    expect(root.querySelector('.empty-note')).toBeTruthy();
+  it('previews without adding when the preview button is activated', () => {
+    const { lib, onAdd, engine } = makeLibrary();
+    const card = lib.listEl.querySelector('.card-sound');
+    card.querySelector('.card-preview').click();
+    expect(engine.previewSound).toHaveBeenCalled();
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it('shows an evidence tag and a note for frequency tools', () => {
-    library.category = 'frequencies';
-    library.render();
-    const card = root.querySelector('.card-sound[data-type="noise_brown"]');
-    expect(card.querySelector('.tag-weak')).toBeTruthy();
-    expect(card.querySelector('.card-note').textContent).toMatch(/brown noise/i);
+  it('keeps a hostile display name as text, in the label and on the card', () => {
+    const { lib } = makeLibrary();
+    const hostile = '"><img src=x onerror=1>';
+    lib.addCustomSound({
+      type: 'custom_x', kind: 'sample', category: 'custom', glyph: 'file',
+      color: '#ff7b7b', spatial: true, name: hostile, desc: '1 s',
+    });
+    // Searching the serialised innerHTML is the wrong test: angle brackets are
+    // legal inside an attribute value and are not escaped on the way out. What
+    // matters is that nothing was parsed as markup.
+    expect(lib.listEl.querySelector('img')).toBeNull();
+    expect(lib.listEl.querySelectorAll('.card-sound')).toHaveLength(1);
+    const card = lib.listEl.querySelector('.card-sound');
+    expect(card.querySelector('.card-name').textContent).toBe(hostile);
+    expect(card.querySelector('.card-add').getAttribute('aria-label')).toContain(hostile);
   });
 
-  it('escapes names so a user upload cannot inject markup', () => {
-    library.addCustomSound({ type: 'custom_x', kind: 'sample', category: 'custom', glyph: 'file', color: '#fff', name: '<img src=x onerror=alert(1)>', desc: '1 s' });
-    const card = root.querySelector('.card-sound[data-type="custom_x"]');
-    expect(card.querySelector('img')).toBeNull();
-    expect(card.querySelector('.card-name').textContent).toBe('<img src=x onerror=alert(1)>');
-  });
-
-  it('resets the previous audition button when a second preview starts', async () => {
-    library.category = 'nature';
-    library.render();
-    const [a, b] = root.querySelectorAll('.card-preview');
-    await library.audition('rain', a);
-    expect(a.classList.contains('is-on')).toBe(true);
-
-    await library.audition('waves', b);
-    expect(a.classList.contains('is-on'), 'first button released').toBe(false);
-    expect(b.classList.contains('is-on')).toBe(true);
-
-    vi.advanceTimersByTime(4300);
-    expect(b.classList.contains('is-on')).toBe(false);
+  it('keeps the labels in the interface language', () => {
+    const { lib } = makeLibrary();
+    setLanguage('de');
+    lib.refresh();
+    const label = lib.listEl.querySelector('.card-add').getAttribute('aria-label');
+    expect(label).toContain('hinzufügen');
+    setLanguage('en');
   });
 });

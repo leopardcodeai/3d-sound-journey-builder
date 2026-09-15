@@ -710,7 +710,13 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
 
   .topbar { gap: 8px; padding: 0 8px; }
   .brand-text { display: none; }
-  .master { display: none; }
+  /* The master fader used to be hidden outright below 900px, so there was no
+     way to set the app's own level on a phone at all. System volume is not a
+     substitute: it moves everything, not the mix. Keep the slider, drop the
+     label and the readout, which are the parts that cost width. */
+  .master { padding: 4px 8px; gap: 6px; }
+  .master .master-label, .master .master-value { display: none; }
+  .master input[type="range"] { width: 64px; }
   .status { display: none; }
   .meter { display: none; }
   .viewswitch-btn span:last-child { display: none; }

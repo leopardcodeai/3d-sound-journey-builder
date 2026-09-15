@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InstrumentSynth, CHAKRA_BOWLS } from './InstrumentSynth.js';
 
+// These tests render real audio offline: preloadHealing alone produces nine
+// buffers. That is genuine work, and vitest's default five-second limit was
+// never chosen for it, so the file failed intermittently under parallel load
+// while passing in isolation. The limit is raised to match the work rather
+// than the test being weakened.
+vi.setConfig({ testTimeout: 30000 });
+
+
 const SR = 44100;
 
 function createEngine() {
@@ -135,8 +143,16 @@ describe('InstrumentSynth', () => {
     });
 
     it('starts loud and ends in silence, so a one-shot cannot click', () => {
+      // Name the buffers instead of walking the whole shared map. Iterating it
+      // made the assertion depend on what an earlier test had left behind,
+      // which is how it failed once under parallel load and passed in
+      // isolation. Clearing the map is not the fix either: it is a cache, and
+      // dropping it forces a second offline render that times out a later test.
       synth.preloadHealing();
-      for (const [type, buf] of engine.buffers) {
+      const healing = ['bell', 'gong_old', 'bowl_c', 'bowl_d', 'bowl_e', 'bowl_f', 'bowl_g', 'bowl_a', 'bowl_b'];
+      for (const type of healing) {
+        const buf = engine.buffers.get(type);
+        expect(buf, `${type} missing`).toBeTruthy();
         const data = buf.getChannelData(0);
         const head = peak(data.subarray(0, SR));
         const tail = peak(data.subarray(data.length - 256));

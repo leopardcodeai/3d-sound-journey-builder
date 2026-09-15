@@ -207,7 +207,7 @@ export class Library {
       const evidence = s.evidence ? `<span class="tag tag-${s.evidence}">${t(`evidence${cap(s.evidence)}`)}</span>` : '';
       const note = s.noteKey ? `<span class="card-note">${escapeHtml(t(s.noteKey))}</span>` : '';
       return `
-        <article class="card-sound" data-type="${escapeHtml(s.type)}" draggable="true" tabindex="0">
+        <article class="card-sound" data-type="${escapeHtml(s.type)}" draggable="true">
           <span class="card-glyph" style="--tint:${escapeHtml(s.color)}">${icon(s.glyph || 'file', { size: 17 })}</span>
           <span class="card-body">
             <span class="card-name">${escapeHtml(name)}</span>
@@ -215,14 +215,28 @@ export class Library {
             <span class="card-meta">${meta}${evidence}</span>
             ${note}
           </span>
-          <button class="card-preview icon-btn" title="${t('audition')}" aria-label="${t('audition')}">${icon('play', { size: 11 })}</button>
-          <span class="card-add icon-btn" title="${t('addSound')}" aria-hidden="true">${icon('plus', { size: 13 })}</span>
+          <button class="card-preview icon-btn" title="${escapeAttr(named('previewNamed', name))}" aria-label="${escapeAttr(named('previewNamed', name))}">${icon('play', { size: 11 })}</button>
+          <button class="card-add icon-btn" title="${escapeAttr(named('addNamed', name))}" aria-label="${escapeAttr(named('addNamed', name))}">${icon('plus', { size: 13 })}</button>
         </article>`;
     }).join('');
   }
 
   /** Re-render after a language switch. */
   refresh() { this.render(); }
+}
+
+/**
+ * "Add Birdsong" rather than sixty buttons all called "Add sound".
+ * Every card carried the same accessible name, so a screen reader could not
+ * tell which sound a button belonged to, and the card itself was a focusable
+ * article that did nothing on Enter.
+ */
+function named(key, name) {
+  return t(key).replace('{name}', name);
+}
+
+function escapeAttr(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function describeMeta(s) {

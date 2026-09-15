@@ -204,6 +204,8 @@ const EN = {
   saved: 'Saved',
   timerDone: 'Timer finished, everything faded out',
   motionPaths: 'Motion paths',
+  addNamed: 'Add {name}',
+  previewNamed: 'Preview {name}',
   shortcutsHelp: 'Press ? at any time to open this.',
   shortcutsEditing: 'Editing',
   shortcutsPlayback: 'Playback',
@@ -512,6 +514,8 @@ const DE = {
   saved: 'Gespeichert',
   timerDone: 'Timer abgelaufen, alles ausgeblendet',
   motionPaths: 'Bewegungspfade',
+  addNamed: '{name} hinzufügen',
+  previewNamed: '{name} vorhören',
   shortcutsHelp: 'Ein ? öffnet diese Liste jederzeit.',
   shortcutsEditing: 'Bearbeiten',
   shortcutsPlayback: 'Wiedergabe',
@@ -660,6 +664,12 @@ export function applyTranslations(root) {
     if (!key) return;
     if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'search')) el.placeholder = t(key);
     else el.textContent = t(key);
+  });
+  // A name that does not depend on visible text. Hiding a label with
+  // display:none removes it from the accessibility tree as well as from the
+  // screen, so the two view tabs lost their names entirely below 900px.
+  scope.querySelectorAll('[data-i18n-label]').forEach(el => {
+    el.setAttribute('aria-label', t(el.dataset.i18nLabel));
   });
   scope.querySelectorAll('[data-i18n-title]').forEach(el => {
     el.title = t(el.dataset.i18nTitle);
