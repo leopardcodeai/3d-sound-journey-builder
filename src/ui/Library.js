@@ -114,6 +114,7 @@ export class Library {
     if (btn) {
       btn.innerHTML = icon('stop', { size: 11 });
       btn.classList.add('is-on');
+      btn.setAttribute('aria-pressed', 'true');
     }
     try {
       const def = getSound(type);
@@ -129,6 +130,7 @@ export class Library {
     if (!btn) return;
     btn.innerHTML = icon('play', { size: 11 });
     btn.classList.remove('is-on');
+    btn.setAttribute('aria-pressed', 'false');
     this._previewBtn = null;
   }
 

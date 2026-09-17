@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] - 2026-09-17
+
+### Fixed
+
+- An uploaded file was placed as "Your file"; it is called what the file was
+  called now.
+- On a desktop, switching on "Follow the device" said motion access was
+  refused. Nobody refused anything; the machine has no sensors, and the
+  message says that.
+- The preview, snap and loop buttons now carry a pressed state for
+  assistive technology.
+
 ## [2.2.3] - 2026-09-17
 
 Found by walking the focus view, the timeline and the settings as a user.

@@ -417,7 +417,7 @@ export class Timeline {
   setSnap(on) {
     this.snap = on;
     const btn = this._q('.tl-snap');
-    if (btn) btn.classList.toggle('is-on', on);
+    if (btn) { btn.classList.toggle('is-on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
     if (this.onSnapChange) this.onSnapChange(on);
   }
 
@@ -435,6 +435,7 @@ export class Timeline {
       btn.innerHTML = icon(on ? 'loop' : 'once', { size: 15 });
       btn.title = on ? t('loopForever') : t('playOnce');
       btn.setAttribute('aria-label', btn.title);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
   }
 

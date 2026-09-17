@@ -89,6 +89,15 @@ describe('Timeline', () => {
       expect(timeline.isPlaying).toBe(false);
     });
 
+    it('snap and loop carry a pressed state a screen reader can read', () => {
+      timeline.setSnap(true);
+      expect(container.querySelector('.tl-snap').getAttribute('aria-pressed')).toBe('true');
+      timeline.setSnap(false);
+      expect(container.querySelector('.tl-snap').getAttribute('aria-pressed')).toBe('false');
+      timeline.setLooping(false);
+      expect(container.querySelector('.tl-loop').getAttribute('aria-pressed')).toBe('false');
+    });
+
     it('setLooping switches the loop button between the two modes', () => {
       const btn = container.querySelector('.tl-loop');
       expect(btn.classList.contains('is-on')).toBe(true);

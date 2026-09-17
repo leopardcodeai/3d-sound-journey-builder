@@ -266,7 +266,9 @@ async function addSound(type, opts = {}) {
   const y = opts.y !== undefined ? opts.y : Math.sin(angle) * dist;
   const volume = opts.volume !== undefined ? opts.volume : 0.55;
 
-  const source = audioEngine.addSource(id, type, soundName(type), round(x), round(y), opts.z || 0, volume, { params: opts.params });
+  // A caller may name the source: an uploaded file is called what the file
+  // was called, not "Your file", which is what the library's fallback said.
+  const source = audioEngine.addSource(id, type, opts.name || soundName(type), round(x), round(y), opts.z || 0, volume, { params: opts.params });
   if (!source) return null;
 
   canvasGrid.selectedNodeId = id;
@@ -301,7 +303,7 @@ async function importAudioFile(file) {
     canvasGrid.themeColors[type] = '#ff7b7b';
     library.addCustomSound({ type, kind: 'sample', category: 'custom', glyph: 'file', color: '#ff7b7b', spatial: true, name, desc: `${Math.round(decoded.duration)} s` });
     setHint('');
-    await addSound(type);
+    await addSound(type, { name });
   } catch (err) {
     console.error(err);
     setHint('');
@@ -976,7 +978,10 @@ function bindUI() {
     if (!granted) {
       e.target.checked = false;
       savePrefs({ followDevice: false });
-      showToast(t('motionDenied'));
+      // A desktop has no sensors and Chrome answers "denied" for it. Nobody
+      // refused anything there, so the message must not say so.
+      const handheld = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      showToast(t(handheld ? 'motionDenied' : 'motionUnavailable'));
       return;
     }
     postureSensor.start();
