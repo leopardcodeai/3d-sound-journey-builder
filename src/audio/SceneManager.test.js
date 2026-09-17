@@ -620,3 +620,45 @@ describe('head turn in scenes (external review, 2026-09-15)', () => {
     expect(sanitiseScene(old).headTurn).toBe(0);
   });
 });
+
+describe('snapshot and restore', () => {
+  it('captures the field as a scene object without storing it, and puts it back', async () => {
+    const engine = { ...mockAudioEngine, sources: new Map([['a', { id: 'a', type: 'birds', name: 'A', x: 1, y: 2, z: 0, volume: 0.5, isPlaying: true, params: null, inserts: null }]]) };
+    engine.removeSource = vi.fn(id => engine.sources.delete(id));
+    engine.addSource = vi.fn(() => ({ id: 'a', isPlaying: true }));
+    const timeline = { sourceTimings: new Map([['a', { startTime: 0, duration: 60 }]]), keyframes: new Map([['a', [{ time: 0, x: 1, y: 2, z: 0, volume: 0.5 }, { time: 30, x: 3, y: 2, z: 0, volume: 0.5 }]]]), trackState: new Map(), sections: [], totalDuration: 600, isPlaying: true, visible: false, pause: vi.fn(), play: vi.fn(), setTotalDuration: vi.fn(), setSections: vi.fn(), setKeyframes: vi.fn(), _render: vi.fn() };
+    const sm = new SceneManager(engine, mockCanvasGrid, timeline);
+    expect(sm.hasContent()).toBe(true);
+    const stored = sm.scenes.size;
+    const snap = sm.snapshot();
+    expect(sm.scenes.size).toBe(stored);   // a snapshot is not a saved scene
+    expect(snap.sources.map(s => s.id)).toEqual(['a']);
+    expect(snap.timeline.keyframes.a.length).toBe(2);
+    expect(snap.timeline.playing).toBe(true);
+    engine.sources.clear();
+    expect(sm.hasContent()).toBe(false);
+    await sm.restore(snap);
+    expect(engine.addSource).toHaveBeenCalledWith('a', 'birds', 'A', 1, 2, 0, 0.5, expect.any(Object));
+    expect(timeline.setKeyframes).toHaveBeenCalledWith('a', expect.any(Array));
+    expect(timeline.play).toHaveBeenCalled();
+  });
+});
+
+describe('a head-locked source travels as one', () => {
+  it('writes spatial: false into the scene and hands it back to addSource', async () => {
+    const engine = { ...mockAudioEngine, sources: new Map([['jm_breath', { id: 'jm_breath', type: 'breath', name: 'Breath', x: 0, y: 0, z: 0, volume: 0.3, isPlaying: true, spatial: false, gen: 'breath', params: { bpm: 6 }, inserts: null }]]) };
+    engine.removeSource = vi.fn(id => engine.sources.delete(id));
+    engine.addSource = vi.fn(() => ({ id: 'jm_breath', isPlaying: true }));
+    const sm = new SceneManager(engine, mockCanvasGrid, null);
+    const snap = sm.snapshot();
+    expect(snap.sources[0].spatial).toBe(false);
+    await sm.restore(snap);
+    expect(engine.addSource).toHaveBeenCalledWith('jm_breath', 'breath', 'Breath', 0, 0, 0, 0.3, expect.objectContaining({ gen: 'breath', spatial: false }));
+  });
+
+  it('survives the sanitiser a shared link goes through', () => {
+    const scene = sanitiseScene({ name: 'x', sources: [{ id: 'a', type: 'breath', gen: 'breath', spatial: false, x: 0, y: 0, z: 0, volume: 0.3 }, { id: 'b', type: 'birds', x: 1, y: 1, z: 0, volume: 0.5 }] });
+    expect(scene.sources[0].spatial).toBe(false);
+    expect(scene.sources[1].spatial).toBeUndefined();
+  });
+});

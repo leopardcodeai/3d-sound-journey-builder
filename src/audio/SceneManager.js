@@ -49,6 +49,9 @@ export class SceneManager {
         id, type: src.type, name: src.name,
         x: round(src.x), y: round(src.y), z: round(src.z), volume: round(src.volume, 3),
         isPlaying: src.isPlaying,
+        // Head-locked is a fact about the source, not only about its type: a
+        // scene has to say so, or a restore has to guess.
+        spatial: src.spatial === false ? false : undefined,
         // Generators are rebuilt from their parameters, not from a buffer.
         gen: src.gen || null,
         params: src.params ? { ...src.params } : null,
@@ -87,6 +90,26 @@ export class SceneManager {
   async loadScene(name) {
     const scene = this.scenes.get(name);
     if (!scene) return false;
+    return this.restore(scene);
+  }
+
+  /** The current state as a scene object, for undo. Not stored. */
+  snapshot() {
+    return this._buildScene('__snapshot');
+  }
+
+  /** True while there is something in the field worth an undo step. */
+  hasContent() {
+    return this.audioEngine.sources.size > 0;
+  }
+
+  /**
+   * Puts a scene object into the engine, the field and the timeline. Used by
+   * loadScene for stored scenes and by undo for snapshots, which is why it
+   * takes the object rather than a name.
+   */
+  async restore(scene) {
+    if (!scene) return false;
     await this._preloadFor(scene);
     // Clear current state
     for (const id of Array.from(this.audioEngine.sources.keys())) {
@@ -111,6 +134,7 @@ export class SceneManager {
         gen: s.gen || undefined,
         params: s.params || undefined,
         inserts: s.inserts || undefined,
+        spatial: s.spatial === false ? false : undefined,
       });
       if (src && s.ramp) {
         this.audioEngine.setSourceRamp(s.id, s.ramp.up || 0, s.ramp.down || 0, s.ramp.repeat || 0);
@@ -168,6 +192,9 @@ export class SceneManager {
     }
     return {
       totalDuration: this.timeline.totalDuration,
+      // Whether it was running. Restoring a journey that was playing and
+      // leaving it paused reads as a fault, especially after an undo.
+      playing: !!this.timeline.isPlaying,
       timings,
       keyframes,
       tracks,
@@ -198,6 +225,7 @@ export class SceneManager {
       if (this.timeline.setSections) this.timeline.setSections(data.sections || []);
     }
     if (this.timeline.visible) this.timeline._render();
+    if (data && data.playing && this.timeline.play) this.timeline.play();
   }
   
   // Delete a scene
@@ -323,6 +351,7 @@ export function sanitiseScene(raw) {
       z: num(s.z, -10, 10, 0),
       volume: num(s.volume, 0, 1.5, 0.5),
       isPlaying: s.isPlaying !== false,
+      spatial: s.spatial === false ? false : undefined,
     });
   }
   if (sources.length === 0) return null;

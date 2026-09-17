@@ -25,6 +25,7 @@ import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoMan
 import { loadPrefs, savePrefs, resetPrefs, DEFAULTS, START_FOCUS, START_EMPTY } from './core/Preferences.js';
 import { KeepAlive } from './audio/KeepAlive.js';
 import { defaultSceneName, shareLink } from './core/share.js';
+import { createSceneCommand } from './core/UndoManager.js';
 import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
 import { buildLabel } from './core/version.js';
 
@@ -214,10 +215,29 @@ inspector = new Inspector($('#panel-inspector'), audioEngine, canvasGrid, timeli
   onClose: () => { openMobilePanel('field'); syncTabBar(); },
 });
 
+// The focus orb and the field transport are one transport. Pausing the orb
+// pauses the timeline as well, or the timeline restarts every source in its
+// window on the next frame; starting it again resumes what it paused.
+let focusPausedTransport = false;
 focusView = new FocusView($('#view-focus'), audioEngine, {
   onOpenField: () => setView('field'),
   onSourcesChanged: () => { timeline._render(); refreshPanels(); },
+  onPause: () => { if (timeline.isPlaying) { timeline.pause(); focusPausedTransport = true; } },
+  onStart: () => { if (focusPausedTransport) { focusPausedTransport = false; timeline.play(); } },
+  replaceScene: (label, apply) => replaceScene(label, apply),
 });
+
+/**
+ * Runs a whole-scene replacement as one undo step, unless the field is empty
+ * and there is nothing to lose. Journeys, sets, focus modes, saved scenes,
+ * clear all and new session all go through here.
+ */
+function replaceScene(label, apply) {
+  if (!sceneManager.hasContent()) return apply();
+  const cmd = createSceneCommand(sceneManager, label, apply);
+  if (!cmd) return apply();
+  return undoManager.execute(cmd);
+}
 
 // ---------------------------------------------------------------------------
 // Adding sounds
@@ -299,6 +319,11 @@ let journeyLoad = 0;
 const DEFAULT_JOURNEY_SECONDS = 600;
 
 async function loadJourney(id) {
+  if (!JOURNEYS[id]) return;
+  return replaceScene('LoadJourney', () => loadJourneyNow(id));
+}
+
+async function loadJourneyNow(id) {
   const journey = JOURNEYS[id];
   if (!journey) return;
   // Loading awaits a decode, so a second click would clear and configure on
@@ -360,6 +385,11 @@ async function loadJourney(id) {
  * Shares the load token with loadJourney so a set and a journey cannot race.
  */
 async function loadSet(id) {
+  if (!SOUND_SETS[id]) return;
+  return replaceScene('LoadSet', () => loadSetNow(id));
+}
+
+async function loadSetNow(id) {
   const set = SOUND_SETS[id];
   if (!set) return;
   const token = ++journeyLoad;
@@ -1011,7 +1041,7 @@ function bindUI() {
     await audioEngine.resume();
     setHint(t('loadingAudio'));
     // Loading decodes any sample the scene needs, so it has to be awaited.
-    await sceneManager.loadScene(item.dataset.scene);
+    await replaceScene('LoadScene', () => sceneManager.loadScene(item.dataset.scene));
     setHint('');
     canvasGrid.selectedNodeId = null;
     inspector.show(null);
@@ -1049,7 +1079,7 @@ function bindUI() {
   $('#sleep-timer-cancel').addEventListener('click', () => { soundscapeTimer.stop(); setTimerPop(false); });
 
   // Session
-  $('#new-session-btn').addEventListener('click', () => {
+  $('#new-session-btn').addEventListener('click', () => replaceScene('NewSession', () => {
     for (const id of [...audioEngine.sources.keys()]) audioEngine.removeSource(id);
     canvasGrid.automations.clear();
     canvasGrid.selectedNodeId = null;
@@ -1059,14 +1089,19 @@ function bindUI() {
     timeline.stop();
     inspector.show(null);
     timeline._render();
-  });
-  $('#clear-all-btn').addEventListener('click', () => {
+    setHint('');
+  }));
+  $('#clear-all-btn').addEventListener('click', () => replaceScene('ClearAll', () => {
     for (const id of [...audioEngine.sources.keys()]) audioEngine.removeSource(id);
     canvasGrid.automations.clear();
     canvasGrid.selectedNodeId = null;
+    // A soloed track that is gone kept every later track silent, because the
+    // solo state outlived the source. Clear all clears that too now.
+    timeline.trackState.clear();
     inspector.show(null);
     timeline._render();
-  });
+    setHint('');
+  }));
 
   $('#shortcuts-open').addEventListener('click', () => showShortcuts(true));
   $('#shortcuts-close').addEventListener('click', () => showShortcuts(false));

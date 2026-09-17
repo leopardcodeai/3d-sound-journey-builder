@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { UndoManager, createMoveCommand, createAddCommand, createDeleteCommand, createVolumeCommand, createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand,
+import { UndoManager, createSceneCommand, createMoveCommand, createAddCommand, createDeleteCommand, createVolumeCommand, createClipTimingCommand, createAddKeyframeCommand, createRemoveKeyframeCommand,
   createMoveKeyframeCommand,
   createParamCommand,
   createAutomationCommand,
@@ -458,5 +458,35 @@ describe('createAutomationCommand', () => {
     grid.automations.set('s1', { type: 'orbit' });
     cmd.undo();
     expect(grid.automations.has('s1')).toBe(false);
+  });
+});
+
+/**
+ * Replacing the whole scene is one undo step. A tap on a focus mode used to
+ * sweep away a journey that had just been built, with nothing to undo.
+ */
+describe('createSceneCommand', () => {
+  it('takes one snapshot before the first run and restores it on undo', () => {
+    const snap = { name: '__snapshot', sources: [{ id: 'a' }] };
+    const sceneManager = { snapshot: vi.fn(() => snap), restore: vi.fn() };
+    const apply = vi.fn(() => 'done');
+    const cmd = createSceneCommand(sceneManager, 'FocusMode', apply);
+    expect(cmd.execute()).toBe('done');
+    cmd.undo();
+    cmd.execute();                       // redo: same snapshot, not a new one
+    expect(sceneManager.snapshot).toHaveBeenCalledTimes(1);
+    expect(sceneManager.restore).toHaveBeenCalledWith(snap);
+    expect(apply).toHaveBeenCalledTimes(2);
+  });
+
+  it('is nothing without a scene manager to snapshot with', () => {
+    expect(createSceneCommand(null, 'x', () => {})).toBeNull();
+    expect(createSceneCommand({}, 'x', () => {})).toBeNull();
+  });
+
+  it('hands the result of the step back through the manager', () => {
+    const um = new UndoManager();
+    const cmd = createSceneCommand({ snapshot: () => ({}), restore: () => {} }, 'LoadJourney', () => Promise.resolve('loaded'));
+    return expect(um.execute(cmd)).resolves.toBe('loaded');
   });
 });

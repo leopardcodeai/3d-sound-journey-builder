@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-09-17
+
+Found by walking the focus view, the timeline and the settings as a user.
+
+### Changed
+
+- **Replacing the whole scene is one undo step.** A focus mode, a journey, a
+  set, a saved scene, clear all and new session all record what they replace,
+  so a tap on Calm no longer throws away a journey you just built. Undo brings
+  it back playing, keyframes and all. Nothing is recorded while the field is
+  empty, because there is nothing to lose.
+- **The focus orb and the field transport are one transport.** Opening the
+  focus view while a journey plays shows Pause, not Play; pausing the orb
+  pauses the timeline too, which used to restart every sound in its window on
+  the next frame; leaving the view no longer silences a journey that belongs
+  to the field. The orb's accessible label follows its state.
+- A restored, saved or shared scene keeps its transport state: a journey that
+  was playing comes back playing.
+
+### Fixed
+
+- A restored scene turned the breath pacer spatial and routed it through the
+  panner. The restore named the generator it had saved, and naming any
+  generator counted as swapping it. Naming the same one no longer does, and a
+  scene now carries the head-locked flag itself.
+- Clear all left a soloed track's state behind, which kept every later track
+  silent.
+
 ## [2.2.2] - 2026-09-17
 
 Found by building a journey from nothing, the way a first user would.

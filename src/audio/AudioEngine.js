@@ -494,9 +494,16 @@ export class SpatialAudioEngine {
     // Head-locking follows the generator that is actually running, not the
     // library entry: swapping a binaural source to an isochronic one has to
     // release it into the field. `options.spatial` lets a caller be explicit.
+    // A caller naming a different generator than the library entry is
+    // swapping it, and a swapped source is released into the field. Naming
+    // the same one is not a swap: a restored scene passes the generator it
+    // saved, and that used to turn the breath pacer spatial and route it
+    // through the panner, which is exactly what a head-locked source exists
+    // to avoid. `options.spatial` still lets a caller be explicit.
+    const swapped = !!options.gen && options.gen !== def.gen;
     const headLocked = options.spatial !== undefined
       ? options.spatial === false
-      : (!!handle.meta.headLocked || (options.gen ? false : def.spatial === false));
+      : (!!handle.meta.headLocked || (swapped ? false : def.spatial === false));
 
     const src = {
       id, type, name: name || type, x, y, z, volume,

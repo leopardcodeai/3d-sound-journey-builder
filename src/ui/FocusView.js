@@ -202,11 +202,39 @@ export class FocusView {
     if (!this.field && this.fieldEl) {
       this.field = new CircleField(this.fieldEl, { colour: '242, 140, 96' });
     }
+    // A journey already sounding in the field is a session already running:
+    // the orb has to say Pause, not Play, and its clock has to move. It used
+    // to open on Play while five sounds were audible.
+    if (!this.running && this.audioEngine.anyPlaying && this.audioEngine.anyPlaying()) this._adopt();
     if (this.field) {
       this.field.resize();
       this.field.setIntensity(this.running ? 1 : 0);
       this.field.start();
     }
+  }
+
+  /** True when every source came from a focus mode, so leaving may stop it. */
+  _ownsScene() {
+    const ids = [...this.audioEngine.sources.keys()];
+    return ids.length > 0 && ids.every(id => String(id).startsWith('focus_'));
+  }
+
+  /** Takes over a session that is already sounding, without touching sources. */
+  _adopt() {
+    this.running = true;
+    this.startedAt = Date.now() - this.elapsed * 1000;
+    this._setOrb(true);
+    clearInterval(this._tickTimer);
+    this._tickTimer = setInterval(() => this._tick(), 250);
+  }
+
+  _setOrb(running) {
+    this.orbEl.classList.toggle('is-running', running);
+    this.orbIcon.innerHTML = icon(running ? 'pause' : 'play', { size: running ? 30 : 34 });
+    // The label used to be set once in the markup and never again, so the orb
+    // read "Play" to a screen reader while the session ran.
+    this.orbEl.setAttribute('aria-label', t(running ? 'pause' : 'play'));
+    if (this.field) this.field.setIntensity(running ? 1 : 0);
   }
 
   hide() {
@@ -215,9 +243,11 @@ export class FocusView {
     this.root.classList.remove('is-visible');
     // A hidden canvas still costs a frame each tick, so the loop stops with it.
     if (this.field) this.field.stop();
-    // The session kept running after the view was gone, so its taper later
-    // faded out whatever the field had loaded in the meantime.
-    if (this.running) this.pause();
+    // A focus session kept running after the view was gone, so its taper
+    // later faded out whatever the field had loaded in the meantime. A journey
+    // that belongs to the field is a different thing: someone opened this
+    // view to look, and leaving must not silence what they were listening to.
+    if (this.running && this._ownsScene()) this.pause();
   }
 
   /**
@@ -231,18 +261,22 @@ export class FocusView {
     if (!this.audioEngine.isInitialized) this.audioEngine.init();
     await this.audioEngine.resume();
 
-    for (const id of [...this.audioEngine.sources.keys()]) this.audioEngine.removeSource(id);
-    this.audioEngine.setMasterVolume(mode.masterVolume);
-
-    this._baseParams = new Map();
-    mode.layers.forEach((layer, i) => {
-      const def = getSound(layer.type);
-      const id = `focus_${modeId}_${i}`;
-      const src = this.audioEngine.addSource(id, layer.type, soundName(layer.type), 0, 0, 0, layer.volume, {
-        params: { ...(def.params || {}), ...(layer.params || {}) },
+    // One undo step for the whole replacement, when the app offers one. A tap
+    // on a mode used to sweep away whatever was in the field with no record.
+    const apply = () => {
+      for (const id of [...this.audioEngine.sources.keys()]) this.audioEngine.removeSource(id);
+      this.audioEngine.setMasterVolume(mode.masterVolume);
+      this._baseParams = new Map();
+      mode.layers.forEach((layer, i) => {
+        const def = getSound(layer.type);
+        const id = `focus_${modeId}_${i}`;
+        const src = this.audioEngine.addSource(id, layer.type, soundName(layer.type), 0, 0, 0, layer.volume, {
+          params: { ...(def.params || {}), ...(layer.params || {}) },
+        });
+        if (src) this._baseParams.set(id, { ...src.params });
       });
-      if (src) this._baseParams.set(id, { ...src.params });
-    });
+    };
+    if (this.callbacks.replaceScene) this.callbacks.replaceScene('FocusMode', apply); else apply();
     this._tapered = false;
     // A session that was interrupted mid-fade would otherwise leave this set,
     // and the next one would never ramp down.
@@ -267,9 +301,7 @@ export class FocusView {
     this.audioEngine.resume();
     this.running = true;
     this.startedAt = Date.now() - this.elapsed * 1000;
-    this.orbEl.classList.add('is-running');
-    this.orbIcon.innerHTML = icon('pause', { size: 30 });
-    if (this.field) this.field.setIntensity(1);
+    this._setOrb(true);
     for (const [id, src] of this.audioEngine.sources) if (!src.isPlaying) this.audioEngine.toggleSource(id);
     if (this.callbacks.onStart) this.callbacks.onStart();
     clearInterval(this._tickTimer);
@@ -288,9 +320,11 @@ export class FocusView {
         g.setValueAtTime(mode.masterVolume, this.audioEngine.ctx.currentTime);
       }
     }
-    this.orbEl.classList.remove('is-running');
-    this.orbIcon.innerHTML = icon('play', { size: 34 });
-    if (this.field) this.field.setIntensity(0);
+    this._setOrb(false);
+    // The field's transport has to stop too, or it starts every source in its
+    // window again on the next frame: two presses of the orb used to leave
+    // two of five sounds playing.
+    if (this.callbacks.onPause) this.callbacks.onPause();
     for (const [id, src] of this.audioEngine.sources) if (src.isPlaying) this.audioEngine.toggleSource(id);
     clearInterval(this._tickTimer);
     this._tickTimer = null;

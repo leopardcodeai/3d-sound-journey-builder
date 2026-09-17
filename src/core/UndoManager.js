@@ -15,11 +15,14 @@ export class UndoManager {
   }
 
   execute(command) {
-    command.execute();
+    // Returned so an async step (a journey load that has to decode samples)
+    // can still be awaited by whoever asked for it.
+    const result = command.execute();
     this.undoStack.push(command);
     if (this.undoStack.length > this.maxSteps) this.undoStack.shift();
     this.redoStack = [];
     this._notify();
+    return result;
   }
 
   undo() {
@@ -315,4 +318,27 @@ export function createAutomationCommand(canvasGrid, id, oldAuto, newAuto) {
     else canvasGrid.automations.delete(id);
   };
   return new Command('ChangeMotion', () => apply(newAuto), () => apply(oldAuto));
+}
+
+/**
+ * A whole-scene replacement as one step: a focus mode, a journey, a set, a
+ * saved scene, clear all, new session. Each of those used to sweep the field
+ * with no record at all, so one tap on a focus mode threw away a journey that
+ * had just been built, and undo had nothing to offer. The snapshot is taken
+ * once, right before the first run, so redo lands where undo took it from.
+ */
+export function createSceneCommand(sceneManager, label, apply) {
+  if (!sceneManager || typeof sceneManager.snapshot !== 'function') return null;
+  let before = null;
+  return new Command(
+    label || 'ReplaceScene',
+    () => {
+      if (!before) before = sceneManager.snapshot();
+      return apply();
+    },
+    () => {
+      if (before) return sceneManager.restore(before);
+      return undefined;
+    },
+  );
 }

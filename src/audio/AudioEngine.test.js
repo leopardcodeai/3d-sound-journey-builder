@@ -268,6 +268,28 @@ describe('SpatialAudioEngine', () => {
     });
   });
 
+  describe('head-locked sources stay head-locked through a restore', () => {
+    beforeEach(() => engine.init());
+
+    it('keeps the breath pacer out of the panner when its own generator is named', () => {
+      // A restored scene passes the generator it saved. That used to count as
+      // a swap and released the source into the field.
+      const src = engine.addSource('b', 'breath', 'Breath', 0, 0, 0, 0.5, { gen: 'breath', params: { bpm: 6 } });
+      expect(src.spatial).toBe(false);
+      expect(src.pannerNode).toBeNull();
+    });
+
+    it('still releases a source whose generator was actually swapped', () => {
+      const src = engine.addSource('s', 'bw_alpha', 'Alpha', 1, 1, 0, 0.5, { gen: 'isochronic' });
+      expect(src.spatial).toBe(true);
+    });
+
+    it('obeys an explicit flag either way', () => {
+      expect(engine.addSource('h1', 'breath', 'B', 0, 0, 0, 0.5, { spatial: true }).spatial).toBe(true);
+      expect(engine.addSource('h2', 'noise_pink', 'N', 0, 0, 0, 0.5, { spatial: false }).spatial).toBe(false);
+    });
+  });
+
   describe('a speaker choice can never break the signal path', () => {
     // Choosing "Custom speakers" used to throw IndexSizeError out of
     // createChannelMerger, after _reconnectSource had already disconnected the

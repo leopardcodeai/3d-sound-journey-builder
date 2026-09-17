@@ -153,3 +153,68 @@ describe('FocusView session state', () => {
     expect(root.querySelector('.focus-layers img')).toBeNull();
   });
 });
+
+/**
+ * The focus view and the field are one transport. It used to open on Play
+ * while five sounds were audible, and pausing the orb stopped the sounds
+ * while the field's timeline started them again on the next frame.
+ */
+describe('focus view alongside a field journey', () => {
+  function build(overrides = {}) {
+    const engine = createEngine();
+    engine.anyPlaying = () => [...engine.sources.values()].some(s => s.isPlaying);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const calls = { pause: 0, start: 0 };
+    const view = new FocusView(root, engine, {
+      onPause: () => { calls.pause += 1; },
+      onStart: () => { calls.start += 1; },
+      ...overrides,
+    });
+    return { engine, view, calls, root };
+  }
+
+  it('opens on Pause when the field is already sounding, and its label says so', () => {
+    const { engine, view } = build();
+    engine.sources.set('jm_bowl', { id: 'jm_bowl', type: 'singing-bowl', name: 'Bowl', isPlaying: true, params: {}, spatial: true });
+    view.show();
+    expect(view.running).toBe(true);
+    expect(view.orbEl.classList.contains('is-running')).toBe(true);
+    expect(view.orbEl.getAttribute('aria-label').toLowerCase()).toContain('pause');
+    expect(engine.toggleSource).not.toHaveBeenCalled();
+  });
+
+  it('tells the app to pause the transport when the orb pauses', () => {
+    const { engine, view, calls } = build();
+    engine.sources.set('jm_bowl', { id: 'jm_bowl', type: 'singing-bowl', name: 'Bowl', isPlaying: true, params: {}, spatial: true });
+    view.show();
+    view.pause();
+    expect(calls.pause).toBe(1);
+    expect(engine.toggleSource).toHaveBeenCalledWith('jm_bowl');
+    expect(view.orbEl.getAttribute('aria-label').toLowerCase()).toContain('play');
+  });
+
+  it('leaves a field journey playing when the view is left, and stops its own session', () => {
+    const { engine, view } = build();
+    engine.sources.set('jm_bowl', { id: 'jm_bowl', type: 'singing-bowl', name: 'Bowl', isPlaying: true, params: {}, spatial: true });
+    view.show();
+    view.hide();
+    expect(engine.toggleSource).not.toHaveBeenCalled();
+
+    engine.sources.clear();
+    engine.sources.set('focus_calm_0', { id: 'focus_calm_0', type: 'breath', name: 'Breath', isPlaying: true, params: {}, spatial: false });
+    view.running = false;
+    view.show();
+    view.hide();
+    expect(engine.toggleSource).toHaveBeenCalledWith('focus_calm_0');
+  });
+
+  it('routes a mode change through the scene step the app provides', async () => {
+    const { engine, view } = build({ replaceScene: vi.fn((label, apply) => apply()) });
+    engine.sources.set('jm_bowl', { id: 'jm_bowl', type: 'singing-bowl', name: 'Bowl', isPlaying: true, params: {}, spatial: true });
+    await view.applyMode('calm');
+    expect(view.callbacks.replaceScene).toHaveBeenCalledWith('FocusMode', expect.any(Function));
+    expect(engine.sources.has('jm_bowl')).toBe(false);
+    expect([...engine.sources.keys()].every(id => id.startsWith('focus_calm_'))).toBe(true);
+  });
+});
