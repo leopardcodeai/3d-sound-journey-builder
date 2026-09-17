@@ -57,19 +57,21 @@
      over the page, so everything pinned to the top edge has to make room for
      it. Only the bottom inset was handled, and the header sat under the clock. */
   --safe-top: env(safe-area-inset-top, 0px);
-}
-
-/* Installed on a home screen the status bar always sits over the page, and a
-   phone without a notch reports no inset for it at all. Twenty points is the
-   bar on those. Only there: in a browser tab there is no bar over the page. */
-@media (display-mode: standalone) {
-  :root { --safe-top: max(env(safe-area-inset-top, 0px), 20px); }
-}
-html.is-standalone { --safe-top: max(env(safe-area-inset-top, 0px), 20px);
   --panel-w: 296px;
   --dock-h: 216px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+
+/* Installed on a home screen the status bar always sits over the page, and a
+   phone without a notch reports no inset for it at all. Twenty points is the
+   bar on those. Only there: in a browser tab there is no bar over the page.
+   A separate rule after :root, and closed: an earlier version of this edit
+   closed :root one line early and swallowed the three variables above into
+   the standalone rule, so on every desktop the panels lost their width. */
+@media (display-mode: standalone) {
+  :root { --safe-top: max(env(safe-area-inset-top, 0px), 20px); }
+}
+html.is-standalone { --safe-top: max(env(safe-area-inset-top, 0px), 20px); }
 
 * , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
