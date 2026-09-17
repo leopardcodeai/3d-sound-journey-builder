@@ -55,43 +55,27 @@ export class UndoManager {
 }
 
 export function createMoveCommand(audioEngine, canvasGrid, nodeId, oldX, oldY, oldZ, newX, newY, newZ, timeline) {
+  // The move belongs to the time the playhead showed when it happened,
+  // captured once so that redo lands where undo took it from.
+  const at = timeline ? timeline.playheadTime || 0 : 0;
+  let snapshot = null;
+  const moved = () => {
+    const node = audioEngine.sources.get(nodeId);
+    if (node && canvasGrid.callbacks && canvasGrid.callbacks.onNodeMoved) canvasGrid.callbacks.onNodeMoved(node);
+  };
   return new Command(
     'MoveNode',
     () => {
       audioEngine.updateSourcePosition(nodeId, newX, newY, newZ);
-      const node = audioEngine.sources.get(nodeId);
-      if (node && canvasGrid.callbacks.onNodeMoved) {
-        canvasGrid.callbacks.onNodeMoved(node);
-      }
-      // Sync Timeline: update last keyframe position
-      if (timeline && timeline.keyframes.has(nodeId)) {
-        const kfs = timeline.keyframes.get(nodeId);
-        if (kfs.length > 0) {
-          const lastKf = kfs[kfs.length - 1];
-          lastKf.x = newX;
-          lastKf.y = newY;
-          lastKf.z = newZ;
-        }
-        if (timeline.visible) timeline._render();
-      }
+      moved();
+      // Into the keyframe at this time, or a new one there. This used to
+      // rewrite the last keyframe whatever the playhead said.
+      if (timeline && timeline.keyPositionAt) snapshot = timeline.keyPositionAt(nodeId, at, { x: newX, y: newY, z: newZ });
     },
     () => {
       audioEngine.updateSourcePosition(nodeId, oldX, oldY, oldZ);
-      const node = audioEngine.sources.get(nodeId);
-      if (node && canvasGrid.callbacks.onNodeMoved) {
-        canvasGrid.callbacks.onNodeMoved(node);
-      }
-      // Sync Timeline: restore old keyframe position
-      if (timeline && timeline.keyframes.has(nodeId)) {
-        const kfs = timeline.keyframes.get(nodeId);
-        if (kfs.length > 0) {
-          const lastKf = kfs[kfs.length - 1];
-          lastKf.x = oldX;
-          lastKf.y = oldY;
-          lastKf.z = oldZ;
-        }
-        if (timeline.visible) timeline._render();
-      }
+      moved();
+      if (timeline && snapshot && timeline.restoreKeyframes) timeline.restoreKeyframes(nodeId, snapshot);
     }
   );
 }

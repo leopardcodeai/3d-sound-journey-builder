@@ -3,6 +3,7 @@
  * Global keys for the field view. Ignored while a text field has focus.
  */
 import { t } from '../i18n.js';
+import { createMoveCommand } from '../core/UndoManager.js';
 
 /**
  * The shortcuts, in the order they are shown. Kept in this file and directly
@@ -109,10 +110,10 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
       case '0': canvasGrid.resetView(); toast(t('reset')); return;
       case '+': case '=': canvasGrid._targetZoom = Math.min(3.2, canvasGrid._targetZoom * 1.2); return;
       case '-': canvasGrid._targetZoom = Math.max(0.35, canvasGrid._targetZoom / 1.2); return;
-      case 'ArrowLeft': e.preventDefault(); nudge(canvasGrid, audioEngine, -0.25, 0); return;
-      case 'ArrowRight': e.preventDefault(); nudge(canvasGrid, audioEngine, 0.25, 0); return;
-      case 'ArrowUp': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, 0.25); return;
-      case 'ArrowDown': e.preventDefault(); nudge(canvasGrid, audioEngine, 0, -0.25); return;
+      case 'ArrowLeft': e.preventDefault(); nudge({ canvasGrid, audioEngine, undoManager, timeline }, -0.25, 0); return;
+      case 'ArrowRight': e.preventDefault(); nudge({ canvasGrid, audioEngine, undoManager, timeline }, 0.25, 0); return;
+      case 'ArrowUp': e.preventDefault(); nudge({ canvasGrid, audioEngine, undoManager, timeline }, 0, 0.25); return;
+      case 'ArrowDown': e.preventDefault(); nudge({ canvasGrid, audioEngine, undoManager, timeline }, 0, -0.25); return;
       case '?':
         if (onShowShortcuts) { e.preventDefault(); onShowShortcuts(); }
         return;
@@ -126,7 +127,7 @@ export function initKeyboardShortcuts({ canvasGrid, audioEngine, undoManager, ti
 }
 
 /** Arrow keys move the selected sound, or pan the camera when nothing is selected. */
-function nudge(canvasGrid, audioEngine, dx, dy) {
+function nudge({ canvasGrid, audioEngine, undoManager, timeline }, dx, dy) {
   const id = canvasGrid.selectedNodeId;
   const node = id ? audioEngine.sources.get(id) : null;
   if (!node || node.spatial === false) {
@@ -134,8 +135,11 @@ function nudge(canvasGrid, audioEngine, dx, dy) {
     canvasGrid._targetPanY += dy * 120;
     return;
   }
-  audioEngine.updateSourcePosition(id, clamp(node.x + dx), clamp(node.y + dy), node.z);
-  if (canvasGrid.callbacks.onNodeMoved) canvasGrid.callbacks.onNodeMoved(node);
+  // A move like any other: undoable, and recorded into the keyframes at the
+  // playhead. It used to write straight to the engine, so an arrow key was the
+  // one way to move a sound that neither undo nor the journey knew about.
+  const cmd = createMoveCommand(audioEngine, canvasGrid, id, node.x, node.y, node.z, clamp(node.x + dx), clamp(node.y + dy), node.z, timeline);
+  if (undoManager && undoManager.execute) undoManager.execute(cmd); else cmd.execute();
 }
 
 function clamp(v) { return Math.max(-10, Math.min(10, Math.round(v * 100) / 100)); }

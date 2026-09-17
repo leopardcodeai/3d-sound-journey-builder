@@ -13,7 +13,7 @@ import { getSound, soundName, SOLFEGGIO, bandForBeat } from '../data/SoundLibrar
 import { icon } from './Icons.js';
 import { syncRangeFills } from './sliders.js';
 import { t } from '../i18n.js';
-import { Command, createVolumeCommand, createParamCommand, createAutomationCommand, createDeleteCommand } from '../core/UndoManager.js';
+import { Command, createVolumeCommand, createParamCommand, createAutomationCommand, createDeleteCommand, createMoveCommand } from '../core/UndoManager.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -133,6 +133,12 @@ export class Inspector {
       // that was captured from the same control.
       this._commitKey = input.dataset.key;
       this._commitStart = this._readValue(this._commitKey);
+      // Position controls commit as one move from here to wherever the
+      // slider lets go, so they are undoable and land in the keyframes like
+      // a drag does. They used to write straight to the engine and no
+      // keyframe ever heard of it: set a height, press play, gone.
+      const n = this._node();
+      this._commitPos = n ? { x: n.x, y: n.y, z: n.z } : null;
     };
     this.paneEl.addEventListener('pointerdown', rememberStart);
     this.paneEl.addEventListener('focusin', rememberStart);
@@ -297,24 +303,31 @@ export class Inspector {
       row({ key: 'autoSpeed', label: t('speed'), min: 0.0002, max: 0.05, step: 0.0002, value: auto.speed, format: v => v.toFixed(4) }),
       row({ key: 'autoRadius', label: t('radius'), min: 1, max: 9.5, step: 0.1, value: auto.radius, unit: 'm' }),
     ].join('') : `<p class="note">${t('noMotion')}</p>`;
-    return `<div class="motion-grid">${buttons}</div>${params}`;
+    // Keyframes belong here as much as in Time: motion is what they make.
+    return `<div class="motion-grid">${buttons}</div>${params}${this._kfBlock(node)}`;
+  }
+
+  _kfBlock(node) {
+    if (!this.timeline) return '';
+    const kfs = this.timeline.keyframes.get(node.id) || [];
+    return `<div class="kf-block">
+        <div class="kf-head"><span>${t('keyframes')}</span><span class="mono">${kfs.length}</span></div>
+        <p class="note">${t('keyframeHow')}</p>
+        <button class="btn btn-ghost insp-add-kf">${icon('keyframe', { size: 13 })}<span>${t('addKeyframe')}</span></button>
+      </div>`;
   }
 
   _paneTime(node) {
     if (!this.timeline) return '';
     this.timeline.ensureTiming(node.id);
     const timing = this.timeline.sourceTimings.get(node.id);
-    const kfs = this.timeline.keyframes.get(node.id) || [];
     return [
       row({ key: 'clipStart', label: t('clipStart'), min: 0, max: this.timeline.totalDuration, step: 1, value: timing.startTime, format: mmss }),
       row({ key: 'clipDuration', label: t('clipEnd'), min: 1, max: this.timeline.totalDuration, step: 1, value: timing.startTime + timing.duration, format: mmss }),
       row({ key: 'rampUp', label: t('rampUp'), min: 0, max: 60, step: 0.5, value: node.rampUp || 0, unit: 's' }),
       row({ key: 'rampDown', label: t('rampDown'), min: 0, max: 60, step: 0.5, value: node.rampDown || 0, unit: 's' }),
       row({ key: 'repeat', label: t('repeatEvery'), min: 0, max: 300, step: 5, value: node.repeatInterval || 0, format: v => (v > 0 ? `${v}s` : t('timerOff')) }),
-      `<div class="kf-block">
-        <div class="kf-head"><span>${t('keyframes')}</span><span class="mono">${kfs.length}</span></div>
-        <button class="btn btn-ghost insp-add-kf">${icon('keyframe', { size: 13 })}<span>${t('addKeyframe')}</span></button>
-      </div>`,
+      this._kfBlock(node),
     ].join('');
   }
 
@@ -327,7 +340,23 @@ export class Inspector {
     return this._commitKey === key && this._commitStart !== null ? this._commitStart : null;
   }
 
+  /**
+   * One undoable move from where the control was picked up to where the
+   * node is now. The engine already has the live position; the command
+   * re-applies it and records it into the keyframes at the playhead.
+   */
+  _commitMove(node) {
+    const from = this._commitPos;
+    this._clearStart();
+    if (!from || !this.undoManager) return;
+    if (from.x === node.x && from.y === node.y && from.z === node.z) return;
+    this.undoManager.execute(createMoveCommand(
+      this.audioEngine, this.canvasGrid, node.id, from.x, from.y, from.z, node.x, node.y, node.z, this.timeline,
+    ));
+  }
+
   _clearStart() {
+    this._commitPos = null;
     this._commitStart = null;
     this._commitKey = null;
   }
@@ -379,16 +408,19 @@ export class Inspector {
         return;
       case 'height':
         engine.updateSourcePosition(node.id, node.x, node.y, value);
+        if (commit) this._commitMove(node);
         return;
       case 'distance': {
         const a = Math.atan2(node.y, node.x);
         engine.updateSourcePosition(node.id, Math.cos(a) * value, Math.sin(a) * value, node.z);
+        if (commit) this._commitMove(node);
         return;
       }
       case 'azimuth': {
         const r = Math.hypot(node.x, node.y) || 1;
         const rad = ((90 - value) * Math.PI) / 180;
         engine.updateSourcePosition(node.id, Math.cos(rad) * r, Math.sin(rad) * r, node.z);
+        if (commit) this._commitMove(node);
         return;
       }
       case 'autoSpeed': case 'autoRadius': {

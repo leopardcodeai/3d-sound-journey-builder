@@ -19,6 +19,8 @@ const MIN_PPS = 0.6;
 const MAX_PPS = 60;
 const LANE_H = 40;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+/** A move within this many seconds of an existing keyframe edits it instead of adding one. */
+const KEY_NEAR_SECONDS = 0.5;
 
 /**
  * "Solo Singing bowl" rather than six buttons all called "Solo". Without the
@@ -701,6 +703,47 @@ export class Timeline {
     const index = idx === -1 ? kfs.length : idx;
     kfs.splice(index, 0, kf);
     return { kf, index };
+  }
+
+  /**
+   * Records a position into the keyframes at a time: the keyframe already at
+   * that time if there is one within half a second, otherwise a new one with
+   * the volume the path has there. A source without keyframes is a source
+   * that does not move, so nothing happens for it.
+   *
+   * This is what makes building a journey work the way anyone tries it: put
+   * the playhead somewhere, move the sound, and that is where it is at that
+   * time. Before, every move rewrote the last keyframe whatever the playhead
+   * said, so seek, move, add keyframe produced two identical keyframes and a
+   * sound that never moved; and a height set in the inspector never reached
+   * any keyframe, so play snapped it straight back to the floor.
+   *
+   * Returns a copy of the keyframes as they were, for undo, or null when there
+   * was nothing to record into.
+   */
+  keyPositionAt(id, time, pos) {
+    const kfs = this.keyframes.get(id);
+    if (!kfs || kfs.length === 0) return null;
+    const before = kfs.map(k => ({ ...k }));
+    const t = this._snapTime(time);
+    const near = kfs.find(k => Math.abs(k.time - t) <= KEY_NEAR_SECONDS);
+    if (near) {
+      near.x = pos.x; near.y = pos.y; near.z = pos.z;
+    } else {
+      const s = this._sampleKeyframes(kfs, t);
+      const kf = { time: t, x: pos.x, y: pos.y, z: pos.z, volume: s.volume, easing: 'ease-in-out' };
+      const idx = kfs.findIndex(k => k.time > t);
+      kfs.splice(idx === -1 ? kfs.length : idx, 0, kf);
+    }
+    if (this.visible) this._render();
+    return before;
+  }
+
+  /** Puts a keyframe list back the way keyPositionAt found it. */
+  restoreKeyframes(id, snapshot) {
+    if (!snapshot) return;
+    this.keyframes.set(id, snapshot.map(k => ({ ...k })));
+    if (this.visible) this._render();
   }
 
   /** Add a keyframe at a time, routed through undo when available. */

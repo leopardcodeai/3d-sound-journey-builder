@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-09-17
+
+Found by building a journey from nothing, the way a first user would.
+
+### Changed
+
+- **A move lands in the keyframes at the playhead.** Put the playhead
+  somewhere, move the sound, and that is where it is at that time; a keyframe
+  already there is edited, otherwise one is added. Drags, the inspector's
+  distance, direction and height sliders, and the arrow keys all do this, and
+  all of it is undoable. Before, every move rewrote the last keyframe whatever
+  the playhead said, so seek, move, add keyframe gave two identical keyframes
+  and a sound that never moved; and a height set in the inspector reached no
+  keyframe at all, so play snapped it back to the floor.
+- **Keyframes show in the Motion tab too**, with one line saying how they
+  come about.
+- **No more prompt().** A saved scene takes its name from a field in the
+  drawer or gets one that reads as a moment; a link goes to the phone's share
+  sheet, the desktop's clipboard, or a visible box.
+- An empty field says what to do instead of how to drag what is not there.
+
+### Fixed
+
+- The :root block was closed a line early by 2.2.1, so on every desktop the
+  panels lost their width. Live for about twenty minutes. A test reads the
+  stylesheet now.
+
 ## [2.2.1] - 2026-09-17
 
 ### Added

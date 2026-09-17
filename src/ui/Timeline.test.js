@@ -572,3 +572,58 @@ describe('the two coordinate systems (reported from a phone, 2026-09-15)', () =>
     }
   });
 });
+
+/**
+ * A move lands in the keyframes at the playhead. Before, every move rewrote
+ * the last keyframe whatever the playhead said, so the natural way of building
+ * a journey (seek, move, add keyframe) produced two identical keyframes and a
+ * sound that never moved.
+ */
+describe('keyPositionAt records a move where the playhead is', () => {
+  let container, audioEngine, canvasGrid, timeline;
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    audioEngine = createMockAudioEngine();
+    canvasGrid = createMockCanvasGrid();
+    timeline = new Timeline(container, audioEngine, canvasGrid);
+    timeline.setSnap && timeline.setSnap(false);
+  });
+
+  it('adds a keyframe at the playhead when none is near, with the volume the path has there', () => {
+    addSource(audioEngine, 's1', { volume: 0.5 });
+    timeline.setKeyframes('s1', [{ time: 0, x: 1, y: 1, z: 0, volume: 0.2 }, { time: 200, x: 1, y: 1, z: 0, volume: 0.8 }]);
+    const snap = timeline.keyPositionAt('s1', 100, { x: -4, y: 2, z: 1.5 });
+    const kfs = timeline.keyframes.get('s1');
+    expect(kfs.map(k => k.time)).toEqual([0, 100, 200]);
+    expect(kfs[1]).toMatchObject({ x: -4, y: 2, z: 1.5 });
+    expect(kfs[1].volume).toBeCloseTo(0.5, 6);
+    expect(snap.length).toBe(2);
+  });
+
+  it('edits the keyframe already at the playhead instead of stacking another', () => {
+    addSource(audioEngine, 's1');
+    timeline.setKeyframes('s1', [{ time: 0, x: 1, y: 1, z: 0, volume: 0.5 }]);
+    timeline.keyPositionAt('s1', 0.3, { x: 3, y: 3, z: 2.5 });
+    const kfs = timeline.keyframes.get('s1');
+    expect(kfs.length).toBe(1);
+    expect(kfs[0]).toMatchObject({ time: 0, x: 3, y: 3, z: 2.5 });
+  });
+
+  it('leaves a sound without keyframes alone, because it does not move', () => {
+    addSource(audioEngine, 's1');
+    expect(timeline.keyPositionAt('s1', 60, { x: 1, y: 1, z: 0 })).toBeNull();
+    expect(timeline.keyframes.has('s1')).toBe(false);
+  });
+
+  it('can be undone from its snapshot', () => {
+    addSource(audioEngine, 's1');
+    timeline.setKeyframes('s1', [{ time: 0, x: 1, y: 1, z: 0, volume: 0.5 }]);
+    const snap = timeline.keyPositionAt('s1', 120, { x: -4, y: 2, z: 0 });
+    expect(timeline.keyframes.get('s1').length).toBe(2);
+    timeline.restoreKeyframes('s1', snap);
+    const back = timeline.keyframes.get('s1');
+    expect(back.length).toBe(1);
+    expect(back[0]).toMatchObject({ time: 0, x: 1, y: 1, z: 0, volume: 0.5 });
+  });
+});

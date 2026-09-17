@@ -24,6 +24,7 @@ import { JOURNEYS, JOURNEY_ORDER, MODES, SOUND_SETS, SET_ORDER } from './data/Pr
 import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoManager.js';
 import { loadPrefs, savePrefs, resetPrefs, DEFAULTS, START_FOCUS, START_EMPTY } from './core/Preferences.js';
 import { KeepAlive } from './audio/KeepAlive.js';
+import { defaultSceneName, shareLink } from './core/share.js';
 import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
 import { buildLabel } from './core/version.js';
 
@@ -262,6 +263,7 @@ async function addSound(type, opts = {}) {
 
   if (!timeline.visible && audioEngine.sources.size > 0) showTimeline(true);
   timeline._render();
+  setHint('');
   return source;
 }
 
@@ -555,6 +557,7 @@ function openListenerSettings() {
 }
 
 function refreshPanels() {
+  setHint('');
   if (library) library.refresh();
   if (focusView && focusView.visible) { focusView.renderLayers(); focusView.renderReadout(); }
   renderSceneList();
@@ -567,8 +570,12 @@ function refreshPanels() {
 function setHint(text) {
   const el = $('#field-hint');
   if (!el) return;
-  if (text) { el.textContent = text; el.classList.add('is-loud'); }
-  else { el.textContent = t('dragHint'); el.classList.remove('is-loud'); }
+  if (text) { el.textContent = text; el.classList.add('is-loud'); return; }
+  // With nothing placed, say what to do rather than how to drag what is not
+  // there. The old hint opened an empty field with "Drag to move".
+  const empty = audioEngine.sources.size === 0;
+  el.textContent = t(empty ? 'emptyFieldHint' : 'dragHint');
+  el.classList.toggle('is-loud', empty);
 }
 
 let toastTimer = null;
@@ -655,6 +662,8 @@ function setHeadTrackerUI(active) {
 function updateSliderFills(root) { syncRangeFills(root); }
 
 function renderSceneList() {
+  const nameField = $('#scene-name');
+  if (nameField) nameField.placeholder = t('sceneName');
   const container = $('#scene-list');
   if (!container) return;
   const names = sceneManager.getSceneNames();
@@ -969,17 +978,29 @@ function bindUI() {
   });
 
   // Scenes
-  $('#save-scene-btn').addEventListener('click', () => {
-    const name = prompt(t('sceneName'));
-    if (!name) return;
+  // No prompt() anywhere in here. It is the one dialog the app cannot
+  // style, it is refused in some embedded contexts, and on a phone it looks
+  // like another app's. A name comes from the field or gets a default that
+  // reads as a moment; a link goes to the share sheet on a phone, the
+  // clipboard on a desktop, and into a visible box if neither will have it.
+  const saveScene = () => {
+    const field = $('#scene-name');
+    const typed = field ? field.value.trim() : '';
+    const name = typed || defaultSceneName([...sceneManager.scenes.keys()]);
     sceneManager.saveScene(name);
+    if (field) field.value = '';
     renderSceneList();
     showToast(`${t('savedAs')}: ${name}`);
-  });
+  };
+  $('#save-scene-btn').addEventListener('click', saveScene);
+  $('#scene-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveScene(); } });
   $('#share-scene-btn').addEventListener('click', async () => {
     const url = sceneManager.exportToURL();
-    try { await navigator.clipboard.writeText(url); showToast(t('linkCopied')); }
-    catch (e) { prompt(t('copyLink'), url); }
+    const box = $('#share-link');
+    const result = await shareLink(url, { preferSheet: window.matchMedia('(pointer: coarse)').matches });
+    if (result === 'copied') { showToast(t('linkCopied')); if (box) box.hidden = true; }
+    else if (result === 'shown' && box) { box.hidden = false; box.value = url; box.focus(); box.select(); showToast(t('copyLink')); }
+    // 'shared' and 'cancelled': the sheet has said everything there was to say.
   });
   $('#scene-list').addEventListener('click', async (e) => {
     const del = e.target.closest('.scene-del');
@@ -1146,6 +1167,7 @@ async function startApp(mode) {
   else await openTarget(START_EMPTY);
 
   canvasGrid.resize();
+  setHint('');
 }
 
 function boot() {

@@ -12,12 +12,14 @@ function harness() {
   const calls = { toggleView: 0, toasts: [] };
   const canvasGrid = {
     selectedNodeId: null, setViewMode: vi.fn(), resetView: vi.fn(),
-    _targetZoom: 1, getNode: () => null,
+    _targetZoom: 1, getNode: () => null, callbacks: {},
   };
+  const audioEngine = { sources: new Map(), toggleSource: vi.fn(), removeSource: vi.fn(), updateSourcePosition: vi.fn() };
+  calls.audioEngine = audioEngine;
   initKeyboardShortcuts({
     canvasGrid,
-    audioEngine: { sources: new Map(), toggleSource: vi.fn(), removeSource: vi.fn() },
-    undoManager: { undo: vi.fn(), redo: vi.fn(), push: vi.fn() },
+    audioEngine,
+    undoManager: { undo: vi.fn(), redo: vi.fn(), push: vi.fn(), execute: vi.fn((cmd) => cmd.execute()) },
     timeline: { isPlaying: false, play: vi.fn(), pause: vi.fn(), addKeyframe: vi.fn(), visible: false },
     inspector: { render: vi.fn() },
     onToggleView: () => { calls.toggleView += 1; },
@@ -61,6 +63,16 @@ describe('keyboard shortcuts leave the browser its own keys', () => {
     press('v', input);
     expect(calls.toggleView).toBe(0);
     input.remove();
+  });
+
+  it('nudges a selected sound as an undoable move', () => {
+    // An arrow key used to write straight to the engine, the one way to move
+    // a sound that neither undo nor the journey's keyframes knew about.
+    const { calls, canvasGrid } = harness();
+    calls.audioEngine.sources.set('a', { id: 'a', x: 0, y: 0, z: 0, spatial: true });
+    canvasGrid.selectedNodeId = 'a';
+    press('ArrowRight');
+    expect(calls.audioEngine.updateSourcePosition).toHaveBeenCalledWith('a', 0.25, 0, 0);
   });
 
   it('documents the key it actually uses', () => {

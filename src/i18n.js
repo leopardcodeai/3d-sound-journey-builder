@@ -169,6 +169,7 @@ const EN = {
   rampDown: 'Fade out',
   repeatEvery: 'Repeat every',
   addKeyframe: 'Add keyframe here',
+  keyframeHow: 'Put the playhead somewhere and move the sound: that is where it is at that time.',
   keyframes: 'Keyframes',
   removeSound: 'Remove',
   soloSound: 'Solo',
@@ -324,6 +325,7 @@ const EN = {
   redo: 'Redo',
   shortcuts: 'Shortcuts',
   dragHint: 'Drag to move · Alt-drag for height · Right-drag to orbit',
+  emptyFieldHint: 'Add a sound from the library to begin.',
 
   // --- evidence notes (see docs/research) ---
   noteBinaural: 'Meta-analysis finds a modest average effect; the entrainment mechanism itself is contested. Needs headphones.',
@@ -505,6 +507,7 @@ const DE = {
   rampDown: 'Ausblenden',
   repeatEvery: 'Wiederholen alle',
   addKeyframe: 'Keyframe hier setzen',
+  keyframeHow: 'Abspielkopf irgendwohin setzen und den Klang bewegen: dort steht er dann zu dieser Zeit.',
   keyframes: 'Keyframes',
   removeSound: 'Entfernen',
   soloSound: 'Solo',
@@ -653,6 +656,7 @@ const DE = {
   redo: 'Wiederholen',
   shortcuts: 'Tastenkürzel',
   dragHint: 'Ziehen bewegt · Alt-Ziehen ändert die Höhe · Rechts-Ziehen dreht die Kamera',
+  emptyFieldHint: 'Füge einen Klang aus der Bibliothek hinzu, dann geht es los.',
 
   // --- Evidenz-Hinweise (siehe docs/research) ---
   noteBinaural: 'Eine Metaanalyse findet einen kleinen Durchschnittseffekt, der Mechanismus selbst ist umstritten. Braucht Kopfhörer.',

@@ -138,6 +138,23 @@ describe('Command helpers', () => {
 
       expect(engine.updateSourcePosition).toHaveBeenCalledWith('src1', 0, 0, 0);
     });
+
+    it('records the move into the keyframes at the playhead, and takes it back on undo', () => {
+      // Every move used to rewrite the last keyframe whatever the playhead
+      // said; a journey built by seeking and moving never moved.
+      const engine = createMockEngine();
+      const grid = createMockGrid();
+      engine.sources.set('src1', { id: 'src1', x: 0, y: 0, z: 0 });
+      const snapshot = [{ time: 0, x: 0, y: 0, z: 0 }];
+      const timeline = { playheadTime: 120, keyPositionAt: vi.fn(() => snapshot), restoreKeyframes: vi.fn() };
+
+      const cmd = createMoveCommand(engine, grid, 'src1', 0, 0, 0, 3, 4, 2, timeline);
+      timeline.playheadTime = 500;   // moving on afterwards must not move the record
+      cmd.execute();
+      expect(timeline.keyPositionAt).toHaveBeenCalledWith('src1', 120, { x: 3, y: 4, z: 2 });
+      cmd.undo();
+      expect(timeline.restoreKeyframes).toHaveBeenCalledWith('src1', snapshot);
+    });
   });
 
   describe('createAddCommand', () => {
