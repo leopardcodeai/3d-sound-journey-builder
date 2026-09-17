@@ -23,6 +23,7 @@ import { getSound, soundName, SOUND_URLS } from './data/SoundLibrary.js';
 import { JOURNEYS, JOURNEY_ORDER, MODES, SOUND_SETS, SET_ORDER } from './data/Presets.js';
 import { UndoManager, createMoveCommand, createAddCommand } from './core/UndoManager.js';
 import { loadPrefs, savePrefs, resetPrefs, DEFAULTS, START_FOCUS, START_EMPTY } from './core/Preferences.js';
+import { KeepAlive } from './audio/KeepAlive.js';
 import { t, setLanguage, getLanguage, applyTranslations } from './i18n.js';
 import { buildLabel } from './core/version.js';
 
@@ -41,8 +42,18 @@ let focusView = null;
 const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
   onNodeSelected: (node) => {
     if (inspector) inspector.show(node);
-    if (node) openMobilePanel('inspector');
+    // Not openMobilePanel('inspector') here. Selection fires on pointer-down,
+    // which is also how a drag begins, so on a phone the sheet rose over the
+    // field the moment a finger landed on a sound, and nothing could be moved.
+    // The sheet is prepared silently; the tab bar shows there is something in
+    // it, and the Inspector tab or a double tap opens it.
+    syncTabBar();
     if (timeline && timeline.visible) timeline._render();
+  },
+  onNodeActivated: (node) => {
+    if (!node || !inspector) return;
+    inspector.show(node);
+    openMobilePanel('inspector');
   },
   onNodeMoved: (node) => { if (inspector) inspector.update(node); },
   onNodeDragEnd: (id, ox, oy, oz, nx, ny, nz) => {
@@ -53,9 +64,21 @@ const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
 });
 
 const timeline = new Timeline($('#timeline-dock'), audioEngine, canvasGrid);
+
+/**
+ * Keeps iOS from stopping the audio when the screen locks, and gives the lock
+ * screen a play and pause that mean something. The engine starts it inside
+ * every gesture that starts sound and follows it with whether anything plays.
+ */
+const keepAlive = new KeepAlive({
+  onPlay: () => { if (currentView === 'focus') focusView.start(); else timeline.play(); },
+  onPause: () => { if (currentView === 'focus') focusView.pause(); else timeline.pause(); },
+});
+audioEngine.keepAlive = keepAlive;
 timeline.undoManager = undoManager;
 canvasGrid.timeline = timeline;
 timeline.onSnapChange = (on) => savePrefs({ snap: on });
+timeline.onFinished = () => showToast(t('journeyEnded'));
 timeline.onSelect = (id) => {
   canvasGrid.selectedNodeId = id;
   if (inspector) inspector.show(audioEngine.sources.get(id));
@@ -66,17 +89,10 @@ audioEngine._speakerConfig = speakerConfig;
 const sceneManager = new SceneManager(audioEngine, canvasGrid, timeline);
 
 const soundscapeTimer = new SoundscapeTimer(audioEngine, {
-  onTick: (remaining) => {
-    const el = $('#timer-display');
-    if (!el) return;
-    const h = Math.floor(remaining / 3600);
-    const m = Math.floor((remaining % 3600) / 60);
-    const s = remaining % 60;
-    el.textContent = h > 0
-      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-      : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  },
-  onStop: () => { $('#timer-display').textContent = '--:--'; $('#timer-cancel').hidden = true; },
+  onStart: () => syncTimerUI(),
+  onTick: () => syncTimerUI(),
+  onStop: () => syncTimerUI(),
+  onFadeStart: () => syncTimerUI(),
   // The timer pausing every source is not enough on its own: a running
   // timeline puts them straight back, because _applyKeyframes restarts
   // anything inside its clip window. Measured after a fade: two sources were
@@ -85,14 +101,36 @@ const soundscapeTimer = new SoundscapeTimer(audioEngine, {
     if (timeline && timeline.isPlaying) timeline.pause();
     if (focusView && focusView.running) focusView.pause();
     showToast(t('timerDone'));
+    syncTimerUI();
   },
 });
 
 /**
- * Posture from the way the phone is held. It never changes the setting behind
- * the user's back without saying so, and any manual choice switches it off:
- * a control that moves on its own reads as a fault.
+ * The timer shows in two places, the header button and the settings drawer,
+ * and both read the same state so they cannot disagree. While it counts down
+ * the header shows what is left; while it fades it says so.
  */
+function syncTimerUI() {
+  const running = soundscapeTimer.running;
+  const fading = soundscapeTimer.fading;
+  const active = running || fading;
+  const text = fading ? t('timerFading') : running ? soundscapeTimer.formatRemaining() : '--:--';
+  const drawerReadout = $('#timer-display');
+  if (drawerReadout) drawerReadout.textContent = text;
+  const left = $('#sleep-timer-left');
+  if (left) { left.textContent = active ? text : ''; left.hidden = !active; }
+  const btn = $('#sleep-timer-btn');
+  if (btn) btn.classList.toggle('is-on', active);
+  for (const sel of ['#timer-cancel', '#sleep-timer-cancel']) {
+    const el = $(sel);
+    if (el) el.hidden = !active;
+  }
+  const minutes = running ? Math.round(soundscapeTimer.duration / 60) : null;
+  document.querySelectorAll('#timer-chips .chip, #sleep-timer-chips .chip').forEach(c => {
+    c.classList.toggle('is-on', minutes !== null && parseInt(c.dataset.minutes, 10) === minutes);
+  });
+}
+
 /**
  * What a posture preset actually put into the engine.
  *
@@ -113,6 +151,11 @@ function posturePrefs(posture) {
   };
 }
 
+/**
+ * Posture from the way the phone is held. It never changes the setting behind
+ * the user's back without saying so, and any manual choice switches it off:
+ * a control that moves on its own reads as a fault.
+ */
 const postureSensor = new PostureSensor({
   onPosture: (posture) => {
     if (!prefsFollowDevice()) return;
@@ -145,7 +188,9 @@ library = new Library($('#panel-library'), audioEngine, {
   onUpload: (file) => importAudioFile(file),
 });
 
-inspector = new Inspector($('#panel-inspector'), audioEngine, canvasGrid, timeline, undoManager);
+inspector = new Inspector($('#panel-inspector'), audioEngine, canvasGrid, timeline, undoManager, {
+  onClose: () => { openMobilePanel('field'); syncTabBar(); },
+});
 
 focusView = new FocusView($('#view-focus'), audioEngine, {
   onOpenField: () => setView('field'),
@@ -184,6 +229,12 @@ async function addSound(type, opts = {}) {
 
   canvasGrid.selectedNodeId = id;
   inspector.show(source);
+  // On a phone the library is a sheet over the field, so the new sound landed
+  // out of sight behind it. Put the sheet away and say where it went.
+  if (window.innerWidth <= 900) {
+    openMobilePanel('field');
+    showToast(t('soundPlaced').replace('{name}', source.name));
+  }
   undoManager.execute(createAddCommand(audioEngine, canvasGrid, {
     id, type, name: source.name, x: source.x, y: source.y, z: source.z, volume, gen: source.gen, params: { ...source.params },
   }, timeline));
@@ -431,6 +482,9 @@ function syncTabBar() {
     }
     const on = p === selected;
     b.classList.toggle('is-on', on);
+    // Selecting a sound no longer opens the inspector sheet over the field, so
+    // the tab carries a dot while there is a selection to edit in it.
+    if (p === 'inspector') b.classList.toggle('is-open', !on && !!canvasGrid.selectedNodeId);
     if (on) b.setAttribute('aria-current', 'true');
     else b.removeAttribute('aria-current');
   });
@@ -440,6 +494,9 @@ function openMobilePanel(panel) {
   if (window.innerWidth > 900) return;
   document.body.dataset.panel = panel;
   syncTabBar();
+  // A sheet takes the lower half, and the canvas gives it up rather than
+  // hiding under it, so the field re-centres in the half you can still touch.
+  requestAnimationFrame(() => canvasGrid.resize());
 }
 
 /** The tab bar toggles: tapping the open panel again returns to the field. */
@@ -925,14 +982,29 @@ function bindUI() {
   $('#timer-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    document.querySelectorAll('#timer-chips .chip').forEach(c => c.classList.toggle('is-on', c === chip));
     soundscapeTimer.start(parseInt(chip.dataset.minutes, 10));
-    $('#timer-cancel').hidden = false;
   });
-  $('#timer-cancel').addEventListener('click', () => {
-    soundscapeTimer.stop();
-    document.querySelectorAll('#timer-chips .chip').forEach(c => c.classList.remove('is-on'));
+  $('#timer-cancel').addEventListener('click', () => soundscapeTimer.stop());
+
+  // Sleep timer in the header. Used in the dark with one hand, so it is one
+  // press from anywhere rather than a section inside the settings drawer.
+  const timerBtn = $('#sleep-timer-btn');
+  const timerPop = $('#sleep-timer-pop');
+  const setTimerPop = (open) => {
+    timerPop.hidden = !open;
+    timerBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  timerBtn.addEventListener('click', (e) => { e.stopPropagation(); setTimerPop(timerPop.hidden); });
+  timerPop.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => { if (!timerPop.hidden) setTimerPop(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !timerPop.hidden) setTimerPop(false); });
+  $('#sleep-timer-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    soundscapeTimer.start(parseInt(chip.dataset.minutes, 10));
+    setTimerPop(false);
   });
+  $('#sleep-timer-cancel').addEventListener('click', () => { soundscapeTimer.stop(); setTimerPop(false); });
 
   // Session
   $('#new-session-btn').addEventListener('click', () => {
@@ -1029,6 +1101,7 @@ function afterUndo() {
 
 async function startApp(mode) {
   audioEngine.init();
+  keepAlive.attach(audioEngine.ctx);
   await audioEngine.resume();
 
   const dot = $('#audio-status');

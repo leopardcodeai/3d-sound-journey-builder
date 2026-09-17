@@ -163,10 +163,26 @@ export class SpatialAudioEngine {
     console.log('Spatial audio engine ready');
   }
 
+  /**
+   * Every gesture that starts audio comes through here. The keep-alive has to
+   * start before the first await, or iOS no longer counts it as part of the
+   * gesture and refuses it; that is why it goes first and is not awaited.
+   */
   async resume() {
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.keepAlive && this.keepAlive.play) this.keepAlive.play();
+    if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
       try { await this.ctx.resume(); } catch (e) { /* user gesture required */ }
     }
+  }
+
+  /** True while any source is producing sound. Drives the keep-alive. */
+  anyPlaying() {
+    for (const src of this.sources.values()) if (src && src.isPlaying) return true;
+    return false;
+  }
+
+  _syncKeepAlive() {
+    if (this.keepAlive && this.keepAlive.sync) this.keepAlive.sync(this.anyPlaying());
   }
 
   destroy() {
@@ -248,12 +264,15 @@ export class SpatialAudioEngine {
     const rad = ((Number.isFinite(headTilt) ? headTilt : 0) * Math.PI) / 180;
     let forward, up;
     if (posture === 'lying-back') {
-      // On your back: face the sky, crown towards the top of the map, feet
-      // towards the bottom. You are looking up at the screen rather than down
-      // at it, so left and right are mirrored against the standing case. That
-      // is not a bug to correct, it is what lying under a map means.
+      // On your back: face the sky, feet towards the top of the map, crown
+      // towards the bottom. Decided on the mat, not at the desk: with the
+      // phone held up while lying down, this is the orientation in which a
+      // sound drawn on the right of the screen is heard on the right. The
+      // vectors then say the rest: right ear to the map's right, no mirror.
+      // The earlier orientation had the crown at the top, which put the right
+      // ear on the map's left; geometrically defensible, and wrong in the hand.
       forward = [0, 0, 1];
-      up = [-Math.sin(rad), Math.cos(rad), 0];
+      up = [Math.sin(rad), -Math.cos(rad), 0];
     } else if (posture === 'lying-side') {
       // On your side: face along the map, crown out to the right of it, so one
       // ear is against the pillow and the other faces the ceiling. That full
@@ -433,6 +452,8 @@ export class SpatialAudioEngine {
     if (src.inserts.reverb > 0 && src.reverbSend) src.reverbSend.gain.setValueAtTime(src.inserts.reverb, t);
 
     this.sources.set(id, src);
+
+    this._syncKeepAlive();
     this._notify();
     return src;
   }
@@ -837,6 +858,7 @@ export class SpatialAudioEngine {
         this._restartGenerator(src);
         src.isPlaying = true;
       }
+      this._syncKeepAlive();
       return src.isPlaying;
     }
 
@@ -852,6 +874,7 @@ export class SpatialAudioEngine {
       src.sourceNode = node;
       src.isPlaying = true;
     }
+    this._syncKeepAlive();
     return src.isPlaying;
   }
 
@@ -948,6 +971,7 @@ export class SpatialAudioEngine {
     }
     if (src.analyser) { try { src.analyser.disconnect(); } catch (e) {} }
     this.sources.delete(id);
+    this._syncKeepAlive();
     this._notify();
   }
 

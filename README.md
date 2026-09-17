@@ -169,6 +169,30 @@ World space is metres: x to the right, y forward, z up. Web Audio takes
 and perspective; picking and dragging run through the inverse projection, so
 they stay exact at any angle.
 
+### On a phone
+
+Add the app to the home screen from Safari's share sheet; it opens full screen
+with its own icon. Audio keeps playing when the screen locks: iOS only keeps a
+page's audio session alive while a media element is playing, so a one-second
+loop of digital silence runs in an `<audio>` element whenever anything plays,
+started inside the same tap that starts the sound. The lock screen shows play
+and pause, and they drive the transport. The transport itself runs on the audio
+clock, so a locked screen neither stalls it nor makes it jump.
+
+The sleep timer sits in the header: 15 to 90 minutes, then a twenty-second fade
+to silence. It keeps a deadline rather than counting seconds, so it does not
+drift when the phone throttles timers with the screen off.
+
+Lying on your back, the figure lies feet towards the top of the map and a sound
+drawn on the right is heard on the right. Lying on your side is a 75 degree
+roll, not a full quarter turn, because at exactly 90 degrees the flat map loses
+its left and right entirely (measured: 0.0 dB right minus left for a source
+three metres to the map's right; 7.7 dB at 75 degrees).
+
+Not verified on a physical iPhone from this machine: the lock-screen keep-alive
+and the standalone layout were built from the platform's documented behaviour
+and need a real device to confirm.
+
 ### What the renderer can and cannot place
 
 The browser's own HRTF does the binaural work, and it has limits worth stating

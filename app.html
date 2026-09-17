@@ -9,7 +9,8 @@
     <meta name="theme-color" content="#0b0a0a" />
     <meta name="description" content="Place sounds around your head, move them over time, and layer in frequency tools. Runs entirely in the browser." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Sound Journey Builder</title>
   </head>
   <body class="pre-start">
@@ -47,6 +48,23 @@
         <button class="icon-btn" id="mute-btn" data-i18n-title="mute"><span data-icon="volume" data-size="15"></span></button>
         <button class="icon-btn" id="undo-btn" data-i18n-title="undo"><span data-icon="undo" data-size="15"></span></button>
         <button class="icon-btn" id="redo-btn" data-i18n-title="redo"><span data-icon="redo" data-size="15"></span></button>
+        <div class="sleep-timer">
+          <button class="icon-btn sleep-timer-btn" id="sleep-timer-btn" data-i18n-title="sleepTimer" aria-haspopup="dialog" aria-expanded="false">
+            <span data-icon="clock" data-size="15"></span><span class="sleep-timer-left mono" id="sleep-timer-left" hidden></span>
+          </button>
+          <div class="popover" id="sleep-timer-pop" hidden role="dialog" aria-labelledby="sleep-timer-title">
+            <div class="popover-title" id="sleep-timer-title" data-i18n="sleepTimer">Sleep timer</div>
+            <p class="note" data-i18n="sleepTimerHelp"></p>
+            <div class="chips" id="sleep-timer-chips" role="group" aria-labelledby="sleep-timer-title">
+              <button class="chip" data-minutes="15">15</button>
+              <button class="chip" data-minutes="30">30</button>
+              <button class="chip" data-minutes="45">45</button>
+              <button class="chip" data-minutes="60">60</button>
+              <button class="chip" data-minutes="90">90</button>
+            </div>
+            <button class="btn btn-ghost" id="sleep-timer-cancel" hidden data-i18n="cancelTimer">Cancel timer</button>
+          </div>
+        </div>
         <button class="icon-btn" id="settings-btn" data-i18n-title="settings"><span data-icon="settings" data-size="15"></span></button>
         <span class="status" id="audio-status"><i class="status-dot"></i><span class="status-text" data-i18n="audioInactive">Audio inactive</span></span>
       </div>

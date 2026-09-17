@@ -440,7 +440,9 @@ export class Timeline {
     if (this.isPlaying) return;
     this._restoreMaster();
     this.isPlaying = true;
-    this._lastFrameTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this._pickClock();
+    this._lastFrameTime = this._clockNow();
+    this._bindVisibility();
     this._setPlayIcon(true);
     this._loop();
   }
@@ -448,9 +450,64 @@ export class Timeline {
   pause() {
     this.isPlaying = false;
     this._setPlayIcon(false);
-    if (this._animationFrame) { cancelAnimationFrame(this._animationFrame); this._animationFrame = null; }
+    this._unschedule();
     if (this._endFadeTimer) { clearTimeout(this._endFadeTimer); this._endFadeTimer = null; this._restoreMaster(); }
     for (const src of this.audioEngine.sources.values()) if (src) src._timelineControlled = false;
+  }
+
+  /**
+   * The transport runs on the audio clock, not the frame clock.
+   *
+   * It used to add performance.now() deltas per animation frame. Frames stop
+   * the moment a phone locks its screen, and on iOS the audio stops with them
+   * unless something keeps the session alive, so on unlock one frame added the
+   * whole absence at once: the playhead jumped to the end, the end fade ran,
+   * and everything came back at full level from zero. That was the tone at
+   * the end of a sleep journey. AudioContext.currentTime only moves while
+   * audio actually renders, so the playhead now stays exactly where the sound
+   * is, whether the context was suspended or kept running in the background.
+   */
+  _pickClock() {
+    const ctx = this.audioEngine && this.audioEngine.ctx;
+    this._clock = ctx && typeof ctx.currentTime === 'number' && ctx.state !== 'closed' ? 'ctx' : 'perf';
+  }
+
+  _clockNow() {
+    const ctx = this.audioEngine && this.audioEngine.ctx;
+    if (this._clock === 'ctx' && ctx && typeof ctx.currentTime === 'number') return ctx.currentTime;
+    return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+  }
+
+  /**
+   * Frames only run in the foreground. With the screen off the journey still
+   * has fades and keyframes to apply, and iOS keeps timers running while our
+   * media session plays, so a slow interval carries the loop in the background
+   * and frames take over again in front.
+   */
+  _scheduleNext() {
+    const hidden = typeof document !== 'undefined' && !!document.hidden;
+    if (hidden) {
+      if (this._animationFrame) { cancelAnimationFrame(this._animationFrame); this._animationFrame = null; }
+      if (!this._bgInterval) this._bgInterval = setInterval(() => this._loop(), 250);
+      return;
+    }
+    if (this._bgInterval) { clearInterval(this._bgInterval); this._bgInterval = null; }
+    if (!this._animationFrame) this._animationFrame = requestAnimationFrame(() => { this._animationFrame = null; this._loop(); });
+  }
+
+  _unschedule() {
+    if (this._animationFrame) { cancelAnimationFrame(this._animationFrame); this._animationFrame = null; }
+    if (this._bgInterval) { clearInterval(this._bgInterval); this._bgInterval = null; }
+  }
+
+  _bindVisibility() {
+    if (this._visibilityBound || typeof document === 'undefined' || !document.addEventListener) return;
+    this._visibilityBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!this.isPlaying) return;
+      this._unschedule();
+      this._scheduleNext();
+    });
   }
 
   stop() {
@@ -482,8 +539,8 @@ export class Timeline {
 
   _loop() {
     if (!this.isPlaying) return;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const dt = (now - this._lastFrameTime) / 1000;
+    const now = this._clockNow();
+    const dt = Math.max(0, now - this._lastFrameTime);
     this._lastFrameTime = now;
     this.playheadTime += dt;
 
@@ -502,7 +559,7 @@ export class Timeline {
     this._updatePlayhead();
     this._applyKeyframes();
     this._autoScroll();
-    this._animationFrame = requestAnimationFrame(() => this._loop());
+    this._scheduleNext();
   }
 
   _restoreMaster() {
@@ -527,11 +584,20 @@ export class Timeline {
       mg.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + FADE);
     }
     this._endFadeTimer = setTimeout(() => {
+      this._endFadeTimer = null;
       this.pause();
+      // Stop what was playing. This used to leave every buffer looping and
+      // then, one line later, re-gain it to its opening level: a journey that
+      // had just faded to silence came straight back at full volume from the
+      // top. Now the end is silence, and play starts it again from zero.
+      for (const [id, src] of this.audioEngine.sources.entries()) {
+        if (src && src.isPlaying && this.audioEngine.toggleSource) this.audioEngine.toggleSource(id);
+      }
       this.playheadTime = 0;
       this._updatePlayhead();
       this._applyKeyframes();
       this._restoreMaster();
+      if (this.onFinished) this.onFinished();
     }, FADE * 1000 + 100);
   }
 
@@ -725,7 +791,11 @@ export class Timeline {
         src._timelineControlled = false;
       }
 
-      if (inWindow && !src.isPlaying) {
+      // Only a running transport starts anything. Stop, scrub, mute and solo
+      // all pass through here, and each of them used to start every source
+      // whose clip covered the playhead, so pressing Stop on a paused, silent
+      // journey set the whole field playing.
+      if (inWindow && !src.isPlaying && this.isPlaying) {
         this.audioEngine.toggleSource(id, Math.max(0, now - timing.startTime));
       }
 

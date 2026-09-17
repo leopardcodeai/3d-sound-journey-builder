@@ -288,6 +288,11 @@ const EN = {
   timer: 'Timer',
   timerOff: 'Off',
   cancelTimer: 'Cancel timer',
+  sleepTimer: 'Sleep timer',
+  sleepTimerHelp: 'Fades everything out over twenty seconds, then stops.',
+  timerFading: 'Fading out',
+  soundPlaced: '{name} placed. Drag it to move it.',
+  journeyEnded: 'Journey finished.',
   minutesShort: 'min',
 
   // --- timeline ---
@@ -612,6 +617,11 @@ const DE = {
   timer: 'Timer',
   timerOff: 'Aus',
   cancelTimer: 'Timer abbrechen',
+  sleepTimer: 'Einschlaf-Timer',
+  sleepTimerHelp: 'Blendet alles über zwanzig Sekunden aus und hält dann an.',
+  timerFading: 'Blendet aus',
+  soundPlaced: '{name} platziert. Zum Verschieben ziehen.',
+  journeyEnded: 'Reise beendet.',
   minutesShort: 'Min',
 
   timelineEmpty: 'Noch keine Klänge',

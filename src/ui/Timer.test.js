@@ -62,7 +62,27 @@ describe('SoundscapeTimer', () => {
       timer.start(10);
 
       expect(timer.duration).toBe(600);
-      expect(callbacks.onStop).toHaveBeenCalledTimes(2);
+      // Once: stopping a timer that was not running is not a stop worth
+      // announcing, and the display used to blank itself before onStart
+      // repainted it.
+      expect(callbacks.onStop).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a deadline, so a throttled background does not stretch it', () => {
+      // A phone with its screen off pauses timers. The old counter fell behind
+      // by however long the tab slept; the deadline does not care.
+      let clock = 0;
+      const listeners = {};
+      const doc = { hidden: false, addEventListener: (t, f) => { listeners[t] = f; }, removeEventListener: () => {} };
+      const cbs = { onTick: vi.fn(), onComplete: vi.fn() };
+      const t = new SoundscapeTimer(mockAudioEngine, cbs, { now: () => clock, doc, fadeSeconds: 3 });
+      t.start(10);
+      expect(t.endsAt).toBe(600000);
+      clock = 15 * 60 * 1000;                 // fifteen minutes later, no ticks in between
+      listeners.visibilitychange();           // the page comes back in front
+      expect(t.remaining).toBe(0);
+      expect(t.running).toBe(false);
+      expect(mockAudioEngine.masterGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 103);
     });
 
     it('starts interval that decrements remaining', () => {
@@ -184,18 +204,24 @@ describe('SoundscapeTimer', () => {
   });
 
   describe('_fadeAndPause', () => {
-    it('calls audioEngine methods for fade out', () => {
+    it('fades over twenty seconds by default, which is a sleep fade and not a stop', () => {
       timer._fadeAndPause();
 
       const gainNode = mockAudioEngine.masterGain.gain;
       expect(gainNode.cancelScheduledValues).toHaveBeenCalled();
       expect(gainNode.setValueAtTime).toHaveBeenCalledWith(0.8, 100);
-      expect(gainNode.linearRampToValueAtTime).toHaveBeenCalledWith(0, 103);
+      expect(gainNode.linearRampToValueAtTime).toHaveBeenCalledWith(0, 120);
+    });
+
+    it('honours a shorter fade when asked', () => {
+      const quick = new SoundscapeTimer(mockAudioEngine, callbacks, { fadeSeconds: 5 });
+      quick._fadeAndPause();
+      expect(mockAudioEngine.masterGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 105);
     });
 
     it('toggles off playing sources after fade', () => {
       timer._fadeAndPause();
-      vi.advanceTimersByTime(3100);
+      vi.advanceTimersByTime(20100);
 
       expect(mockAudioEngine.toggleSource).toHaveBeenCalledWith('src1');
       expect(mockAudioEngine.toggleSource).toHaveBeenCalledWith('src2');
@@ -204,9 +230,16 @@ describe('SoundscapeTimer', () => {
 
     it('calls onComplete callback after fade', () => {
       timer._fadeAndPause();
-      vi.advanceTimersByTime(3100);
+      vi.advanceTimersByTime(20100);
 
       expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('formats what is left for a readout', () => {
+      timer.start(90);
+      expect(timer.formatRemaining()).toBe('1:30:00');
+      vi.advanceTimersByTime(65 * 60 * 1000);
+      expect(timer.formatRemaining()).toBe('25:00');
     });
 
     it('returns early if engine not initialized', () => {

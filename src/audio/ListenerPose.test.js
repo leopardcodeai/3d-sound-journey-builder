@@ -46,20 +46,21 @@ describe('listener pose per posture', () => {
     expect(p.rightEar).toBe('map-right');
   });
 
-  it('lies on its back looking up, head towards the top of the map', () => {
-    // Reported from a phone: this used to point the crown at the bottom of the
-    // map, exactly 180 degrees out. Lying down, you look up at the screen, so
-    // the head belongs at the top and the image is mirrored.
+  it('lies on its back looking up, feet towards the top of the map', () => {
+    // Decided on the mat with the phone in hand, twice over: first the crown
+    // went to the top of the map (mirrored ears, geometrically defensible),
+    // and in use that was wrong. Feet up, head down is the orientation in
+    // which a sound drawn on the right of the screen is heard on the right.
     const p = poseOf('lying-back', 0);
     expect(p.facing).toBe('sky');
-    expect(p.crown).toBe('map-top');
+    expect(p.crown).toBe('map-bottom');
   });
 
-  it('mirrors left and right when lying on the back, which is the whole point', () => {
+  it('keeps left and right the way the phone shows them, standing or lying', () => {
     const standing = poseOf('standing', 0);
     const lying = poseOf('lying-back', 0);
     expect(standing.rightEar).toBe('map-right');
-    expect(lying.rightEar).toBe('map-left');
+    expect(lying.rightEar).toBe('map-right');
   });
 
   it('keeps forward and up perpendicular in every posture', () => {
@@ -87,7 +88,7 @@ describe('listener pose per posture', () => {
     const turned = poseOf('lying-back', 0, 90);
     expect(straight.facing).toBe('sky');
     expect(turned.facing).not.toBe('sky');
-    expect(turned.crown).toBe('map-top');
+    expect(turned.crown).toBe('map-bottom');
   });
 
   it('survives a posture it does not know rather than producing a zero vector', () => {
@@ -169,10 +170,12 @@ describe('poseVectors, the one place that decides where the listener faces', () 
     expect(named('standing')).toMatchObject({ nose: 'map-top', crown: 'sky', rightEar: 'map-right' });
   });
 
-  it('lies on its back facing the sky, crown to the top, ears mirrored', () => {
-    // Mirrored is correct and not a defect: you are under the map looking up at
-    // it, so the map's right is your left.
-    expect(named('lying-back')).toMatchObject({ nose: 'sky', crown: 'map-top', rightEar: 'map-left' });
+  it('lies on its back facing the sky, feet to the top, right ear to the right', () => {
+    // Not mirrored. The crown points at the bottom of the map, so the map's
+    // right is the listener's right, which is what the hand on the phone
+    // expects. The earlier mirrored version was correct for a map seen from
+    // underneath and wrong for a person holding a phone.
+    expect(named('lying-back')).toMatchObject({ nose: 'sky', crown: 'map-bottom', rightEar: 'map-right' });
   });
 
   it('lies on its side with one ear up and one ear down', () => {

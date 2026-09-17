@@ -39,8 +39,9 @@ const MOTIONS = [
 ];
 
 export class Inspector {
-  constructor(root, audioEngine, canvasGrid, timeline, undoManager) {
+  constructor(root, audioEngine, canvasGrid, timeline, undoManager, callbacks = {}) {
     this.root = root;
+    this.callbacks = callbacks;
     this.audioEngine = audioEngine;
     this.canvasGrid = canvasGrid;
     this.timeline = timeline;
@@ -93,6 +94,10 @@ export class Inspector {
     this.root.querySelector('.insp-close').addEventListener('click', () => {
       this.canvasGrid.selectedNodeId = null;
       this.show(null);
+      // On a phone the panel is a sheet, and emptying it is not closing it:
+      // the X left the sheet up with "select a sound" inside. Whoever owns
+      // the sheet gets told and puts it away.
+      if (this.callbacks.onClose) this.callbacks.onClose();
     });
 
     this.root.querySelector('.insp-tabs').addEventListener('click', (e) => {

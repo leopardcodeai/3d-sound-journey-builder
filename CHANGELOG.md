@@ -4,6 +4,64 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-09-17
+
+Everything in this release came from using the app on an iPhone in bed, which
+is what it is for.
+
+### Added
+
+- **Audio keeps playing when the screen locks.** iOS stops Web Audio the moment
+  a page leaves the foreground unless a media element is playing, so a
+  one-second loop of digital silence now runs in an `<audio>` element while
+  anything plays, started inside the same gesture that starts the sound. The
+  lock screen gets a play and pause that drive the transport. Released again
+  when nothing plays.
+- **Sleep timer in the header.** One press from anywhere: 15, 30, 45, 60 or 90
+  minutes, remaining time shown on the button, and a twenty-second fade to
+  silence instead of a three-second stop. The drawer section stays and shows
+  the same state.
+- **Home-screen install**: a web app manifest, a real icon (the app's logo, not
+  the purple placeholder bolt the scaffold shipped with), and room for the
+  translucent status bar at the top. Installed, the header sat under the clock.
+
+### Changed
+
+- **Lying on your back: feet towards the top of the map, head towards the
+  bottom.** Decided on the mat with the phone in hand. The vectors then put the
+  right ear on the map's right, so a sound drawn on the right is heard on the
+  right; the earlier orientation mirrored it, which was defensible for a map
+  seen from underneath and wrong for a person holding a phone.
+- **The transport runs on the audio clock.** It added frame-clock deltas, so
+  after a locked screen the first frame added the whole absence at once, the
+  journey jumped to its end, faded, and came back at full level from zero. That
+  was the tone at the end. It follows `AudioContext.currentTime` now, and a
+  slow interval carries the loop while the page is hidden so fades and
+  keyframes still happen with the screen off.
+- **A journey that ends now ends.** The end fade used to leave every buffer
+  looping and re-gain it to its opening level.
+- **The timer keeps a deadline, not a counter.** A phone with its screen off
+  throttles timers; the old one fell behind by however long the tab slept.
+- **Sheets on a phone take half the picture**, and the field gives up that
+  half rather than hiding under it, so the listener re-centres where a finger
+  can still reach it.
+- **Selecting a sound on a phone no longer opens the inspector sheet.** It
+  fired on pointer-down, which is how a drag begins, so the sheet rose over
+  the field the moment a finger landed on a sound and nothing could be moved.
+  The Inspector tab carries a dot while there is a selection; a double tap
+  opens it.
+- Adding a sound from the library sheet puts the sheet away and says where the
+  sound landed, instead of leaving it out of sight behind the list.
+
+### Fixed
+
+- The X on a phone sheet emptied the panel but left the sheet up.
+- Stop, scrub, mute and solo started every source whose clip covered the
+  playhead, even with the transport paused.
+- Clarity described a binaural beat it never played.
+- Choosing a posture applied its tilt and filter strengths but stored only
+  the name, so a reload silently undid them.
+
 ## [2.1.0] - 2026-09-15
 
 Presets, preferences that survive a reload, a head-turn control, and a pass over

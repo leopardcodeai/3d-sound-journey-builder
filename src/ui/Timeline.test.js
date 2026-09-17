@@ -281,8 +281,66 @@ describe('Timeline', () => {
       let calls = s.gainNode.gain.setTargetAtTime.mock.calls;
       expect(calls[calls.length - 1][0]).toBe(0);
       timeline.playheadTime = 45;
+      timeline.isPlaying = true;
       timeline._applyKeyframes();
       expect(audioEngine.toggleSource).toHaveBeenCalledWith('s1', 15);
+    });
+
+    it('starts nothing while the transport is paused, however the playhead got there', () => {
+      // Stop, scrub, mute and solo all apply keyframes. Each of them used to
+      // start every source whose clip covered the playhead, so pressing Stop
+      // on a paused, silent journey set the whole field playing.
+      const s = addSource(audioEngine, 's1', { isPlaying: false });
+      timeline.sourceTimings.set('s1', { startTime: 0, duration: 60 });
+      timeline.isPlaying = false;
+      timeline._seekTo(20);
+      timeline.stop();
+      timeline.toggleMute('s1'); timeline.toggleMute('s1');
+      expect(audioEngine.toggleSource).not.toHaveBeenCalled();
+      expect(s.isPlaying).toBe(false);
+    });
+
+    it('runs on the audio clock, so a suspended context holds the playhead still', () => {
+      // performance.now() kept counting while a locked phone had suspended the
+      // audio, and the first frame after unlock added the whole absence at
+      // once. The playhead follows AudioContext.currentTime instead, which only
+      // moves while sound actually renders.
+      audioEngine.ctx.currentTime = 10;
+      timeline.play();
+      expect(timeline._clock).toBe('ctx');
+      audioEngine.ctx.currentTime = 12.5;
+      timeline._loop();
+      expect(timeline.playheadTime).toBeCloseTo(2.5, 6);
+      // Context frozen: nothing moves, whatever the wall clock did.
+      timeline._loop();
+      expect(timeline.playheadTime).toBeCloseTo(2.5, 6);
+      timeline.pause();
+    });
+
+    it('ends a non-looping journey in silence instead of bringing it back', () => {
+      vi.useFakeTimers();
+      try {
+        const s = addSource(audioEngine, 's1', { isPlaying: true });
+        timeline.setTotalDuration(900);
+        timeline.sourceTimings.set('s1', { startTime: 0, duration: 900 });
+        timeline.setLooping(false);
+        timeline.playheadTime = 899;
+        timeline.play();
+        // Let the audio clock carry it past the end, the way it happens.
+        audioEngine.ctx.currentTime = 2;
+        timeline._loop();
+        expect(timeline.playheadTime).toBe(900);
+        vi.advanceTimersByTime(2700);
+        // One call, to stop it. The old version stopped nothing and then
+        // re-gained everything to its opening level from zero, so a journey
+        // that had just faded out came straight back.
+        expect(audioEngine.toggleSource).toHaveBeenCalledTimes(1);
+        expect(audioEngine.toggleSource).toHaveBeenCalledWith('s1');
+        expect(timeline.isPlaying).toBe(false);
+        expect(timeline.playheadTime).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('marks keyframed sources as timeline-controlled only while playing', () => {
