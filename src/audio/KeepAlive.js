@@ -85,6 +85,12 @@ export class KeepAlive {
     if ('playsInline' in el) el.playsInline = true;
     if (el.setAttribute) el.setAttribute('playsinline', '');
     if (this.url) el.src = this.url;
+    // In the document, hidden. A detached element plays too, but iOS ties
+    // the session to what the page is doing, and an element the page can
+    // see is the conservative reading of that.
+    if (el.setAttribute) { el.setAttribute('aria-hidden', 'true'); el.hidden = true; }
+    const body = this.doc && this.doc.body;
+    if (body && body.appendChild && !el.isConnected) { try { body.appendChild(el); } catch (e) { /* detached doc */ } }
     this.el = el;
     return el;
   }

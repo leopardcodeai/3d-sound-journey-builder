@@ -25,6 +25,7 @@ function fakeDoc() {
   const listeners = {};
   return {
     hidden: false,
+    body: { appended: [], appendChild(el) { this.appended.push(el); el.isConnected = true; } },
     addEventListener(type, fn) { listeners[type] = fn; },
     removeEventListener(type) { delete listeners[type]; },
     fire(type) { if (listeners[type]) listeners[type](); },
@@ -56,14 +57,18 @@ describe('buildSilentWav', () => {
 });
 
 describe('KeepAlive', () => {
-  it('builds an unmuted, looping, inline element', () => {
+  it('builds an unmuted, looping, inline element and puts it in the document', () => {
     const el = fakeElement();
-    const k = new KeepAlive({ doc: fakeDoc(), createElement: () => el });
+    const doc = fakeDoc();
+    const k = new KeepAlive({ doc, createElement: () => el });
+    k.ensure();
     k.ensure();
     expect(el.loop).toBe(true);
     expect(el.muted).toBe(false);
     expect(el.volume).toBe(1);
     expect(el.attrs.playsinline).toBe('');
+    expect(el.hidden).toBe(true);
+    expect(doc.body.appended).toEqual([el]);
   });
 
   it('plays synchronously so it can sit inside a gesture', () => {
