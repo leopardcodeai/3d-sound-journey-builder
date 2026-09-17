@@ -46,14 +46,11 @@ const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
     // which is also how a drag begins, so on a phone the sheet rose over the
     // field the moment a finger landed on a sound, and nothing could be moved.
     // The sheet is prepared silently; the tab bar shows there is something in
-    // it, and the Inspector tab or a double tap opens it.
+    // it, and the Inspector tab opens it. (Double-click keeps its existing
+    // meaning, toggling the sound; an earlier draft added a second
+    // onNodeActivated for the sheet, and the later key silently won.)
     syncTabBar();
     if (timeline && timeline.visible) timeline._render();
-  },
-  onNodeActivated: (node) => {
-    if (!node || !inspector) return;
-    inspector.show(node);
-    openMobilePanel('inspector');
   },
   onNodeMoved: (node) => { if (inspector) inspector.update(node); },
   onNodeDragEnd: (id, ox, oy, oz, nx, ny, nz) => {
@@ -71,8 +68,19 @@ const timeline = new Timeline($('#timeline-dock'), audioEngine, canvasGrid);
  * every gesture that starts sound and follows it with whether anything plays.
  */
 const keepAlive = new KeepAlive({
-  onPlay: () => { if (currentView === 'focus') focusView.start(); else timeline.play(); },
-  onPause: () => { if (currentView === 'focus') focusView.pause(); else timeline.pause(); },
+  onPlay: () => {
+    if (currentView === 'focus') { focusView.start(); return; }
+    // A running transport restarts every source inside its window; anything
+    // placed by hand has the whole journey as its window, so it comes back too.
+    timeline.play();
+  },
+  onPause: () => {
+    if (currentView === 'focus') { focusView.pause(); return; }
+    // The field's own pause holds the clock and lets the sounds carry on,
+    // which is right at a desk. From a lock screen, pause has to mean quiet.
+    timeline.pause();
+    for (const [id, src] of audioEngine.sources) if (src.isPlaying) audioEngine.toggleSource(id);
+  },
 });
 audioEngine.keepAlive = keepAlive;
 timeline.undoManager = undoManager;
@@ -1101,7 +1109,6 @@ function afterUndo() {
 
 async function startApp(mode) {
   audioEngine.init();
-  keepAlive.attach(audioEngine.ctx);
   await audioEngine.resume();
 
   const dot = $('#audio-status');

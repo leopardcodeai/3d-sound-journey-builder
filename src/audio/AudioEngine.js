@@ -159,6 +159,10 @@ export class SpatialAudioEngine {
     }
 
     this.isInitialized = true;
+    // Every way into the engine comes through here, including a shared link,
+    // which never passes through the start screen. Attaching here rather than
+    // there is what makes the recovery on visibilitychange reach that path.
+    if (this.keepAlive && this.keepAlive.attach) this.keepAlive.attach(ctx);
     this.updateListenerPose(this.posture, this.headTilt, this.headTurn);
     console.log('Spatial audio engine ready');
   }
@@ -172,6 +176,14 @@ export class SpatialAudioEngine {
     if (this.keepAlive && this.keepAlive.play) this.keepAlive.play();
     if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
       try { await this.ctx.resume(); } catch (e) { /* user gesture required */ }
+    }
+    // The gesture unlocked the loop; whether it stays on depends on whether
+    // anything actually starts. An empty start or a failed load starts
+    // nothing, and without this the silent loop ran on for ever, holding the
+    // session and the lock-screen controls with no sound behind them.
+    if (this.keepAlive && this.keepAlive.sync) {
+      if (this._keepAliveSettle) clearTimeout(this._keepAliveSettle);
+      this._keepAliveSettle = setTimeout(() => { this._keepAliveSettle = null; this._syncKeepAlive(); }, 3000);
     }
   }
 

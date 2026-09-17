@@ -231,6 +231,43 @@ describe('SpatialAudioEngine', () => {
   });
 
 
+  describe('keep-alive', () => {
+    it('is attached on every init path, not only the start screen', () => {
+      const keepAlive = { attach: vi.fn(), play: vi.fn(), sync: vi.fn() };
+      engine.keepAlive = keepAlive;
+      engine.init();
+      expect(keepAlive.attach).toHaveBeenCalledWith(engine.ctx);
+    });
+
+    it('starts the loop inside the gesture and releases it when nothing plays', async () => {
+      vi.useFakeTimers();
+      try {
+        const keepAlive = { attach: vi.fn(), play: vi.fn(), sync: vi.fn() };
+        engine.keepAlive = keepAlive;
+        engine.init();
+        const p = engine.resume();
+        expect(keepAlive.play).toHaveBeenCalledTimes(1);   // before any await
+        await p;
+        expect(keepAlive.sync).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(3100);
+        expect(keepAlive.sync).toHaveBeenCalledWith(false); // an empty start
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the loop while a source plays and drops it when the last one stops', () => {
+      const keepAlive = { attach: vi.fn(), play: vi.fn(), sync: vi.fn() };
+      engine.keepAlive = keepAlive;
+      engine.init();
+      engine.addAudioBuffer('test_sound', createMockAudioBuffer(1, 44100, 44100));
+      engine.addSource('k1', 'test_sound', 'K', 1, 1, 0, 0.5);
+      expect(keepAlive.sync).toHaveBeenLastCalledWith(true);
+      engine.toggleSource('k1');
+      expect(keepAlive.sync).toHaveBeenLastCalledWith(false);
+    });
+  });
+
   describe('a speaker choice can never break the signal path', () => {
     // Choosing "Custom speakers" used to throw IndexSizeError out of
     // createChannelMerger, after _reconnectSource had already disconnected the

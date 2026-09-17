@@ -167,7 +167,10 @@ export class KeepAlive {
         ms.metadata = new MediaMetadata({ title: 'Sound Journey', artist: 'Sound Journey Builder' });
       }
       ms.playbackState = 'playing';
-      ms.setActionHandler('play', () => { if (this.onPlay) this.onPlay(); });
+      // A lock-screen press counts as activation, so the loop restarts here,
+      // inside it, before the app is told to resume. Pause hands over to the
+      // app; once nothing plays, sync() releases the session on its own.
+      ms.setActionHandler('play', () => { this.play(); if (this.onPlay) this.onPlay(); });
       ms.setActionHandler('pause', () => { if (this.onPause) this.onPause(); });
     } catch (e) { /* unsupported action */ }
   }

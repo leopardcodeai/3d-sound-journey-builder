@@ -121,6 +121,27 @@ describe('KeepAlive', () => {
     expect(ctx.resume).not.toHaveBeenCalled();
   });
 
+  it('restarts the loop from a lock-screen play before handing over to the app', () => {
+    const handlers = {};
+    const ms = { setActionHandler: (k, f) => { handlers[k] = f; }, playbackState: 'none', metadata: null };
+    Object.defineProperty(navigator, 'mediaSession', { value: ms, configurable: true });
+    try {
+      const el = fakeElement();
+      const order = [];
+      const k = new KeepAlive({ doc: fakeDoc(), createElement: () => el, onPlay: () => order.push('app'), onPause: () => order.push('pause') });
+      k.play();
+      el.paused = true;                       // iOS stopped it behind our back
+      handlers.play();
+      expect(el.plays).toBe(2);
+      expect(order).toEqual(['app']);
+      handlers.pause();
+      expect(order).toEqual(['app', 'pause']);
+      expect(ms.playbackState).toBe('playing');
+    } finally {
+      delete navigator.mediaSession;
+    }
+  });
+
   it('survives an element that refuses to play', async () => {
     const el = fakeElement({ refuse: true });
     const k = new KeepAlive({ doc: fakeDoc(), createElement: () => el });

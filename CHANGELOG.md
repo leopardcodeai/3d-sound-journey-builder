@@ -48,8 +48,7 @@ is what it is for.
 - **Selecting a sound on a phone no longer opens the inspector sheet.** It
   fired on pointer-down, which is how a drag begins, so the sheet rose over
   the field the moment a finger landed on a sound and nothing could be moved.
-  The Inspector tab carries a dot while there is a selection; a double tap
-  opens it.
+  The Inspector tab carries a dot while there is a selection and opens it.
 - Adding a sound from the library sheet puts the sheet away and says where the
   sound landed, instead of leaving it out of sight behind the list.
 
