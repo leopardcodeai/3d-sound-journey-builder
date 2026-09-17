@@ -53,6 +53,11 @@ const canvasGrid = new CanvasGrid($('#field-canvas'), audioEngine, {
     if (timeline && timeline.visible) timeline._render();
   },
   onNodeMoved: (node) => { if (inspector) inspector.update(node); },
+  onEditLayerChanged: (layer) => {
+    const btn = $('#edit-speakers-btn');
+    if (btn) btn.classList.toggle('is-on', layer === 'speakers');
+    showToast(t(layer === 'speakers' ? 'speakersEditOn' : 'speakersEditOff'));
+  },
   onNodeDragEnd: (id, ox, oy, oz, nx, ny, nz) => {
     undoManager.execute(createMoveCommand(audioEngine, canvasGrid, id, ox, oy, oz, nx, ny, nz, timeline));
   },
@@ -125,18 +130,26 @@ function syncTimerUI() {
   const text = fading ? t('timerFading') : running ? soundscapeTimer.formatRemaining() : '--:--';
   const drawerReadout = $('#timer-display');
   if (drawerReadout) drawerReadout.textContent = text;
+  // The header on a phone has room for five characters, not seven.
+  const narrow = window.innerWidth <= 900;
+  const headerText = fading ? t('timerFading') : soundscapeTimer.formatRemaining(narrow);
   const left = $('#sleep-timer-left');
-  if (left) { left.textContent = active ? text : ''; left.hidden = !active; }
+  if (left) { left.textContent = active ? headerText : ''; left.hidden = !active; }
   const btn = $('#sleep-timer-btn');
   if (btn) btn.classList.toggle('is-on', active);
   for (const sel of ['#timer-cancel', '#sleep-timer-cancel']) {
     const el = $(sel);
     if (el) el.hidden = !active;
   }
-  const minutes = running ? Math.round(soundscapeTimer.duration / 60) : null;
   document.querySelectorAll('#timer-chips .chip, #sleep-timer-chips .chip').forEach(c => {
-    c.classList.toggle('is-on', minutes !== null && parseInt(c.dataset.minutes, 10) === minutes);
+    c.classList.toggle('is-on', running && timerSecondsOf(c) === soundscapeTimer.duration);
   });
+}
+
+/** A chip is minutes, or seconds for the short one that lets you hear the fade. */
+function timerSecondsOf(chip) {
+  if (chip.dataset.seconds) return parseInt(chip.dataset.seconds, 10);
+  return parseInt(chip.dataset.minutes, 10) * 60;
 }
 
 /**
@@ -664,9 +677,9 @@ function renderSceneList() {
 function renderSpeakerList() {
   const container = $('#speaker-list');
   if (!container) return;
-  const preset = SPEAKER_PRESETS[speakerConfig.currentPreset];
   const custom = speakerConfig.currentPreset === 'custom';
-  const list = custom ? speakerConfig.customSpeakers : (preset && preset.speakerPositions) || [];
+  // The working copy, not the constant: a moved speaker shows where it is.
+  const list = speakerConfig.activePositions();
 
   if (!list.length) {
     // Two different empty states. Headphones have nothing to place by design.
@@ -693,6 +706,7 @@ function renderSpeakerList() {
       ${custom ? `<button class="icon-btn speaker-del" data-index="${i}" aria-label="${escapeAttr(named('removeNamed', sp.label))}">${icon('close', { size: 12 })}</button>` : ''}
     </div>`;
   }).join('');
+  container.insertAdjacentHTML('beforeend', `<p class="note">${escapeHtml(t('speakersHint'))}</p>`);
 }
 
 function renderJourneyList() {
@@ -861,6 +875,7 @@ function bindUI() {
   speakerSelect.addEventListener('change', () => {
     const key = speakerSelect.value;
     speakerConfig.setConfig(key);
+    if (key === 'stereo-headphones') canvasGrid.setEditLayer('sources');
     $('#custom-speakers').hidden = key !== 'custom';
     showToast(SPEAKER_PRESETS[key].name);
     savePrefs({ output: key });
@@ -871,10 +886,8 @@ function bindUI() {
     speakerConfig.addCustomSpeaker((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0, `S${speakerConfig.customSpeakers.length + 1}`);
     renderSpeakerList();
   });
-  $('#edit-speakers-btn').addEventListener('click', (e) => {
-    const editing = canvasGrid.editLayer === 'speakers';
-    canvasGrid.editLayer = editing ? 'sources' : 'speakers';
-    e.currentTarget.classList.toggle('is-on', !editing);
+  $('#edit-speakers-btn').addEventListener('click', () => {
+    canvasGrid.setEditLayer(canvasGrid.editLayer === 'speakers' ? 'sources' : 'speakers');
   });
   $('#speaker-list').addEventListener('click', (e) => {
     const btn = e.target.closest('.speaker-del');
@@ -990,7 +1003,7 @@ function bindUI() {
   $('#timer-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    soundscapeTimer.start(parseInt(chip.dataset.minutes, 10));
+    soundscapeTimer.startSeconds(timerSecondsOf(chip));
   });
   $('#timer-cancel').addEventListener('click', () => soundscapeTimer.stop());
 
@@ -1009,7 +1022,7 @@ function bindUI() {
   $('#sleep-timer-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    soundscapeTimer.start(parseInt(chip.dataset.minutes, 10));
+    soundscapeTimer.startSeconds(timerSecondsOf(chip));
     setTimerPop(false);
   });
   $('#sleep-timer-cancel').addEventListener('click', () => { soundscapeTimer.stop(); setTimerPop(false); });
@@ -1136,6 +1149,17 @@ async function startApp(mode) {
 }
 
 function boot() {
+  // Installed on a home screen, iOS lays the status bar over the page and, on
+  // a phone without a notch, reports no inset for it. The class lets the CSS
+  // keep a floor under the header there without touching the browser case.
+  const standalone = (typeof navigator !== 'undefined' && navigator.standalone === true)
+    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if (standalone) {
+    document.documentElement.classList.add('is-standalone');
+    // iOS scrolls a standalone page up to make room for the keyboard and does
+    // not scroll it back when the field loses focus.
+    document.addEventListener('focusout', () => requestAnimationFrame(() => window.scrollTo(0, 0)));
+  }
   hydrateIcons(document);
   applyTranslations(document);
   // Which build is running. Named in two places because the two audiences

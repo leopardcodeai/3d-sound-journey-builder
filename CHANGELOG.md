@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-09-17
+
+### Added
+
+- **Speakers move by double-click.** With a speaker layout on screen, a double
+  click on a speaker starts moving the layout and a double click anywhere ends
+  it; the settings list says so. Moving is a mode because a speaker and a
+  sound can share a spot.
+- **A ten-second sleep timer**, so the fade can be heard without waiting a
+  quarter of an hour.
+
+### Fixed
+
+- Dragging a preset speaker wrote into the preset constant itself, so one drag
+  of the Ls badge and the ITU layout was gone for the session, in the settings
+  list too. It also wrote into the custom list whatever preset was active, and
+  rebuilt the speaker graph on every pointer move. Presets now have a working
+  copy, the custom list is only touched when it is the active one, and a move
+  re-pans in place.
+- The header on a phone was too full once the sleep timer joined it: measured
+  with a timer running, the row reached 394 px on a 375 px screen. Tighter
+  gaps, a slider that gives way, and the time standing in for the clock.
+- Installed on a home screen, a phone without a notch reports no top inset at
+  all, though the status bar still sits over the page. In standalone mode the
+  header now keeps a twenty-point floor. A field losing focus also scrolls the
+  page back to the top, which iOS does not do on its own after the keyboard.
+
 ## [2.2.0] - 2026-09-17
 
 Everything in this release came from using the app on an iPhone in bed, which

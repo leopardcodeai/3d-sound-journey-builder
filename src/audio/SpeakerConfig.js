@@ -49,7 +49,21 @@ export class SpeakerConfig {
     this.canvasGrid = canvasGrid;
     this.currentPreset = 'stereo-headphones';
     this.customSpeakers = [];
+    // Working copies of the preset layouts, made on first use. Dragging a
+    // speaker used to write straight into SPEAKER_PRESETS, so one drag of the
+    // Ls badge and the ITU layout was gone for the rest of the session, in the
+    // settings list too. The constants stay what they ship as.
+    this.layouts = {};
     this.onConfigChange = null;
+  }
+
+  /** The positions feeding the engine: the custom list, or a copy of the preset. */
+  activePositions() {
+    const key = this.currentPreset;
+    if (key === 'stereo-headphones' || !SPEAKER_PRESETS[key]) return [];
+    if (key === 'custom') return this.customSpeakers;
+    if (!this.layouts[key]) this.layouts[key] = (SPEAKER_PRESETS[key].speakerPositions || []).map(p => ({ ...p }));
+    return this.layouts[key];
   }
 
   setConfig(presetKey) {
@@ -60,12 +74,33 @@ export class SpeakerConfig {
     if (presetKey === 'stereo-headphones') {
       this.audioEngine.setOutputMode('hrtf');
     } else {
-      const positions = presetKey === 'custom' ? this.customSpeakers : preset.speakerPositions;
+      const positions = this.activePositions();
       this.audioEngine.setOutputMode('speakers', positions, preset.channels || positions.length);
     }
 
     if (this.onConfigChange) this.onConfigChange(presetKey, preset);
     return true;
+  }
+
+  /**
+   * Moves one speaker of the active layout and re-pans every source against
+   * it. In place: the engine holds the same array, so nothing is rebuilt. The
+   * old path called setOutputMode on every pointer move, which tore down and
+   * rebuilt a merger and a gain per source per frame.
+   */
+  moveSpeaker(index, x, y) {
+    const sp = this.activePositions()[index];
+    if (!sp || sp.isSub) return false;
+    sp.x = x;
+    sp.y = y;
+    if (this.audioEngine.refreshSpeakerPanning) this.audioEngine.refreshSpeakerPanning();
+    return true;
+  }
+
+  /** Puts a preset back the way it ships. */
+  resetLayout(presetKey = this.currentPreset) {
+    delete this.layouts[presetKey];
+    if (presetKey === this.currentPreset) this.setConfig(presetKey);
   }
 
   addCustomSpeaker(x, y, z, label) {

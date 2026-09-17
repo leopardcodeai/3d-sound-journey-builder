@@ -799,6 +799,11 @@ export class SpatialAudioEngine {
     for (const src of this.sources.values()) this._reconnectSource(src);
   }
 
+  /** Re-pans every source against the current speaker positions. Nothing is rebuilt. */
+  refreshSpeakerPanning() {
+    for (const src of this.sources.values()) this.updateSourcePosition(src.id, src.x, src.y, src.z);
+  }
+
   _reconnectSource(src) {
     if (!src.pannerNode) return; // head-locked: always direct
     if (src._channelGains) {

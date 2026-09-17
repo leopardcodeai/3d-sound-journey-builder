@@ -57,6 +57,15 @@
      over the page, so everything pinned to the top edge has to make room for
      it. Only the bottom inset was handled, and the header sat under the clock. */
   --safe-top: env(safe-area-inset-top, 0px);
+}
+
+/* Installed on a home screen the status bar always sits over the page, and a
+   phone without a notch reports no inset for it at all. Twenty points is the
+   bar on those. Only there: in a browser tab there is no bar over the page. */
+@media (display-mode: standalone) {
+  :root { --safe-top: max(env(safe-area-inset-top, 0px), 20px); }
+}
+html.is-standalone { --safe-top: max(env(safe-area-inset-top, 0px), 20px);
   --panel-w: 296px;
   --dock-h: 216px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -137,7 +146,9 @@ body.pre-start .app-backdrop-texture { opacity: 0.16; }
 /* Sleep timer: one press away from the header, because it is used in the
    dark with one hand, not from inside a settings drawer. */
 .sleep-timer { position: relative; display: flex; }
-.sleep-timer-btn { width: auto; padding: 0 8px; gap: 5px; }
+/* Both classes: .icon-btn fixes the width to 30px and is declared later, so a
+   single class here lost and the time ran out over the button next to it. */
+.icon-btn.sleep-timer-btn { width: auto; padding: 0 8px; gap: 5px; }
 .sleep-timer-btn.is-on { color: var(--accent-2); }
 .sleep-timer-left { font-size: 11px; letter-spacing: 0.2px; }
 .popover {
@@ -760,15 +771,27 @@ body.focus-bare .topbar:hover > * { opacity: 1; }
 @media (max-width: 900px) {
   :root { --panel-w: 100%; --dock-h: 200px; }
 
-  .topbar { gap: 8px; padding: var(--safe-top) 8px 0; }
+  /* Six controls on the right of a 375px bar. Measured with the sleep timer
+     running: the row reached x=394, the gear was off the edge and the time
+     sat on top of the clock. Tighter gaps, a slider that gives way, and the
+     time standing in for the clock rather than joining it. */
+  .topbar { gap: 6px; padding: var(--safe-top) 8px 0; }
+  .topbar-right { gap: 5px; min-width: 0; }
+  .viewswitch-btn { padding: 5px 8px; }
   .brand-text { display: none; }
+  .sleep-timer-btn.is-on [data-icon] { display: none; }
+  .icon-btn.sleep-timer-btn.is-on { padding: 0 7px; }
+  /* Redo is the rarest control in the bar and the one thing that does not fit
+     on a phone once the timer shows its time. A constant layout beats one that
+     changes while the timer runs. Undo stays. */
+  #redo-btn { display: none; }
   /* The master fader used to be hidden outright below 900px, so there was no
      way to set the app's own level on a phone at all. System volume is not a
      substitute: it moves everything, not the mix. Keep the slider, drop the
      label and the readout, which are the parts that cost width. */
   .master { padding: 4px 8px; gap: 6px; }
   .master .master-label, .master .master-value { display: none; }
-  .master input[type="range"] { width: 64px; }
+  .master input[type="range"] { width: clamp(40px, 12vw, 64px); }
   .status { display: none; }
   .meter { display: none; }
   .viewswitch-btn span:last-child { display: none; }

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { SPEAKER_PRESETS } from './SpeakerConfig.js';
+import { describe, it, expect, vi } from 'vitest';
+import { SPEAKER_PRESETS, SpeakerConfig } from './SpeakerConfig.js';
 
 const bearing = (sp) => (Math.atan2(sp.x, sp.y) * 180) / Math.PI;
 
@@ -83,4 +83,58 @@ describe('a speaker choice can never break the signal path', () => {
     expect(SPEAKER_PRESETS.custom.speakerPositions).toEqual([]);
   });
 
+});
+
+/**
+ * Moving a speaker used to write into SPEAKER_PRESETS itself, so one drag of
+ * the Ls badge and the ITU layout was gone for the rest of the session, in the
+ * settings list as well. It also wrote into the custom list whatever preset
+ * was active, and rebuilt the whole speaker graph on every pointer move.
+ */
+describe('moving a speaker', () => {
+  const engine = () => ({ setOutputMode: vi.fn(), refreshSpeakerPanning: vi.fn() });
+
+  it('leaves the preset constant untouched and moves a working copy', () => {
+    const e = engine();
+    const sc = new SpeakerConfig(e, null);
+    sc.setConfig('surround-5.1');
+    const shipped = SPEAKER_PRESETS['surround-5.1'].speakerPositions.map(p => ({ ...p }));
+    expect(sc.moveSpeaker(0, 3, 3)).toBe(true);
+    expect(SPEAKER_PRESETS['surround-5.1'].speakerPositions).toEqual(shipped);
+    expect(sc.activePositions()[0]).toMatchObject({ x: 3, y: 3 });
+    expect(e.refreshSpeakerPanning).toHaveBeenCalledTimes(1);
+    expect(e.setOutputMode).toHaveBeenCalledTimes(1);   // once for setConfig, never for the move
+  });
+
+  it('moves custom speakers in the custom list and nothing else', () => {
+    const e = engine();
+    const sc = new SpeakerConfig(e, null);
+    sc.setConfig('surround-5.1');
+    sc.moveSpeaker(0, 3, 3);
+    expect(sc.customSpeakers).toEqual([]);
+    sc.setConfig('custom');
+    sc.addCustomSpeaker(1, 1, 0);
+    sc.moveSpeaker(0, 2, 2);
+    expect(sc.customSpeakers[0]).toMatchObject({ x: 2, y: 2 });
+  });
+
+  it('refuses to move a subwoofer and keeps a preset resettable', () => {
+    const e = engine();
+    const sc = new SpeakerConfig(e, null);
+    sc.setConfig('surround-5.1');
+    const sub = sc.activePositions().findIndex(p => p.isSub);
+    expect(sc.moveSpeaker(sub, 5, 5)).toBe(false);
+    sc.moveSpeaker(0, 3, 3);
+    sc.resetLayout();
+    expect(sc.activePositions()[0]).toMatchObject({ x: SPEAKER_PRESETS['surround-5.1'].speakerPositions[0].x });
+  });
+
+  it('feeds the engine the working copy, so a drag pans in place', () => {
+    const e = engine();
+    const sc = new SpeakerConfig(e, null);
+    sc.setConfig('stereo-speakers');
+    const fed = e.setOutputMode.mock.calls[0][1];
+    expect(fed).toBe(sc.activePositions());
+    expect(fed).not.toBe(SPEAKER_PRESETS['stereo-speakers'].speakerPositions);
+  });
 });

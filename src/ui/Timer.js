@@ -53,6 +53,11 @@ export class SoundscapeTimer {
     return true;
   }
 
+  /** The same, in seconds, for the short option that lets you hear the fade. */
+  startSeconds(seconds) {
+    return this.start(Number(seconds) / 60);
+  }
+
   /** Reads the clock and reports. Also the place the deadline is enforced. */
   _tick() {
     if (!this.running) return;
@@ -150,11 +155,12 @@ export class SoundscapeTimer {
     return { hours: h, minutes: m, seconds: s };
   }
 
-  /** "12:34" or "1:02:03", for a readout. */
-  formatRemaining() {
+  /** "12:34" or "1:02:03" for a readout; compact gives "1h02" above an hour. */
+  formatRemaining(compact = false) {
     const { hours, minutes, seconds } = this.getRemaining();
     const two = (n) => String(n).padStart(2, '0');
-    return hours > 0 ? `${hours}:${two(minutes)}:${two(seconds)}` : `${minutes}:${two(seconds)}`;
+    if (hours > 0) return compact ? `${hours}h${two(minutes)}` : `${hours}:${two(minutes)}:${two(seconds)}`;
+    return `${minutes}:${two(seconds)}`;
   }
 
   toggle(minutes) {

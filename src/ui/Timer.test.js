@@ -235,11 +235,13 @@ describe('SoundscapeTimer', () => {
       expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
     });
 
-    it('formats what is left for a readout', () => {
+    it('formats what is left for a readout, compact above an hour on request', () => {
       timer.start(90);
       expect(timer.formatRemaining()).toBe('1:30:00');
+      expect(timer.formatRemaining(true)).toBe('1h30');
       vi.advanceTimersByTime(65 * 60 * 1000);
       expect(timer.formatRemaining()).toBe('25:00');
+      expect(timer.formatRemaining(true)).toBe('25:00');
     });
 
     it('returns early if engine not initialized', () => {

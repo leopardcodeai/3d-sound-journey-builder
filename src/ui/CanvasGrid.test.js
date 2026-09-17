@@ -215,3 +215,38 @@ describe('CanvasGrid label placement', () => {
     expect(grid._textWidth({}, 'abcd')).toBe(24);
   });
 });
+
+/**
+ * With speakers on screen, a double click on one of them starts moving them
+ * and a double click anywhere ends it. Moving is a mode because a speaker and
+ * a sound can share a spot, and a drag has to know which it is taking.
+ */
+describe('speaker move mode by double click', () => {
+  function gridWithSpeakers() {
+    const engine = createMockAudioEngine();
+    engine.outputMode = 'speakers';
+    engine.speakerPositions = [{ x: 0, y: 4, z: 0, label: 'L' }, { x: 3, y: 4, z: 0, label: 'R' }];
+    const changes = [];
+    const grid = new CanvasGrid(createMockCanvas(), engine, { onEditLayerChanged: (l) => changes.push(l) });
+    grid.draw = () => {};
+    return { grid, engine, changes };
+  }
+
+  it('enters on a speaker and leaves on the next double click anywhere', () => {
+    const { grid, changes } = gridWithSpeakers();
+    const on = grid.project(0, 4, 0);
+    grid.handleDoubleClick({ clientX: on.sx, clientY: on.sy });
+    expect(grid.editLayer).toBe('speakers');
+    grid.handleDoubleClick({ clientX: 5, clientY: 5 });
+    expect(grid.editLayer).toBe('sources');
+    expect(changes).toEqual(['speakers', 'sources']);
+  });
+
+  it('does nothing of the sort with headphones, where there is nothing to move', () => {
+    const { grid, engine } = gridWithSpeakers();
+    engine.outputMode = 'hrtf';
+    const on = grid.project(0, 4, 0);
+    grid.handleDoubleClick({ clientX: on.sx, clientY: on.sy });
+    expect(grid.editLayer).toBe('sources');
+  });
+});

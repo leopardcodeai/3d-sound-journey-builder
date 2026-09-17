@@ -530,14 +530,15 @@ export class CanvasGrid {
       const sp = this.audioEngine.speakerPositions?.[this._draggedSpeakerIdx];
       if (sp) {
         const pos = this.canvasToAudioCoords(cx, cy, 0);
-        sp.x = clamp(pos.x, -FIELD_RADIUS, FIELD_RADIUS);
-        sp.y = clamp(pos.y, -FIELD_RADIUS, FIELD_RADIUS);
+        const x = clamp(pos.x, -FIELD_RADIUS, FIELD_RADIUS);
+        const y = clamp(pos.y, -FIELD_RADIUS, FIELD_RADIUS);
+        // Through the config, which owns the working copy of the layout. This
+        // used to write into the preset constant, into the custom list
+        // whatever preset was active, and rebuild the speaker graph on every
+        // pointer move.
         const cfg = this.audioEngine._speakerConfig;
-        if (cfg && cfg.customSpeakers[this._draggedSpeakerIdx]) {
-          cfg.customSpeakers[this._draggedSpeakerIdx].x = sp.x;
-          cfg.customSpeakers[this._draggedSpeakerIdx].y = sp.y;
-        }
-        this.audioEngine.setOutputMode(this.audioEngine.outputMode, this.audioEngine.speakerPositions, this.audioEngine.channelCount);
+        if (cfg && cfg.moveSpeaker) cfg.moveSpeaker(this._draggedSpeakerIdx, x, y);
+        else { sp.x = x; sp.y = y; if (this.audioEngine.refreshSpeakerPanning) this.audioEngine.refreshSpeakerPanning(); }
       }
       return;
     }
@@ -605,8 +606,32 @@ export class CanvasGrid {
     this._setCursor('default');
   }
 
+  /** Which layer a pointer edits: the sounds, or the speakers of a placed layout. */
+  setEditLayer(layer) {
+    const next = layer === 'speakers' ? 'speakers' : 'sources';
+    if (next === this.editLayer) return;
+    this.editLayer = next;
+    this._draggedSpeakerIdx = -1;
+    if (this.callbacks.onEditLayerChanged) this.callbacks.onEditLayerChanged(next);
+    this.draw();
+  }
+
+  /** True while a speaker layout is on screen to be moved. */
+  _speakersOnScreen() {
+    const e = this.audioEngine;
+    return !!e.outputMode && e.outputMode !== 'hrtf' && Array.isArray(e.speakerPositions) && e.speakerPositions.length > 0;
+  }
+
   handleDoubleClick(e) {
     const { x: cx, y: cy } = this._local(e);
+    // With speakers on screen, a double click on one of them starts moving
+    // them and a double click anywhere ends it. Moving is a mode rather than a
+    // plain drag because a speaker and a sound can sit on the same spot, and a
+    // single drag has to know which of the two it is taking.
+    if (this._speakersOnScreen()) {
+      if (this.editLayer === 'speakers') { this.setEditLayer('sources'); return; }
+      if (this._getSpeakerAtPosition(cx, cy) >= 0) { this.setEditLayer('speakers'); return; }
+    }
     const id = this.getNodeAtPosition(cx, cy);
     if (id) {
       if (this.callbacks.onNodeActivated) this.callbacks.onNodeActivated(this.audioEngine.sources.get(id));
